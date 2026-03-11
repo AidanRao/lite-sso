@@ -1,0 +1,25 @@
+name: sso-server
+
+services:
+  postgres:
+    container_name: sso-database
+    image: postgres:11.2-alpine
+    ports:
+      - "54323:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123456
+      POSTGRES_DB: sso-server
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    mem_limit: 512m
+
+  redis:
+    container_name: sso-redis
+    image: "redis:7-alpine"
+    ports:
+      - "63783:6379"
+    command: ["redis-server", "--requirepass", "123456", "--appendonly", "yes", "--dir", "/data"]
+    volumes:
+      - ./data/redis:/data
+    mem_limit: 128m
