@@ -87,11 +87,22 @@ body {
     margin-top: 48px;
     max-width: 400px;
     width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.illustration svg {
-    width: 100%;
-    height: auto;
+.illustration img {
+    width: 400px;
+    height: 400px;
+    object-fit: cover;
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.illustration img:hover {
+    transform: scale(1.02);
 }
 
 .right-panel {
@@ -189,6 +200,39 @@ body {
     font-size: 15px;
     color: var(--text);
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.password-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-input-wrapper input {
+    padding-right: 48px;
+}
+
+.password-toggle {
+    position: absolute;
+    right: 12px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    transition: color 0.2s ease;
+}
+
+.password-toggle:hover {
+    color: var(--text);
+}
+
+.password-toggle svg {
+    width: 20px;
+    height: 20px;
 }
 
 .form-group input:focus {

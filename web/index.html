@@ -16,22 +16,7 @@
                 <h1>Lite SSO</h1>
                 <p>安全、便捷的统一身份认证平台，一站式管理您的所有应用登录</p>
                 <div class="illustration">
-                    <svg viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="50" y="80" width="120" height="140" rx="8" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.4)" stroke-width="2"/>
-                        <rect x="70" y="100" width="80" height="12" rx="4" fill="rgba(255,255,255,0.3)"/>
-                        <rect x="70" y="120" width="60" height="12" rx="4" fill="rgba(255,255,255,0.3)"/>
-                        <rect x="70" y="150" width="80" height="30" rx="6" fill="rgba(255,255,255,0.4)"/>
-                        <circle cx="230" cy="150" r="50" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.4)" stroke-width="2"/>
-                        <path d="M230 130 L230 155 L245 155" stroke="rgba(255,255,255,0.8)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M200 180 L210 170 L220 180 L230 165 L240 180 L250 175 L260 180" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <rect x="280" y="80" width="100" height="80" rx="8" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.4)" stroke-width="2"/>
-                        <circle cx="305" cy="105" r="12" fill="rgba(255,255,255,0.4)"/>
-                        <rect x="325" y="98" width="40" height="6" rx="3" fill="rgba(255,255,255,0.3)"/>
-                        <rect x="295" y="125" width="70" height="6" rx="3" fill="rgba(255,255,255,0.3)"/>
-                        <rect x="295" y="140" width="50" height="6" rx="3" fill="rgba(255,255,255,0.3)"/>
-                        <path d="M170 150 L180 150" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-dasharray="4 4"/>
-                        <path d="M260 150 L280 150" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-dasharray="4 4"/>
-                    </svg>
+                    <img id="dynamicImage" src="/assets/images/default.png" alt="SSO Illustration">
                 </div>
             </div>
         </div>
@@ -60,7 +45,19 @@
                         </div>
                         <div class="form-group">
                             <label for="password">密码</label>
-                            <input type="password" id="password" placeholder="请输入密码" required>
+                            <div class="password-input-wrapper">
+                                <input type="password" id="password" placeholder="请输入密码" required>
+                                <button type="button" class="password-toggle" id="passwordToggle" aria-label="切换密码可见性">
+                                    <svg class="eye-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+                                    </svg>
+                                    <svg class="eye-off-icon hidden" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <line x1="1" y1="1" x2="23" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
                         <button type="submit" class="btn btn-primary">登录</button>
                     </form>

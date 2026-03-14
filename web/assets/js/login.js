@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initPasswordForm();
     initEmailForm();
     initQrLogin();
+    initDynamicImage();
 });
 
 function initTabs() {
@@ -264,4 +265,65 @@ function startQrTimer(seconds) {
 function oauthLogin(provider) {
     const redirect = encodeURIComponent(window.location.origin + '/auth/callback');
     window.location.href = `/api/auth/third/${provider}?redirect_uri=${redirect}`;
+}
+
+function initDynamicImage() {
+    const passwordInput = document.getElementById('password');
+    const passwordToggle = document.getElementById('passwordToggle');
+    const dynamicImage = document.getElementById('dynamicImage');
+    const eyeIcon = passwordToggle?.querySelector('.eye-icon');
+    const eyeOffIcon = passwordToggle?.querySelector('.eye-off-icon');
+
+    let isPasswordVisible = false;
+
+    // 更新图片函数
+    function updateImage() {
+        if (!dynamicImage) return;
+
+        if (passwordInput.value.length > 0) {
+            // 密码框有内容
+            if (isPasswordVisible) {
+                dynamicImage.src = '/assets/images/password-visible.png';
+            } else {
+                dynamicImage.src = '/assets/images/password-hidden.png';
+            }
+        } else {
+            // 默认状态
+            dynamicImage.src = '/assets/images/default.png';
+        }
+    }
+
+    // 更新图标显示状态
+    function updateIconVisibility() {
+        if (isPasswordVisible) {
+            // 密码可见，显示眼睛图标
+            eyeIcon?.classList.remove('hidden');
+            eyeOffIcon?.classList.add('hidden');
+        } else {
+            // 密码隐藏，显示眼睛加斜杠图标
+            eyeIcon?.classList.add('hidden');
+            eyeOffIcon?.classList.remove('hidden');
+        }
+    }
+
+    // 监听密码输入
+    passwordInput?.addEventListener('input', updateImage);
+
+    // 切换密码可见性
+    passwordToggle?.addEventListener('click', () => {
+        isPasswordVisible = !isPasswordVisible;
+
+        if (isPasswordVisible) {
+            passwordInput.type = 'text';
+        } else {
+            passwordInput.type = 'password';
+        }
+
+        updateIconVisibility();
+        updateImage();
+    });
+
+    // 初始化：设置正确的图标状态
+    updateIconVisibility();
+    updateImage();
 }
