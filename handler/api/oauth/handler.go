@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -121,10 +122,10 @@ func (h *OAuthHandler) BindThirdPartyAccount(c *gin.Context) {
 
 	err := h.oauthService.BindThirdPartyAccount(c.Request.Context(), userID, req.Provider)
 	if err != nil {
-		switch err {
-		case common.ErrInvalidProvider:
+		switch {
+		case errors.Is(err, common.ErrInvalidProvider):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "不支持的第三方平台", Data: nil})
-		case common.ErrBindingExists:
+		case errors.Is(err, common.ErrBindingExists):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "已绑定该平台账号", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "绑定失败", Data: nil})

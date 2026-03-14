@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -22,10 +23,10 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 
 	user, tokenData, err := h.auth.LoginWithPassword(c.Request.Context(), c.Request, req.Email, req.Password)
 	if err != nil {
-		switch err {
-		case common.ErrInvalidCredentials:
+		switch {
+		case errors.Is(err, common.ErrInvalidCredentials):
 			c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "邮箱或密码错误", Data: nil})
-		case common.ErrUserInactive:
+		case errors.Is(err, common.ErrUserInactive):
 			c.JSON(http.StatusForbidden, ecode.Response[any]{Code: ecode.Forbidden, Message: "用户已禁用", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "登录失败", Data: nil})

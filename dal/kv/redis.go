@@ -2,6 +2,7 @@ package kv
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -17,7 +18,7 @@ func NewRedisStore(client *redis.Client) *RedisStore {
 
 func (s *RedisStore) Get(ctx context.Context, key string) (string, error) {
 	val, err := s.client.Get(ctx, key).Result()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return "", ErrNotFound
 	}
 	return val, err

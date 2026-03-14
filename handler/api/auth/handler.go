@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -82,12 +83,12 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 
 	otp, err := h.auth.SendEmailOTP(c.Request.Context(), req.Email, req.CaptchaID, req.Captcha)
 	if err != nil {
-		switch err {
-		case common.ErrInvalidCaptcha:
+		switch {
+		case errors.Is(err, common.ErrInvalidCaptcha):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码错误", Data: nil})
-		case common.ErrRateLimited:
+		case errors.Is(err, common.ErrRateLimited):
 			c.JSON(http.StatusTooManyRequests, ecode.Response[any]{Code: ecode.TooManyRequests, Message: "请求过于频繁", Data: nil})
-		case mailer.ErrNotConfigured:
+		case errors.Is(err, mailer.ErrNotConfigured):
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "邮件服务未配置", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "发送失败", Data: nil})

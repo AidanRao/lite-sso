@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -33,8 +34,8 @@ func (h *AuthHandler) PollQRCode(c *gin.Context) {
 
 	qrData, err := h.auth.PollQRCode(c.Request.Context(), code)
 	if err != nil {
-		switch err {
-		case common.ErrQRCodeExpired:
+		switch {
+		case errors.Is(err, common.ErrQRCodeExpired):
 			c.JSON(http.StatusGone, ecode.Response[any]{Code: ecode.InternalServer, Message: "二维码已过期", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "查询失败", Data: nil})
@@ -67,10 +68,10 @@ func (h *AuthHandler) ScanQRCode(c *gin.Context) {
 
 	err := h.auth.ScanQRCode(c.Request.Context(), req.Code, req.UserID)
 	if err != nil {
-		switch err {
-		case common.ErrQRCodeExpired:
+		switch {
+		case errors.Is(err, common.ErrQRCodeExpired):
 			c.JSON(http.StatusGone, ecode.Response[any]{Code: ecode.InternalServer, Message: "二维码已过期", Data: nil})
-		case common.ErrQRCodeInvalidStatus:
+		case errors.Is(err, common.ErrQRCodeInvalidStatus):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "二维码状态无效", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "扫码失败", Data: nil})
@@ -96,12 +97,12 @@ func (h *AuthHandler) ConfirmQRCode(c *gin.Context) {
 
 	tokenData, err := h.auth.ConfirmQRCode(c.Request.Context(), c.Request, req.Code, req.UserID)
 	if err != nil {
-		switch err {
-		case common.ErrQRCodeExpired:
+		switch {
+		case errors.Is(err, common.ErrQRCodeExpired):
 			c.JSON(http.StatusGone, ecode.Response[any]{Code: ecode.InternalServer, Message: "二维码已过期", Data: nil})
-		case common.ErrQRCodeInvalidStatus:
+		case errors.Is(err, common.ErrQRCodeInvalidStatus):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "二维码状态无效", Data: nil})
-		case common.ErrQRCodeInvalidUser:
+		case errors.Is(err, common.ErrQRCodeInvalidUser):
 			c.JSON(http.StatusForbidden, ecode.Response[any]{Code: ecode.Forbidden, Message: "用户不匹配", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "确认失败", Data: nil})
