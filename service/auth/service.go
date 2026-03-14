@@ -7,6 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"sso-server/common"
 	"sso-server/conf"
 	"sso-server/dal/kv"
 	"sso-server/handler/oauth2"
@@ -33,7 +34,7 @@ func NewAuthService(cfg *conf.Config, db *gorm.DB, kvStore kv.Store, mailerImpl 
 
 func (s *AuthService) SendEmailOTP(ctx context.Context, email string, captchaID string, captchaAnswer string) (string, error) {
 	if ok, err := s.verifyCaptcha(ctx, captchaID, captchaAnswer); err != nil || !ok {
-		return "", ErrInvalidCaptcha
+		return "", common.ErrInvalidCaptcha
 	}
 
 	ok, err := s.kv.SetNX(ctx, kv.KeyRateLimitEmail(email), "1", time.Minute)
@@ -41,7 +42,7 @@ func (s *AuthService) SendEmailOTP(ctx context.Context, email string, captchaID 
 		return "", err
 	}
 	if !ok {
-		return "", ErrRateLimited
+		return "", common.ErrRateLimited
 	}
 
 	otp, err := GenerateNumericOTP(6)

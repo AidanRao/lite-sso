@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"sso-server/common"
 	"sso-server/common/ecode"
 	"sso-server/conf"
 	"sso-server/dal/db"
@@ -65,7 +66,7 @@ func (h *OAuthHandler) ThirdPartyLogin(c *gin.Context) {
 	redirectURL, err := h.oauthService.HandleThirdPartyLogin(c.Request.Context(), provider)
 	if err != nil {
 		switch err {
-		case oauth.ErrInvalidProvider:
+		case common.ErrInvalidProvider:
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "不支持的第三方平台", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "登录失败", Data: nil})
@@ -89,7 +90,7 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 	user, err := h.oauthService.HandleThirdPartyCallback(c.Request.Context(), provider, code)
 	if err != nil {
 		switch err {
-		case oauth.ErrProviderAuthFailed:
+		case common.ErrProviderAuthFailed:
 			c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "第三方认证失败", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "登录失败", Data: nil})
@@ -121,9 +122,9 @@ func (h *OAuthHandler) BindThirdPartyAccount(c *gin.Context) {
 	err := h.oauthService.BindThirdPartyAccount(c.Request.Context(), userID, req.Provider)
 	if err != nil {
 		switch err {
-		case oauth.ErrInvalidProvider:
+		case common.ErrInvalidProvider:
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "不支持的第三方平台", Data: nil})
-		case oauth.ErrBindingExists:
+		case common.ErrBindingExists:
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "已绑定该平台账号", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "绑定失败", Data: nil})

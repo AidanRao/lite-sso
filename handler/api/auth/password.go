@@ -5,8 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"sso-server/common"
 	"sso-server/common/ecode"
-	"sso-server/service/auth"
 )
 
 // LoginWithPassword handles password-based login
@@ -23,9 +23,9 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 	user, tokenData, err := h.auth.LoginWithPassword(c.Request.Context(), c.Request, req.Email, req.Password)
 	if err != nil {
 		switch err {
-		case auth.ErrInvalidCredentials:
+		case common.ErrInvalidCredentials:
 			c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "邮箱或密码错误", Data: nil})
-		case auth.ErrUserInactive:
+		case common.ErrUserInactive:
 			c.JSON(http.StatusForbidden, ecode.Response[any]{Code: ecode.Forbidden, Message: "用户已禁用", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "登录失败", Data: nil})

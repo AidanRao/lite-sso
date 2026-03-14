@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"sso-server/common"
 	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
@@ -37,7 +38,7 @@ func NewOAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, oaut
 func (s *OAuthService) GetUserInfo(ctx context.Context, userID string) (*dto.UserResponse, error) {
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
-		return nil, ErrUserNotFound
+		return nil, common.ErrUserNotFound
 	}
 
 	return dto.ToUserResponse(user), nil
@@ -47,14 +48,14 @@ func (s *OAuthService) GetUserInfo(ctx context.Context, userID string) (*dto.Use
 func (s *OAuthService) HandleThirdPartyLogin(ctx context.Context, provider string) (string, error) {
 	// TODO: Implement third-party login logic
 	// This will redirect to the third-party provider
-	return "", ErrInvalidProvider
+	return "", common.ErrInvalidProvider
 }
 
 // HandleThirdPartyCallback handles callback from third-party OAuth provider
 func (s *OAuthService) HandleThirdPartyCallback(ctx context.Context, provider, code string) (*dto.UserResponse, error) {
 	// TODO: Implement third-party callback logic
 	// Exchange code for token, get user info, create/update user
-	return nil, ErrProviderAuthFailed
+	return nil, common.ErrProviderAuthFailed
 }
 
 // BindThirdPartyAccount binds a third-party account to an existing user

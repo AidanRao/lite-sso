@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"sso-server/common"
 	"sso-server/common/ecode"
 	"sso-server/conf"
 	"sso-server/dal/kv"
@@ -82,9 +83,9 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 	otp, err := h.auth.SendEmailOTP(c.Request.Context(), req.Email, req.CaptchaID, req.Captcha)
 	if err != nil {
 		switch err {
-		case auth.ErrInvalidCaptcha:
+		case common.ErrInvalidCaptcha:
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码错误", Data: nil})
-		case auth.ErrRateLimited:
+		case common.ErrRateLimited:
 			c.JSON(http.StatusTooManyRequests, ecode.Response[any]{Code: ecode.TooManyRequests, Message: "请求过于频繁", Data: nil})
 		case mailer.ErrNotConfigured:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "邮件服务未配置", Data: nil})

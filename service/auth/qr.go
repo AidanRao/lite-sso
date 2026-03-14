@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"sso-server/common"
 	"sso-server/dal/kv"
 )
 
@@ -55,7 +56,7 @@ func (s *AuthService) GenerateQRCode(ctx context.Context) (string, error) {
 func (s *AuthService) PollQRCode(ctx context.Context, code string) (*QRCodeData, error) {
 	data, err := s.kv.Get(ctx, kv.KeyQR(code))
 	if err != nil {
-		return nil, ErrQRCodeExpired
+		return nil, common.ErrQRCodeExpired
 	}
 
 	var qrData QRCodeData
@@ -70,7 +71,7 @@ func (s *AuthService) PollQRCode(ctx context.Context, code string) (*QRCodeData,
 func (s *AuthService) ScanQRCode(ctx context.Context, code, userID string) error {
 	data, err := s.kv.Get(ctx, kv.KeyQR(code))
 	if err != nil {
-		return ErrQRCodeExpired
+		return common.ErrQRCodeExpired
 	}
 
 	var qrData QRCodeData
@@ -79,7 +80,7 @@ func (s *AuthService) ScanQRCode(ctx context.Context, code, userID string) error
 	}
 
 	if qrData.Status != QRCodeStatusPending {
-		return ErrQRCodeInvalidStatus
+		return common.ErrQRCodeInvalidStatus
 	}
 
 	qrData.Status = QRCodeStatusScanned
@@ -97,7 +98,7 @@ func (s *AuthService) ScanQRCode(ctx context.Context, code, userID string) error
 func (s *AuthService) ConfirmQRCode(ctx context.Context, r *http.Request, code, userID string) (map[string]interface{}, error) {
 	data, err := s.kv.Get(ctx, kv.KeyQR(code))
 	if err != nil {
-		return nil, ErrQRCodeExpired
+		return nil, common.ErrQRCodeExpired
 	}
 
 	var qrData QRCodeData
@@ -106,11 +107,11 @@ func (s *AuthService) ConfirmQRCode(ctx context.Context, r *http.Request, code, 
 	}
 
 	if qrData.Status != QRCodeStatusScanned {
-		return nil, ErrQRCodeInvalidStatus
+		return nil, common.ErrQRCodeInvalidStatus
 	}
 
 	if qrData.UserID != userID {
-		return nil, ErrQRCodeInvalidUser
+		return nil, common.ErrQRCodeInvalidUser
 	}
 
 	qrData.Status = QRCodeStatusConfirmed

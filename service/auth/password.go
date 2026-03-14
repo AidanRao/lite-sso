@@ -6,6 +6,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"sso-server/common"
 	"sso-server/dal/db"
 	"sso-server/model"
 )
@@ -16,19 +17,19 @@ func (s *AuthService) LoginWithPassword(ctx context.Context, r *http.Request, em
 
 	user, err := userRepo.FindByEmail(ctx, email)
 	if err != nil {
-		return nil, nil, ErrInvalidCredentials
+		return nil, nil, common.ErrInvalidCredentials
 	}
 
 	if user.PasswordHash == nil {
-		return nil, nil, ErrInvalidCredentials
+		return nil, nil, common.ErrInvalidCredentials
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(password)); err != nil {
-		return nil, nil, ErrInvalidCredentials
+		return nil, nil, common.ErrInvalidCredentials
 	}
 
 	if !user.IsActive {
-		return nil, nil, ErrUserInactive
+		return nil, nil, common.ErrUserInactive
 	}
 
 	if s.oauth2 == nil || r == nil {

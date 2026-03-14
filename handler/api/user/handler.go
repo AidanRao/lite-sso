@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"sso-server/common"
 	"sso-server/common/ecode"
 	"sso-server/conf"
 	"sso-server/dal/kv"
@@ -53,11 +54,11 @@ func (h *UserHandler) Register(c *gin.Context) {
 	user, tokenData, err := h.user.RegisterWithEmailOTP(c.Request.Context(), c.Request, req.Email, req.Password, req.Username, req.OTP)
 	if err != nil {
 		switch err {
-		case serviceuser.ErrInvalidOTP:
+		case common.ErrInvalidOTP:
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码错误", Data: nil})
-		case serviceuser.ErrEmailExists:
+		case common.ErrEmailExists:
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "邮箱已存在", Data: nil})
-		case serviceuser.ErrUsernameExists:
+		case common.ErrUsernameExists:
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "用户名已存在", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "注册失败", Data: nil})
@@ -120,7 +121,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	user, err := h.user.UpdateProfile(c.Request.Context(), userID, req.Username, req.AvatarURL)
 	if err != nil {
 		switch err {
-		case serviceuser.ErrUserNotFound:
+		case common.ErrUserNotFound:
 			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "更新失败", Data: nil})

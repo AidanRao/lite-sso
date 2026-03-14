@@ -9,6 +9,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"sso-server/common"
 	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
@@ -35,7 +36,7 @@ func NewUserService(cfg *conf.Config, db *gorm.DB, kvStore kv.Store, oauth2Impl 
 
 func (s *UserService) RegisterWithEmailOTP(ctx context.Context, r *http.Request, email string, password string, username *string, otp string) (*dto.UserResponse, map[string]interface{}, error) {
 	if ok, err := s.verifyOTP(ctx, email, otp); err != nil || !ok {
-		return nil, nil, ErrInvalidOTP
+		return nil, nil, common.ErrInvalidOTP
 	}
 
 	userRepo := db.NewUserRepository(s.db)
@@ -45,7 +46,7 @@ func (s *UserService) RegisterWithEmailOTP(ctx context.Context, r *http.Request,
 		return nil, nil, err
 	}
 	if exists {
-		return nil, nil, ErrEmailExists
+		return nil, nil, common.ErrEmailExists
 	}
 
 	if username != nil && strings.TrimSpace(*username) != "" {
@@ -54,7 +55,7 @@ func (s *UserService) RegisterWithEmailOTP(ctx context.Context, r *http.Request,
 			return nil, nil, err
 		}
 		if exists {
-			return nil, nil, ErrUsernameExists
+			return nil, nil, common.ErrUsernameExists
 		}
 	}
 
@@ -108,7 +109,7 @@ func (s *UserService) GetProfile(ctx context.Context, userID string) (*dto.UserR
 	userRepo := db.NewUserRepository(s.db)
 	user, err := userRepo.FindByID(ctx, userID)
 	if err != nil {
-		return nil, ErrUserNotFound
+		return nil, common.ErrUserNotFound
 	}
 	return dto.ToUserResponse(user), nil
 }
@@ -118,7 +119,7 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID string, username
 	userRepo := db.NewUserRepository(s.db)
 	user, err := userRepo.FindByID(ctx, userID)
 	if err != nil {
-		return nil, ErrUserNotFound
+		return nil, common.ErrUserNotFound
 	}
 
 	if username != nil {
