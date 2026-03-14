@@ -16,6 +16,11 @@ import (
 )
 
 func (s *Server) registerRoutes() {
+	// Static files
+	s.engine.Static("/assets", "./web/assets")
+	s.engine.StaticFile("/", "./web/index.html")
+	s.engine.StaticFile("/register.html", "./web/register.html")
+
 	healthHandler := health.NewHealthHandler()
 
 	s.engine.GET("/healthz", healthHandler.Healthz)
@@ -28,13 +33,11 @@ func (s *Server) registerRoutes() {
 		o = nil
 	}
 
-	// Initialize KV store
 	kvStore := kv.Store(kv.NewMemoryStore())
 	if kv.Client != nil {
 		kvStore = kv.NewRedisStore(kv.Client)
 	}
 
-	// Initialize mailer
 	var mailerImpl mailer.Mailer
 	if s.cfg != nil {
 		mailerImpl = mailer.NewSMTPMailer(mailer.SMTPConfig{
@@ -45,7 +48,6 @@ func (s *Server) registerRoutes() {
 		})
 	}
 
-	// Initialize handlers
 	authHandler := auth.NewAuthHandler(auth.AuthDeps{
 		Config: s.cfg,
 		DB:     db.DB,
@@ -68,10 +70,8 @@ func (s *Server) registerRoutes() {
 		OAuth2: o,
 	})
 
-	// API routes
 	apiGroup := s.engine.Group("/api")
 	{
-		// Auth endpoints
 		authGroup := apiGroup.Group("/auth")
 		{
 			authGroup.GET("/captcha", authHandler.GenerateCaptcha)
@@ -79,26 +79,21 @@ func (s *Server) registerRoutes() {
 			authGroup.POST("/login/email", authHandler.LoginWithEmailOTP)
 			authGroup.POST("/email/send", authHandler.SendEmailOTP)
 
-			// QR code endpoints
 			authGroup.GET("/qr/generate", authHandler.GenerateQRCode)
 			authGroup.GET("/qr/poll", authHandler.PollQRCode)
 			authGroup.POST("/qr/scan", authHandler.ScanQRCode)
 			authGroup.POST("/qr/confirm", authHandler.ConfirmQRCode)
 
-			// Third-party auth endpoints
 			authGroup.GET("/third/:provider", oauthHandler.ThirdPartyLogin)
 			authGroup.GET("/third/:provider/callback", oauthHandler.ThirdPartyCallback)
 			authGroup.POST("/third/bind", oauthHandler.BindThirdPartyAccount)
 
-			// Deprecated: Use /api/user/register instead
 			authGroup.POST("/register", func(c *gin.Context) {
-				// Log deprecation warning
 				c.Set("deprecated", "use /api/user/register instead")
 				userHandler.Register(c)
 			})
 		}
 
-		// User endpoints
 		userGroup := apiGroup.Group("/user")
 		{
 			userGroup.POST("/register", userHandler.Register)
@@ -107,7 +102,6 @@ func (s *Server) registerRoutes() {
 		}
 	}
 
-	// OAuth2 protocol endpoints
 	if o != nil {
 		s.engine.GET("/oauth/authorize", o.HandleAuthorize)
 		s.engine.POST("/oauth/token", o.HandleToken)

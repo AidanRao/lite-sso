@@ -57,14 +57,14 @@ func Load() *Config {
 		},
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
-			Port:     getEnv("DB_PORT", "5432"),
+			Port:     getEnv("DB_PORT", "54323"),
 			User:     getEnv("DB_USER", "postgres"),
-			Password: getEnv("DB_PASSWORD", ""),
-			Name:     getEnv("DB_NAME", "sso"),
+			Password: getEnv("DB_PASSWORD", "123456"),
+			Name:     getEnv("DB_NAME", "sso-server"),
 		},
 		Cache: CacheConfig{
-			URL:      getEnv("REDIS_URL", "localhost:6379"),
-			Password: getEnv("REDIS_PASSWORD", ""),
+			URL:      getEnv("REDIS_URL", "localhost:63783"),
+			Password: getEnv("REDIS_PASSWORD", "123456"),
 		},
 		Security: SecurityConfig{
 			AccessTokenExpire: parseDuration(getEnv("ACCESS_TOKEN_EXPIRE", "12h")),

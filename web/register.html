@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>注册 - Lite SSO</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+    <div class="split-container">
+        <div class="left-panel">
+            <div class="brand-section">
+                <h1>Lite SSO</h1>
+                <p>加入我们，体验安全便捷的统一身份认证服务</p>
+                <div class="illustration">
+                    <svg viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="200" cy="150" r="80" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.4)" stroke-width="2"/>
+                        <circle cx="200" cy="120" r="30" fill="rgba(255,255,255,0.3)" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+                        <path d="M160 180 Q200 220 240 180" stroke="rgba(255,255,255,0.5)" stroke-width="2" fill="none"/>
+                        <rect x="80" y="100" width="60" height="60" rx="8" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.4)" stroke-width="2"/>
+                        <rect x="95" y="115" width="30" height="4" rx="2" fill="rgba(255,255,255,0.4)"/>
+                        <rect x="95" y="125" width="20" height="4" rx="2" fill="rgba(255,255,255,0.3)"/>
+                        <rect x="95" y="140" width="30" height="12" rx="4" fill="rgba(255,255,255,0.4)"/>
+                        <rect x="260" y="100" width="60" height="60" rx="8" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.4)" stroke-width="2"/>
+                        <circle cx="290" cy="120" r="10" fill="rgba(255,255,255,0.4)"/>
+                        <rect x="275" y="138" width="30" height="4" rx="2" fill="rgba(255,255,255,0.3)"/>
+                        <path d="M140 130 L160 130" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-dasharray="4 4"/>
+                        <path d="M240 130 L260 130" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-dasharray="4 4"/>
+                        <circle cx="120" cy="200" r="15" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>
+                        <path d="M115 200 L120 205 L128 195" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <circle cx="280" cy="200" r="15" fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>
+                        <path d="M275 200 L280 205 L288 195" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        
+        <div class="right-panel">
+            <div class="form-container">
+                <div class="logo-mobile">
+                    <h1>Lite SSO</h1>
+                    <p>创建您的账号</p>
+                </div>
+
+                <div class="error-message" id="errorMessage"></div>
+                <div class="success-message" id="successMessage"></div>
+
+                <form id="registerForm">
+                    <div class="form-group">
+                        <label for="email">邮箱</label>
+                        <input type="email" id="email" placeholder="请输入邮箱" required>
+                    </div>
+
+                    <captcha-box id="captchaBox" auto-load></captcha-box>
+
+                    <div class="form-group">
+                        <label for="otp">邮箱验证码</label>
+                        <div class="input-row">
+                            <input type="text" id="otp" placeholder="请输入邮箱验证码" maxlength="6" required>
+                            <button type="button" id="sendOtp" class="btn btn-outline" style="width: auto; white-space: nowrap;">发送验证码</button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="username">用户名（可选）</label>
+                        <input type="text" id="username" placeholder="请输入用户名">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">密码</label>
+                        <input type="password" id="password" placeholder="请输入密码（至少8位）" required minlength="8">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="confirmPassword">确认密码</label>
+                        <input type="password" id="confirmPassword" placeholder="请再次输入密码" required minlength="8">
+                    </div>
+
+                    <button type="submit" class="btn btn-cta">注册</button>
+                </form>
+
+                <p class="footer-text">
+                    已有账号？<a href="/">立即登录</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/assets/js/app.js"></script>
+    <script src="/assets/js/components/captcha-box.js"></script>
+    <script src="/assets/js/register.js"></script>
+</body>
+</html>

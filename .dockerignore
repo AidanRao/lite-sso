@@ -6,6 +6,8 @@
 !README.md
 AGENTS.md
 design.md
+.trae
+.claude
 
 server
 *.db

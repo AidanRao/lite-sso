@@ -1,7 +1,7 @@
 package model
 
 type OAuthClient struct {
-	ID           uint   `gorm:"primaryKey;autoIncrement"`
+	ID           uint   `gorm:"autoIncrement"`
 	Name         string `gorm:"type:varchar(50);not null"`
 	ClientID     string `gorm:"type:varchar(50);primaryKey"`
 	ClientSecret string `gorm:"type:varchar(255);not null"`

@@ -16,6 +16,7 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 
 COPY --from=builder /sso-server /app/
+COPY --from=builder /app/web /app/web
 
 EXPOSE 8080
 
