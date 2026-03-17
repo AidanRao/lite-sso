@@ -42,7 +42,8 @@ func NewAuthHandler(deps AuthDeps) *AuthHandler {
 	mailerImpl := deps.Mailer
 	if mailerImpl == nil && cfg != nil {
 		mailerImpl = mailer.NewSMTPMailer(mailer.SMTPConfig{
-			Addr: cfg.Email.SMTPAddr,
+			Host: cfg.Email.SMTPHost,
+			Port: cfg.Email.SMTPPort,
 			User: cfg.Email.SMTPUser,
 			Pass: cfg.Email.SMTPPass,
 			From: cfg.Email.SMTPFrom,

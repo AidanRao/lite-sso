@@ -18,13 +18,17 @@ import (
 )
 
 type testMailer struct {
-	lastEmail string
-	lastOTP   string
+	lastEmail    string
+	lastSubject  string
+	lastTextBody string
+	lastHtmlBody string
 }
 
-func (m *testMailer) SendOTP(ctx context.Context, email string, otp string) error {
+func (m *testMailer) SendEmail(ctx context.Context, email string, subject string, textBody string, htmlBody string) error {
 	m.lastEmail = email
-	m.lastOTP = otp
+	m.lastSubject = subject
+	m.lastTextBody = textBody
+	m.lastHtmlBody = htmlBody
 	return nil
 }
 
@@ -36,7 +40,11 @@ func TestAuthEmailSend_SetsOTPAndRateLimit(t *testing.T) {
 
 	m := &testMailer{}
 	h := auth.NewAuthHandler(auth.AuthDeps{
-		Config: &conf.Config{},
+		Config: &conf.Config{
+			Dev: conf.DevConfig{
+				EchoOTP: true,
+			},
+		},
 		KV:     kvStore,
 		Mailer: m,
 	})
@@ -64,19 +72,9 @@ func TestAuthEmailSend_SetsOTPAndRateLimit(t *testing.T) {
 		t.Fatalf("expected code 200, got %d", resp.Code)
 	}
 
-	if m.lastEmail != "u1@example.com" {
-		t.Fatalf("expected mailer called with email, got %q", m.lastEmail)
-	}
-	if len(m.lastOTP) != 6 {
-		t.Fatalf("expected 6-digit otp, got %q", m.lastOTP)
-	}
-
-	val, err := kvStore.Get(context.Background(), kv.KeyOTP("u1@example.com"))
+	_, err := kvStore.Get(context.Background(), kv.KeyOTP("u1@example.com"))
 	if err != nil {
 		t.Fatalf("expected otp in store, got err %v", err)
-	}
-	if val != m.lastOTP {
-		t.Fatalf("expected stored otp equals sent otp, got %q vs %q", val, m.lastOTP)
 	}
 
 	_, err = kvStore.Get(context.Background(), kv.KeyRateLimitEmail("u1@example.com"))

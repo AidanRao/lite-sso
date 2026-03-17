@@ -4,12 +4,18 @@ let countdownTimer = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     initTabs();
-    initCaptcha();
     initPasswordForm();
     initEmailForm();
     initQrLogin();
     initDynamicImage();
 });
+
+function loadCaptcha() {
+    const captchaBox = document.getElementById('captchaBox');
+    if (captchaBox) {
+        captchaBox.loadCaptcha();
+    }
+}
 
 function initTabs() {
     const tabs = document.querySelectorAll('.tab');
@@ -29,34 +35,13 @@ function initTabs() {
                 }
             });
             
-            if (tab.dataset.tab === 'email') {
-                loadCaptcha();
-            } else if (tab.dataset.tab === 'qr') {
+            if (tab.dataset.tab === 'qr') {
                 loadQrCode();
-            } else {
+            } else if (tab.dataset.tab !== 'email') {
                 stopQrPoll();
             }
         });
     });
-}
-
-function initCaptcha() {
-    const captchaImg = document.getElementById('captchaImg');
-    if (captchaImg) {
-        captchaImg.addEventListener('click', loadCaptcha);
-        captchaImg.style.cursor = 'pointer';
-    }
-}
-
-async function loadCaptcha() {
-    try {
-        const data = await fetchApi('/api/auth/captcha');
-        const img = document.getElementById('captchaImg');
-        img.src = data.captcha_png_base64;
-        img.dataset.captchaId = data.captcha_id;
-    } catch (err) {
-        console.error('加载验证码失败:', err);
-    }
 }
 
 function initPasswordForm() {
@@ -90,8 +75,9 @@ function initEmailForm() {
     
     sendOtpBtn.addEventListener('click', async () => {
         const email = document.getElementById('email').value;
-        const captcha = document.getElementById('captcha').value;
-        const captchaId = document.getElementById('captchaImg').dataset.captchaId;
+        const captchaBox = document.getElementById('captchaBox');
+        const captcha = captchaBox.getValue();
+        const captchaId = captchaBox.getCaptchaId();
         
         if (!email) {
             showError('请输入邮箱');
@@ -118,7 +104,10 @@ function initEmailForm() {
         } catch (err) {
             showError(err.message);
             sendOtpBtn.disabled = false;
-            loadCaptcha();
+            const captchaBox = document.getElementById('captchaBox');
+            if (captchaBox) {
+                captchaBox.clear();
+            }
         }
     });
     

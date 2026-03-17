@@ -41,7 +41,8 @@ func (s *Server) registerRoutes() {
 	var mailerImpl mailer.Mailer
 	if s.cfg != nil {
 		mailerImpl = mailer.NewSMTPMailer(mailer.SMTPConfig{
-			Addr: s.cfg.Email.SMTPAddr,
+			Host: s.cfg.Email.SMTPHost,
+			Port: s.cfg.Email.SMTPPort,
 			User: s.cfg.Email.SMTPUser,
 			Pass: s.cfg.Email.SMTPPass,
 			From: s.cfg.Email.SMTPFrom,

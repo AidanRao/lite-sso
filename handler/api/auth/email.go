@@ -19,8 +19,12 @@ func (h *AuthHandler) LoginWithEmailOTP(c *gin.Context) {
 		return
 	}
 
-	// TODO: Implement email OTP login in auth service
-	// user, tokenData, err := h.auth.LoginWithEmailOTP(c.Request.Context(), c.Request, req.Email, req.OTP)
+	// Login with email OTP
+	_, tokenData, err := h.auth.LoginWithEmailOTP(c.Request.Context(), c.Request, req.Email, req.OTP)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "登录失败", Data: nil})
+		return
+	}
 
-	c.JSON(http.StatusNotImplemented, ecode.Response[any]{Code: ecode.InternalServer, Message: "功能未实现", Data: nil})
+	c.JSON(http.StatusOK, ecode.Response[map[string]interface{}]{Code: ecode.OK, Message: "登录成功", Data: tokenData})
 }
