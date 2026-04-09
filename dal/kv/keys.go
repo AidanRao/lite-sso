@@ -19,3 +19,7 @@ func KeyRateLimitEmail(email string) string {
 func KeyQR(uuid string) string {
 	return fmt.Sprintf("%s:qr:%s", keyPrefix, uuid)
 }
+
+func KeySession(sessionID string) string {
+	return fmt.Sprintf("%s:session:%s", keyPrefix, sessionID)
+}

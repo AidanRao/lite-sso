@@ -24,7 +24,7 @@ import (
 func TestAuthRegister_CreatesUserAndReturnsToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:auth_register_session?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -83,6 +83,16 @@ func TestAuthRegister_CreatesUserAndReturnsToken(t *testing.T) {
 	}
 	if resp.Data.AccessToken == "" || resp.Data.TokenType == "" {
 		t.Fatalf("expected token fields, got %s", w.Body.String())
+	}
+
+	found := false
+	for _, cookie := range w.Result().Cookies() {
+		if cookie.Name == "sso_session" && cookie.Value != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected sso_session cookie, got %#v", w.Result().Cookies())
 	}
 
 	var count int64

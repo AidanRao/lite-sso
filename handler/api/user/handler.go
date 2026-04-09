@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	apiauth "sso-server/handler/api/auth"
 	"gorm.io/gorm"
 
 	"sso-server/common"
@@ -66,6 +67,13 @@ func (h *UserHandler) Register(c *gin.Context) {
 		}
 		return
 	}
+
+	sessionID, err := h.user.CreateSession(c.Request.Context(), user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "注册失败", Data: nil})
+		return
+	}
+	apiauth.WriteSessionCookie(c, sessionID, conf.GetEnv() == conf.EnvProd)
 
 	data := gin.H{"user": user}
 	if tokenData != nil {

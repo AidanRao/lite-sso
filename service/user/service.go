@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	serviceauth "sso-server/service/auth"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
@@ -90,6 +91,11 @@ func (s *UserService) RegisterWithEmailOTP(ctx context.Context, r *http.Request,
 	}
 
 	return dto.ToUserResponse(user), tokenData, nil
+}
+
+func (s *UserService) CreateSession(ctx context.Context, userID string) (string, error) {
+	authService := serviceauth.NewAuthService(s.cfg, s.db, s.kv, nil, s.oauth2)
+	return authService.CreateSession(ctx, userID)
 }
 
 func (s *UserService) verifyOTP(ctx context.Context, email string, otp string) (bool, error) {

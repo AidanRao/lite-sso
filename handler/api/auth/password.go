@@ -8,6 +8,7 @@ import (
 
 	"sso-server/common"
 	"sso-server/common/ecode"
+	"sso-server/conf"
 )
 
 // LoginWithPassword handles password-based login
@@ -33,6 +34,13 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 		}
 		return
 	}
+
+	sessionID, err := h.auth.CreateSession(c.Request.Context(), user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "登录失败", Data: nil})
+		return
+	}
+	WriteSessionCookie(c, sessionID, conf.GetEnv() == conf.EnvProd)
 
 	data := gin.H{
 		"user": gin.H{

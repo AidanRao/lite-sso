@@ -71,6 +71,9 @@ func (s *Server) registerRoutes() {
 		OAuth2: o,
 	})
 
+	authRequired := RequireSessionAuth(kvStore)
+	authRequiredOrRedirect := RequireSessionAuthOrRedirect(kvStore)
+
 	apiGroup := s.engine.Group("/api")
 	{
 		authGroup := apiGroup.Group("/auth")
@@ -87,7 +90,11 @@ func (s *Server) registerRoutes() {
 
 			authGroup.GET("/third/:provider", oauthHandler.ThirdPartyLogin)
 			authGroup.GET("/third/:provider/callback", oauthHandler.ThirdPartyCallback)
-			authGroup.POST("/third/bind", oauthHandler.BindThirdPartyAccount)
+
+			authProtected := authGroup.Group("")
+			authProtected.Use(authRequired)
+			authProtected.POST("/logout", authHandler.Logout)
+			authProtected.POST("/third/bind", oauthHandler.BindThirdPartyAccount)
 
 			authGroup.POST("/register", func(c *gin.Context) {
 				c.Set("deprecated", "use /api/user/register instead")
@@ -98,13 +105,16 @@ func (s *Server) registerRoutes() {
 		userGroup := apiGroup.Group("/user")
 		{
 			userGroup.POST("/register", userHandler.Register)
-			userGroup.GET("/profile", userHandler.GetProfile)
-			userGroup.PUT("/profile", userHandler.UpdateProfile)
+
+			userProtected := userGroup.Group("")
+			userProtected.Use(authRequired)
+			userProtected.GET("/profile", userHandler.GetProfile)
+			userProtected.PUT("/profile", userHandler.UpdateProfile)
 		}
 	}
 
 	if o != nil {
-		s.engine.GET("/oauth/authorize", o.HandleAuthorize)
+		s.engine.GET("/oauth/authorize", authRequiredOrRedirect, o.HandleAuthorize)
 		s.engine.POST("/oauth/token", o.HandleToken)
 		s.engine.GET("/oauth/userinfo", oauthHandler.HandleUserinfo)
 	}

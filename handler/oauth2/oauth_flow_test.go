@@ -1,6 +1,7 @@
 package oauth2_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -17,14 +18,62 @@ import (
 	"sso-server/conf"
 	"sso-server/dal/kv"
 	"sso-server/handler/api/oauth"
+	serverhandler "sso-server/handler/server"
 	"sso-server/handler/oauth2"
 	"sso-server/model"
 )
 
-func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
+func TestOAuth2_Authorize_RequiresSession(t *testing.T) {
+	dsn := "file:oauthtest_requires_session?mode=memory&cache=shared"
 	gin.SetMode(gin.TestMode)
 
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	if err := db.Create(&model.OAuthClient{
+		Name:         "app",
+		ClientID:     "c1",
+		ClientSecret: "s1",
+		RedirectURIs: `["http://localhost/cb"]`,
+	}).Error; err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+
+	tokenStore, err := gooauth2store.NewMemoryTokenStore()
+	if err != nil {
+		t.Fatalf("token store: %v", err)
+	}
+
+	cfg := &conf.Config{}
+	cfg.Security.AccessTokenExpire = time.Hour
+
+	o, err := oauth2.NewWithStores(cfg, db, tokenStore)
+	if err != nil {
+		t.Fatalf("new oauth2: %v", err)
+	}
+
+	r := gin.New()
+	r.GET("/oauth/authorize", serverhandler.RequireSessionAuth(kv.NewMemoryStore()), o.HandleAuthorize)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?response_type=code&client_id=c1&redirect_uri="+url.QueryEscape("http://localhost/cb"), nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d, body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
+	dsn := "file:oauthtest_authorize_flow?mode=memory&cache=shared"
+	gin.SetMode(gin.TestMode)
+
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -57,7 +106,6 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	cfg := &conf.Config{}
 	cfg.Server.Port = "0"
 	cfg.Security.AccessTokenExpire = time.Hour
-	cfg.Dev.UserID = userID
 
 	o, err := oauth2.NewWithStores(cfg, db, tokenStore)
 	if err != nil {
@@ -66,6 +114,9 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 
 	// Create OAuth handler
 	kvStore := kv.NewMemoryStore()
+	if err := kvStore.Set(context.Background(), kv.KeySession("sid-1"), userID, time.Hour); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
 	oauthHandler := oauth.NewOAuthHandler(oauth.OAuthDeps{
 		Config: cfg,
 		DB:     db,
@@ -74,12 +125,13 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	})
 
 	r := gin.New()
-	r.GET("/oauth/authorize", o.HandleAuthorize)
+	r.GET("/oauth/authorize", serverhandler.RequireSessionAuth(kvStore), o.HandleAuthorize)
 	r.POST("/oauth/token", o.HandleToken)
 	r.GET("/oauth/userinfo", oauthHandler.HandleUserinfo)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?response_type=code&client_id="+url.QueryEscape(clientID)+"&redirect_uri="+url.QueryEscape(redirectURI)+"&state=xyz", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_session", Value: "sid-1"})
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusFound {
 		t.Fatalf("expected 302, got %d, body=%s", w.Code, w.Body.String())

@@ -69,10 +69,15 @@ func NewWithStores(cfg *conf.Config, database *gorm.DB, tokenStore gooauth2.Toke
 	srv.SetAllowedGrantType(gooauth2.AuthorizationCode)
 	srv.SetClientInfoHandler(clientInfoHandler)
 	srv.SetUserAuthorizationHandler(func(w http.ResponseWriter, r *http.Request) (string, error) {
-		if cfg.Dev.UserID == "" {
-			return "", oauth2errors.ErrServerError
+		if r == nil {
+			return "", oauth2errors.ErrAccessDenied
 		}
-		return cfg.Dev.UserID, nil
+
+		userID, ok := r.Context().Value("user_id").(string)
+		if !ok || userID == "" {
+			return "", oauth2errors.ErrAccessDenied
+		}
+		return userID, nil
 	})
 	srv.SetAccessTokenExpHandler(func(w http.ResponseWriter, r *http.Request) (time.Duration, error) {
 		return cfg.Security.AccessTokenExpire, nil
