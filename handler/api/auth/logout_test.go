@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,5 +136,66 @@ func TestAuthLogout_LoggedOutSessionCannotAccessProfile(t *testing.T) {
 
 	if profileResp.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 after logout, got %d, body=%s", profileResp.Code, profileResp.Body.String())
+	}
+}
+
+func TestAuthLogout_WithLogoutURIs_ReturnsHTMLPage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db, err := gorm.Open(sqlite.Open("file:auth_logout_uris?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	if err := db.Create(&model.OAuthClient{
+		Name:         "Test App",
+		ClientID:     "test-client",
+		ClientSecret: "secret",
+		RedirectURIs: `["https://app.example.com/callback"]`,
+		LogoutURIs:   `["https://app.example.com/logout", "https://app2.example.com/logout"]`,
+	}).Error; err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+
+	kvStore := kv.NewMemoryStore()
+	if err := kvStore.Set(context.Background(), kv.KeySession("sid-logout-uris"), "u1", 12*time.Hour); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	h := apiauth.NewAuthHandler(apiauth.AuthDeps{
+		Config: &conf.Config{},
+		DB:     db,
+		KV:     kvStore,
+	})
+
+	r := gin.New()
+	r.POST("/api/auth/logout", serverhandler.RequireSessionAuth(kvStore), h.Logout)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout?redirect=https://app.example.com/home", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_session", Value: "sid-logout-uris"})
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "text/html") {
+		t.Fatalf("expected html content type, got %s", contentType)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "https://app.example.com/logout") {
+		t.Fatalf("expected logout uri in body, got %s", body)
+	}
+	if !strings.Contains(body, "https://app2.example.com/logout") {
+		t.Fatalf("expected second logout uri in body, got %s", body)
+	}
+	if !strings.Contains(body, "app.example.com\\/home") {
+		t.Fatalf("expected redirect uri in body, got %s", body)
 	}
 }

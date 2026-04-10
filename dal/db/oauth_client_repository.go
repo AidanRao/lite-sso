@@ -23,3 +23,11 @@ func (r *OAuthClientRepository) FindByClientID(ctx context.Context, clientID str
 	}
 	return &client, nil
 }
+
+func (r *OAuthClientRepository) FindAll(ctx context.Context) ([]model.OAuthClient, error) {
+	var clients []model.OAuthClient
+	if err := r.db.WithContext(ctx).Find(&clients).Error; err != nil {
+		return nil, err
+	}
+	return clients, nil
+}
