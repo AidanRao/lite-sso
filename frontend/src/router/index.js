@@ -34,6 +34,11 @@ const routes = [
     path: '/profile',
     name: 'Profile',
     component: Profile
+  },
+  {
+    path: '/docs/:slug?',
+    name: 'Docs',
+    component: () => import('../views/Docs.vue')
   }
 ]
 

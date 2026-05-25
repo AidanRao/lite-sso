@@ -1,6 +1,6 @@
 <template>
   <div class="min-h-screen flex overflow-hidden">
-    <div class="flex-[1.5] bg-gradient-to-br from-[#0891b2] via-[#0e7490] to-[#164e63] flex flex-col items-center justify-center p-12 relative overflow-hidden">
+    <div class="hidden md:flex flex-[1.5] bg-gradient-to-br from-[#0891b2] via-[#0e7490] to-[#164e63] flex-col items-center justify-center p-12 relative overflow-hidden">
       <div class="absolute inset-0 bg-radial-gradient-circle opacity-15"></div>
       <div class="absolute top-10 left-10 w-32 h-32 bg-white/5 rounded-full blur-3xl"></div>
       <div class="absolute bottom-10 right-10 w-48 h-48 bg-cyan-300/10 rounded-full blur-3xl"></div>
@@ -27,9 +27,9 @@
       </div>
     </div>
 
-    <div class="flex-1 bg-gradient-to-br from-[#ecfeff] to-[#f0fdfa] flex items-center justify-center p-8">
-      <div class="w-full max-w-md">
-        <div class="bg-white rounded-2xl shadow-xl shadow-[#0891b2]/5 p-8 sm:p-10">
+    <div class="flex-1 min-h-screen bg-gradient-to-br from-[#ecfeff] to-[#f0fdfa] flex flex-col items-center p-4 sm:p-8">
+      <div class="w-full max-w-md flex flex-1 flex-col justify-center py-8">
+        <div class="bg-white rounded-2xl shadow-xl shadow-[#0891b2]/5 p-6 sm:p-10">
           <div class="text-center mb-8">
             <h2 class="text-2xl font-bold text-gray-800">欢迎回来</h2>
             <p v-if="targetClientName" class="text-gray-500 text-sm mt-2">
@@ -201,6 +201,10 @@
           </p>
         </div>
       </div>
+
+      <router-link to="/docs" class="self-center flex-shrink-0 text-sm font-medium text-gray-400 hover:text-[#0891b2] transition-colors">
+        开发文档
+      </router-link>
     </div>
   </div>
 

@@ -210,9 +210,9 @@ const handleRegister = async () => {
       otp: form.value.code
     })
 
-    successMessage.value = '注册成功，正在跳转...'
+    successMessage.value = '注册成功，正在登录...'
     setTimeout(() => {
-      window.location.href = '/login'
+      window.location.href = '/profile'
     }, 1000)
   } catch (error) {
     errorMessage.value = error.message

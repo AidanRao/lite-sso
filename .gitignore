@@ -30,7 +30,7 @@ conf/local.yaml
 Thumbs.db
 
 .claude
-docs
+/docs
 data
 
 .trae
