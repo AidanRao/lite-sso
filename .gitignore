@@ -22,6 +22,9 @@ dist/
 .env.local
 .env.*.local
 
+conf/local.yaml
+
+
 # OS files
 .DS_Store
 Thumbs.db
@@ -31,3 +34,7 @@ docs
 data
 
 .trae
+
+.gocache
+
+web/

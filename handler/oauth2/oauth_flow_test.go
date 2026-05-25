@@ -18,8 +18,8 @@ import (
 	"sso-server/conf"
 	"sso-server/dal/kv"
 	"sso-server/handler/api/oauth"
-	serverhandler "sso-server/handler/server"
 	"sso-server/handler/oauth2"
+	serverhandler "sso-server/handler/server"
 	"sso-server/model"
 )
 
@@ -31,7 +31,7 @@ func TestOAuth2_Authorize_RequiresSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -77,12 +77,13 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
 	userID := "u1"
-	if err := db.Create(&model.User{ID: userID, Email: "u1@example.com", IsActive: true}).Error; err != nil {
+	email := "u1@example.com"
+	if err := db.Create(&model.User{ID: userID, Email: &email, IsActive: true}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 
@@ -147,6 +148,10 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	}
 	if u.Query().Get("state") != "xyz" {
 		t.Fatalf("expected state=xyz, got %q", u.Query().Get("state"))
+	}
+	var appLogin model.UserOAuthClient
+	if err := db.First(&appLogin, "user_id = ? AND client_id = ?", userID, clientID).Error; err != nil {
+		t.Fatalf("expected authorized application record: %v", err)
 	}
 
 	form := url.Values{}

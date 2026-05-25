@@ -10,7 +10,10 @@ import (
 )
 
 func main() {
-	cfg := conf.Load()
+	cfg, err := conf.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	if err := db.Init(cfg); err != nil {
 		log.Fatal(err)

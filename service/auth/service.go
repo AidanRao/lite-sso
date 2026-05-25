@@ -2,10 +2,8 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
-	"net/http"
 
 	"os"
 	"path/filepath"
@@ -59,7 +57,7 @@ func (s *AuthService) SendEmailOTP(ctx context.Context, email string, captchaID 
 		return "", common.ErrRateLimited
 	}
 
-	otp, err := GenerateNumericOTP(6)
+	otp, err := s.emailOTP()
 	if err != nil {
 		log.Printf("SendEmailOTP: failed to generate OTP, err=%v", err)
 		return "", err
@@ -69,17 +67,13 @@ func (s *AuthService) SendEmailOTP(ctx context.Context, email string, captchaID 
 		return "", err
 	}
 
-	if s.mailer == nil {
-		if s.cfg != nil && s.cfg.Dev.EchoOTP {
-			return otp, nil
-		}
-		return "", mailer.ErrNotConfigured
+	if s.cfg != nil && s.cfg.Dev.SkipSendEmail {
+		log.Printf("SendEmailOTP: skipping email send in dev mode")
+		return "", nil
 	}
 
-	// In development mode with EchoOTP, skip template loading
-	if s.cfg != nil && s.cfg.Dev.EchoOTP {
-		log.Printf("SendEmailOTP: returning OTP in dev mode, otp=%s", otp)
-		return otp, nil
+	if s.mailer == nil {
+		return "", mailer.ErrNotConfigured
 	}
 
 	// Load email templates
@@ -135,18 +129,22 @@ func (s *AuthService) SendEmailOTP(ctx context.Context, email string, captchaID 
 	// Send email
 	if err := s.mailer.SendEmail(ctx, email, "Your verification code", textBody.String(), htmlBody.String()); err != nil {
 		log.Printf("SendEmailOTP: failed to send email, err=%v", err)
-		if errors.Is(err, mailer.ErrNotConfigured) && s.cfg != nil && s.cfg.Dev.EchoOTP {
-			log.Printf("SendEmailOTP: returning OTP in dev mode, otp=%s", otp)
-			return otp, nil
-		}
 		return "", err
 	}
 
 	log.Printf("SendEmailOTP: email sent successfully to %s", email)
-	if s.cfg != nil && s.cfg.Dev.EchoOTP {
-		return otp, nil
-	}
 	return "", nil
+}
+
+func (s *AuthService) emailOTP() (string, error) {
+	if s.useFixedEmailOTP() {
+		return strings.TrimSpace(s.cfg.Dev.FixedEmailOTP), nil
+	}
+	return GenerateNumericOTP(6)
+}
+
+func (s *AuthService) useFixedEmailOTP() bool {
+	return s.cfg != nil && conf.GetEnv() == conf.EnvLocal && strings.TrimSpace(s.cfg.Dev.FixedEmailOTP) != ""
 }
 
 func (s *AuthService) verifyCaptcha(ctx context.Context, captchaID string, captchaAnswer string) (bool, error) {
@@ -174,32 +172,22 @@ func (s *AuthService) verifyOTP(ctx context.Context, email string, otp string) (
 }
 
 // LoginWithEmailOTP authenticates a user with email and OTP
-func (s *AuthService) LoginWithEmailOTP(ctx context.Context, r *http.Request, email, otp string) (*model.User, map[string]interface{}, error) {
+func (s *AuthService) LoginWithEmailOTP(ctx context.Context, email, otp string) (*model.User, error) {
 	// Verify OTP
 	if ok, err := s.verifyOTP(ctx, email, otp); err != nil || !ok {
-		return nil, nil, common.ErrInvalidOTP
+		return nil, common.ErrInvalidOTP
 	}
 
 	// Find user by email
 	userRepo := db.NewUserRepository(s.db)
 	user, err := userRepo.FindByEmail(ctx, email)
 	if err != nil {
-		return nil, nil, common.ErrInvalidCredentials
+		return nil, common.ErrInvalidCredentials
 	}
 
 	if !user.IsActive {
-		return nil, nil, common.ErrUserInactive
+		return nil, common.ErrUserInactive
 	}
 
-	if s.oauth2 == nil || r == nil {
-		return user, nil, nil
-	}
-
-	// Issue token
-	tokenData, err := s.oauth2.IssueTokenForUser(ctx, r, user.ID)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return user, tokenData, nil
+	return user, nil
 }

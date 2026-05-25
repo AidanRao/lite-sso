@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	gooauth2store "github.com/go-oauth2/oauth2/v4/store"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
@@ -28,7 +29,7 @@ func TestAuthRegister_CreatesUserAndReturnsToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -101,5 +102,65 @@ func TestAuthRegister_CreatesUserAndReturnsToken(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected 1 user, got %d", count)
+	}
+}
+
+func TestUserResetPassword_WithEmailOTPUpdatesHash(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db, err := gorm.Open(sqlite.Open("file:user_reset_password?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	oldHash, err := bcrypt.GenerateFromPassword([]byte("old-password"), 12)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	oldHashStr := string(oldHash)
+	email := "u1@example.com"
+	if err := db.Create(&model.User{
+		ID:           "u1",
+		Email:        &email,
+		PasswordHash: &oldHashStr,
+		IsActive:     true,
+	}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	kvStore := kv.NewMemoryStore()
+	_ = kvStore.Set(context.Background(), kv.KeyOTP("u1@example.com"), "123456", time.Minute)
+
+	h := user.NewUserHandler(user.UserDeps{
+		Config: &conf.Config{},
+		DB:     db,
+		KV:     kvStore,
+	})
+
+	r := gin.New()
+	r.POST("/api/user/password/reset", h.ResetPassword)
+
+	body := `{"email":"u1@example.com","password":"new-password","otp":"123456"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/user/password/reset", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	var updated model.User
+	if err := db.First(&updated, "id = ?", "u1").Error; err != nil {
+		t.Fatalf("find user: %v", err)
+	}
+	if updated.PasswordHash == nil {
+		t.Fatalf("expected password hash")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(*updated.PasswordHash), []byte("new-password")); err != nil {
+		t.Fatalf("expected new password hash, got err %v", err)
 	}
 }

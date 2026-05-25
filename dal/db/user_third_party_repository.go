@@ -32,6 +32,14 @@ func (r *UserThirdPartyRepository) FindByUserID(ctx context.Context, userID, pro
 	return &binding, nil
 }
 
+func (r *UserThirdPartyRepository) ListByUserID(ctx context.Context, userID string) ([]model.UserThirdParty, error) {
+	var bindings []model.UserThirdParty
+	if err := r.db.WithContext(ctx).Where("user_id = ?", userID).Find(&bindings).Error; err != nil {
+		return nil, err
+	}
+	return bindings, nil
+}
+
 func (r *UserThirdPartyRepository) Create(ctx context.Context, binding *model.UserThirdParty) error {
 	return r.db.WithContext(ctx).Create(binding).Error
 }

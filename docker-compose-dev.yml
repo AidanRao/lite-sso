@@ -1,4 +1,4 @@
-name: sso-server
+name: sso-server-dev-environment
 
 services:
   postgres:

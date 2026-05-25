@@ -1,0 +1,32 @@
+server:
+  port: "8080"
+
+database:
+  host: "localhost"
+  port: "54323"
+  user: "postgres"
+  password: "123456"
+  name: "sso-server"
+
+cache:
+  url: "localhost:63783"
+  password: "123456"
+
+security:
+  access_token_expire: "12h"
+  max_login_attempts: 5
+  lockout_duration: "30m"
+
+dev:
+  skip_send_email: true
+  fixed_email_otp: "123456"
+
+oauth:
+  github:
+    client_id: "github-client-id"
+    client_secret: "github-client-secret"
+    redirect_uri: "http://localhost:8080/api/auth/third/github/callback"
+  feishu:
+    client_id: "feishu-client-id"
+    client_secret: "feishu-client-secret"
+    redirect_uri: "http://localhost:8080/api/auth/third/feishu/callback"

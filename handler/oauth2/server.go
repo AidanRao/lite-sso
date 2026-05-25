@@ -144,6 +144,11 @@ func (o *OAuth2) HandleAuthorize(c *gin.Context) {
 		return
 	}
 
+	if err := db.NewUserOAuthClientRepository(o.db).RecordLogin(ctx, req.UserID, req.ClientID, time.Now()); err != nil {
+		o.writeTokenError(c, oauth2errors.ErrServerError)
+		return
+	}
+
 	data := o.server.GetAuthorizeData(req.ResponseType, ti)
 	redirectTo, err := o.server.GetRedirectURI(req, data)
 	if err != nil {

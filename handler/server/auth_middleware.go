@@ -60,6 +60,6 @@ func RequireSessionAuthOrRedirect(kvStore kv.Store) gin.HandlerFunc {
 
 func redirectToLogin(c *gin.Context) {
 	currentURL := c.Request.URL.String()
-	loginURL := "/?redirect=" + url.QueryEscape(currentURL)
+	loginURL := "/login?redirect=" + url.QueryEscape(currentURL)
 	c.Redirect(http.StatusFound, loginURL)
 }

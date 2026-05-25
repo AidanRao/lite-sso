@@ -28,9 +28,11 @@ type testMailer struct {
 	lastSubject  string
 	lastTextBody string
 	lastHtmlBody string
+	sendCount    int
 }
 
 func (m *testMailer) SendEmail(ctx context.Context, email string, subject string, textBody string, htmlBody string) error {
+	m.sendCount++
 	m.lastEmail = email
 	m.lastSubject = subject
 	m.lastTextBody = textBody
@@ -48,7 +50,7 @@ func TestAuthEmailSend_SetsOTPAndRateLimit(t *testing.T) {
 	h := auth.NewAuthHandler(auth.AuthDeps{
 		Config: &conf.Config{
 			Dev: conf.DevConfig{
-				EchoOTP: true,
+				SkipSendEmail: true,
 			},
 		},
 		KV:     kvStore,
@@ -77,7 +79,6 @@ func TestAuthEmailSend_SetsOTPAndRateLimit(t *testing.T) {
 	if resp.Code != 200 {
 		t.Fatalf("expected code 200, got %d", resp.Code)
 	}
-
 	_, err := kvStore.Get(context.Background(), kv.KeyOTP("u1@example.com"))
 	if err != nil {
 		t.Fatalf("expected otp in store, got err %v", err)
@@ -86,6 +87,52 @@ func TestAuthEmailSend_SetsOTPAndRateLimit(t *testing.T) {
 	_, err = kvStore.Get(context.Background(), kv.KeyRateLimitEmail("u1@example.com"))
 	if err != nil {
 		t.Fatalf("expected rate limit key set, got err %v", err)
+	}
+}
+
+func TestAuthEmailSend_LocalFixedOTPStoresAndSkipsMail(t *testing.T) {
+	t.Setenv("ENV", "local")
+	gin.SetMode(gin.TestMode)
+
+	kvStore := kv.NewMemoryStore()
+	if err := kvStore.Set(context.Background(), kv.KeyCaptcha("cid"), "1234", time.Minute); err != nil {
+		t.Fatalf("seed captcha: %v", err)
+	}
+
+	m := &testMailer{}
+	h := auth.NewAuthHandler(auth.AuthDeps{
+		Config: &conf.Config{
+			Dev: conf.DevConfig{
+				FixedEmailOTP: "654321",
+				SkipSendEmail: true,
+			},
+		},
+		KV:     kvStore,
+		Mailer: m,
+	})
+
+	r := gin.New()
+	r.POST("/api/auth/email/send", h.SendEmailOTP)
+
+	body := `{"email":"u1@example.com","captcha_id":"cid","captcha":"1234"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/email/send", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	otp, err := kvStore.Get(context.Background(), kv.KeyOTP("u1@example.com"))
+	if err != nil {
+		t.Fatalf("expected otp in store, got err %v", err)
+	}
+	if otp != "654321" {
+		t.Fatalf("expected fixed otp 654321, got %q", otp)
+	}
+	if m.sendCount != 0 {
+		t.Fatalf("expected mail skipped, got send count %d", m.sendCount)
 	}
 }
 
@@ -133,7 +180,7 @@ func TestAuthPasswordLogin_SetsSessionCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -142,10 +189,11 @@ func TestAuthPasswordLogin_SetsSessionCookie(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 	hashStr := string(hash)
+	email := "u1@example.com"
 
 	if err := db.Create(&model.User{
 		ID:           "u1",
-		Email:        "u1@example.com",
+		Email:        &email,
 		PasswordHash: &hashStr,
 		IsActive:     true,
 	}).Error; err != nil {
@@ -186,12 +234,18 @@ func TestAuthPasswordLogin_SetsSessionCookie(t *testing.T) {
 
 	var resp struct {
 		Code int `json:"code"`
+		Data struct {
+			RedirectURL string `json:"redirect_url"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if resp.Code != 200 {
 		t.Fatalf("expected code 200, got %d", resp.Code)
+	}
+	if resp.Data.RedirectURL != "/profile" {
+		t.Fatalf("expected default redirect /profile, got %q", resp.Data.RedirectURL)
 	}
 
 	found := false
@@ -212,13 +266,14 @@ func TestAuthEmailLogin_SetsSessionCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
+	email := "u1@example.com"
 	if err := db.Create(&model.User{
 		ID:       "u1",
-		Email:    "u1@example.com",
+		Email:    &email,
 		IsActive: true,
 	}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
@@ -259,6 +314,22 @@ func TestAuthEmailLogin_SetsSessionCookie(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			RedirectURL string `json:"redirect_url"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Code != 200 {
+		t.Fatalf("expected code 200, got %d", resp.Code)
+	}
+	if resp.Data.RedirectURL != "/profile" {
+		t.Fatalf("expected default redirect /profile, got %q", resp.Data.RedirectURL)
 	}
 
 	found := false

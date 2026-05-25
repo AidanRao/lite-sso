@@ -7,13 +7,21 @@ import (
 	"errors"
 	"time"
 
+	"sso-server/common"
+	"sso-server/dal/db"
 	"sso-server/dal/kv"
+	"sso-server/dto"
 )
 
 const (
 	SessionCookieName = "sso_session"
 	SessionTTL        = 12 * time.Hour
 )
+
+type LoginResult struct {
+	User        *dto.UserResponse `json:"user"`
+	RedirectURL string            `json:"redirect_url"`
+}
 
 func generateSessionID() (string, error) {
 	buf := make([]byte, 32)
@@ -38,6 +46,32 @@ func (s *AuthService) CreateSession(ctx context.Context, userID string) (string,
 	}
 
 	return sessionID, nil
+}
+
+func (s *AuthService) CompleteLogin(ctx context.Context, userID string, redirect string) (*LoginResult, string, error) {
+	userRepo := db.NewUserRepository(s.db)
+	user, err := userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return nil, "", common.ErrInvalidCredentials
+	}
+	if !user.IsActive {
+		return nil, "", common.ErrUserInactive
+	}
+
+	redirectURL, err := NormalizeLoginRedirect(redirect)
+	if err != nil {
+		return nil, "", err
+	}
+
+	sessionID, err := s.CreateSession(ctx, user.ID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return &LoginResult{
+		User:        dto.ToUserResponse(user),
+		RedirectURL: redirectURL,
+	}, sessionID, nil
 }
 
 func (s *AuthService) ResolveSessionUserID(ctx context.Context, sessionID string) (string, error) {

@@ -13,6 +13,9 @@ server
 *.db
 *.db-journal
 data/
+frontend/dist/
+frontend/node_modules/
+web/
 
 .handler
 .worktrees

@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	apiauth "sso-server/handler/api/auth"
 	"gorm.io/gorm"
+	apiauth "sso-server/handler/api/auth"
 
 	"sso-server/common"
 	"sso-server/common/ecode"
@@ -91,6 +91,37 @@ func (h *UserHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusOK, ecode.OKResponse(data))
 }
 
+func (h *UserHandler) ResetPassword(c *gin.Context) {
+	var req struct {
+		Email    string `json:"email" binding:"required,email"`
+		Password string `json:"password" binding:"required"`
+		OTP      string `json:"otp" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
+		return
+	}
+	if len(strings.TrimSpace(req.Password)) < 8 {
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "密码长度至少8位", Data: nil})
+		return
+	}
+
+	err := h.user.ResetPasswordWithEmailOTP(c.Request.Context(), req.Email, req.Password, req.OTP)
+	if err != nil {
+		switch {
+		case errors.Is(err, common.ErrInvalidOTP):
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码错误", Data: nil})
+		case errors.Is(err, common.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+		default:
+			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "重置失败", Data: nil})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"reset": true}))
+}
+
 // GetProfile retrieves user profile
 func (h *UserHandler) GetProfile(c *gin.Context) {
 	// TODO: Get user ID from context (from auth middleware)
@@ -100,13 +131,17 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	user, err := h.user.GetProfile(c.Request.Context(), userID)
+	profile, err := h.user.GetProfileOverview(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+		if errors.Is(err, common.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "获取资料失败", Data: nil})
 		return
 	}
 
-	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"user": user}))
+	c.JSON(http.StatusOK, ecode.OKResponse(profile))
 }
 
 // UpdateProfile updates user profile

@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	serviceauth "sso-server/service/auth"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	serviceauth "sso-server/service/auth"
 
 	"sso-server/common"
 	"sso-server/conf"
@@ -68,7 +68,7 @@ func (s *UserService) RegisterWithEmailOTP(ctx context.Context, r *http.Request,
 
 	user := &model.User{
 		ID:           uuid.New().String(),
-		Email:        email,
+		Email:        stringPtr(email),
 		PasswordHash: &hashStr,
 		IsActive:     true,
 	}
@@ -98,6 +98,27 @@ func (s *UserService) CreateSession(ctx context.Context, userID string) (string,
 	return authService.CreateSession(ctx, userID)
 }
 
+func (s *UserService) ResetPasswordWithEmailOTP(ctx context.Context, email string, password string, otp string) error {
+	if ok, err := s.verifyOTP(ctx, email, otp); err != nil || !ok {
+		return common.ErrInvalidOTP
+	}
+
+	userRepo := db.NewUserRepository(s.db)
+	user, err := userRepo.FindByEmail(ctx, email)
+	if err != nil {
+		return common.ErrUserNotFound
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	if err != nil {
+		return err
+	}
+	hashStr := string(hash)
+	user.PasswordHash = &hashStr
+
+	return userRepo.Update(ctx, user)
+}
+
 func (s *UserService) verifyOTP(ctx context.Context, email string, otp string) (bool, error) {
 	val, err := s.kv.Get(ctx, kv.KeyOTP(email))
 	if err != nil {
@@ -120,6 +141,51 @@ func (s *UserService) GetProfile(ctx context.Context, userID string) (*dto.UserR
 	return dto.ToUserResponse(user), nil
 }
 
+func (s *UserService) GetProfileOverview(ctx context.Context, userID string) (*dto.ProfileResponse, error) {
+	userRepo := db.NewUserRepository(s.db)
+	user, err := userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	appRepo := db.NewUserOAuthClientRepository(s.db)
+	apps, err := appRepo.ListByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	thirdPartyRepo := db.NewUserThirdPartyRepository(s.db)
+	bindings, err := thirdPartyRepo.ListByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	boundProviders := make(map[string]bool, len(bindings))
+	for _, binding := range bindings {
+		boundProviders[binding.Provider] = true
+	}
+
+	appResponses := make([]dto.UserApplicationResponse, 0, len(apps))
+	for _, app := range apps {
+		appResponses = append(appResponses, dto.UserApplicationResponse{
+			ClientID:    app.ClientID,
+			Name:        app.Name,
+			LastLoginAt: app.LastLoginAt,
+		})
+	}
+
+	providerResponses := []dto.ThirdPartyProviderResponse{
+		{Provider: "github", Bound: boundProviders["github"]},
+		{Provider: "feishu", Bound: boundProviders["feishu"]},
+	}
+
+	return &dto.ProfileResponse{
+		User:                dto.ToUserResponse(user),
+		Applications:        appResponses,
+		ThirdPartyProviders: providerResponses,
+	}, nil
+}
+
 // UpdateProfile updates user profile
 func (s *UserService) UpdateProfile(ctx context.Context, userID string, username *string, avatarURL *string) (*dto.UserResponse, error) {
 	userRepo := db.NewUserRepository(s.db)
@@ -140,4 +206,11 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID string, username
 	}
 
 	return dto.ToUserResponse(user), nil
+}
+
+func stringPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

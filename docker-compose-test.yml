@@ -1,0 +1,73 @@
+name: sso-server-test
+
+x-app-build: &app-build
+  context: .
+  dockerfile: Dockerfile
+
+x-app-environment: &app-environment
+  ENV: local
+  SERVER_PORT: "8080"
+  DATABASE_HOST: postgres
+  DATABASE_PORT: "5432"
+  DATABASE_USER: postgres
+  DATABASE_PASSWORD: "123456"
+  DATABASE_NAME: sso-server
+  CACHE_URL: redis:6379
+  CACHE_PASSWORD: "123456"
+  SECURITY_ACCESS_TOKEN_EXPIRE: 12h
+  SECURITY_MAX_LOGIN_ATTEMPTS: "5"
+  SECURITY_LOCKOUT_DURATION: 30m
+  DEV_SKIP_SEND_EMAIL: "true"
+  DEV_FIXED_EMAIL_OTP: "123456"
+  OAUTH_GITHUB_CLIENT_ID: github-client-id
+  OAUTH_GITHUB_CLIENT_SECRET: github-client-secret
+  OAUTH_GITHUB_REDIRECT_URI: http://localhost:8080/api/auth/third/github/callback
+  OAUTH_FEISHU_CLIENT_ID: feishu-client-id
+  OAUTH_FEISHU_CLIENT_SECRET: feishu-client-secret
+  OAUTH_FEISHU_REDIRECT_URI: http://localhost:8080/api/auth/third/feishu/callback
+
+services:
+  postgres:
+    image: postgres:11.2-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "123456"
+      POSTGRES_DB: sso-server
+    ports:
+      - "54324:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sso-server"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    mem_limit: 512m
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "123456", "--appendonly", "yes", "--dir", "/data"]
+    ports:
+      - "63784:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "123456", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    mem_limit: 128m
+
+  server:
+    image: lite-sso-server:local
+    build: *app-build
+    environment: *app-environment
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped

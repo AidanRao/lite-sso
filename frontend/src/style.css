@@ -1,0 +1,136 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', system-ui, sans-serif;
+  --primary-color: #0891b2;
+  --primary-hover: #0e7490;
+  --bg-gradient-start: #0891b2;
+  --bg-gradient-mid: #0e7490;
+  --bg-gradient-end: #164e63;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+.el-input__wrapper {
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-width: 2px;
+  border-color: #cbd5e1;
+  background-color: #ffffff;
+  transition: all 0.25s ease;
+}
+
+.el-input__wrapper:hover {
+  border-color: #38bdf8;
+  box-shadow: 0 2px 12px rgba(56, 189, 248, 0.15);
+}
+
+.el-input__wrapper.is-focus {
+  border-color: #0891b2;
+  box-shadow: 0 0 0 4px rgba(8, 145, 178, 0.15), 0 4px 16px rgba(8, 145, 178, 0.2);
+}
+
+.el-input__inner {
+  padding: 14px 16px;
+  font-size: 15px;
+  color: #1e293b;
+  font-weight: 500;
+}
+
+.el-input__placeholder {
+  color: #94a3b8;
+}
+
+.el-input__prefix {
+  color: #64748b;
+}
+
+.el-input__prefix svg {
+  width: 18px;
+  height: 18px;
+}
+
+.password-input {
+  width: 100%;
+}
+
+.password-input .el-input__wrapper {
+  width: 100%;
+  padding-right: 8px;
+}
+
+.password-input .el-input__suffix {
+  margin-left: 8px;
+}
+
+.password-input button:focus-visible {
+  outline: 2px solid rgba(8, 145, 178, 0.35);
+  outline-offset: 2px;
+}
+
+.el-button--primary {
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+  border: none;
+  border-radius: 10px;
+  font-weight: 600;
+  transition: all 0.25s ease;
+  box-shadow: 0 4px 12px rgba(8, 145, 178, 0.3);
+}
+
+.el-button--primary:hover {
+  background: linear-gradient(135deg, #0e7490 0%, #155e75 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(8, 145, 178, 0.4);
+}
+
+.el-button--primary:active {
+  transform: translateY(0);
+}
+
+.el-button--default {
+  border-radius: 10px;
+  border-width: 2px;
+  border-color: #e2e8f0;
+  color: #475569;
+  font-weight: 500;
+  transition: all 0.25s ease;
+  background-color: #ffffff;
+}
+
+.el-button--default:hover {
+  background-color: #f0fdfa;
+  border-color: #0891b2;
+  color: #0891b2;
+  box-shadow: 0 2px 8px rgba(8, 145, 178, 0.15);
+}
+
+.el-button--default:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.el-button {
+  padding: 14px 24px;
+}
+
+.bg-radial-gradient-circle {
+  background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 60%);
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  animation: float 20s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(2%, 2%) rotate(5deg); }
+}

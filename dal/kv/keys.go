@@ -23,3 +23,7 @@ func KeyQR(uuid string) string {
 func KeySession(sessionID string) string {
 	return fmt.Sprintf("%s:session:%s", keyPrefix, sessionID)
 }
+
+func KeyOAuthState(state string) string {
+	return fmt.Sprintf("%s:oauth:state:%s", keyPrefix, state)
+}

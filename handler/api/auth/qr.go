@@ -8,14 +8,20 @@ import (
 
 	"sso-server/common"
 	"sso-server/common/ecode"
+	"sso-server/conf"
 	"sso-server/service/auth"
 )
 
 // GenerateQRCode generates a QR code for login
 func (h *AuthHandler) GenerateQRCode(c *gin.Context) {
-	code, err := h.auth.GenerateQRCode(c.Request.Context())
+	code, err := h.auth.GenerateQRCode(c.Request.Context(), c.Query("redirect"))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "生成二维码失败", Data: nil})
+		switch {
+		case errors.Is(err, common.ErrInvalidRedirect):
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "跳转地址无效", Data: nil})
+		default:
+			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "生成二维码失败", Data: nil})
+		}
 		return
 	}
 
@@ -47,9 +53,8 @@ func (h *AuthHandler) PollQRCode(c *gin.Context) {
 		"status": qrData.Status,
 	}
 
-	// If confirmed and has token, return token
 	if qrData.Status == auth.QRCodeStatusConfirmed {
-		// TODO: Get token from the confirm step
+		data["login_ticket"] = qrData.LoginTicket
 	}
 
 	c.JSON(http.StatusOK, ecode.OKResponse(data))
@@ -95,7 +100,7 @@ func (h *AuthHandler) ConfirmQRCode(c *gin.Context) {
 		return
 	}
 
-	tokenData, err := h.auth.ConfirmQRCode(c.Request.Context(), c.Request, req.Code, req.UserID)
+	err := h.auth.ConfirmQRCode(c.Request.Context(), req.Code, req.UserID)
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrQRCodeExpired):
@@ -110,21 +115,36 @@ func (h *AuthHandler) ConfirmQRCode(c *gin.Context) {
 		return
 	}
 
-	data := gin.H{
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{
 		"confirmed": true,
+	}))
+}
+
+func (h *AuthHandler) CompleteQRCode(c *gin.Context) {
+	var req struct {
+		Code        string `json:"code" binding:"required"`
+		LoginTicket string `json:"login_ticket" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
+		return
 	}
 
-	if tokenData != nil {
-		if v, ok := tokenData["access_token"]; ok {
-			data["access_token"] = v
+	result, sessionID, err := h.auth.CompleteQRCodeLogin(c.Request.Context(), req.Code, req.LoginTicket)
+	if err != nil {
+		switch {
+		case errors.Is(err, common.ErrQRCodeExpired):
+			c.JSON(http.StatusGone, ecode.Response[any]{Code: ecode.InternalServer, Message: "二维码已过期", Data: nil})
+		case errors.Is(err, common.ErrQRCodeInvalidStatus), errors.Is(err, common.ErrQRCodeInvalidTicket):
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "二维码状态无效", Data: nil})
+		case errors.Is(err, common.ErrUserInactive):
+			c.JSON(http.StatusForbidden, ecode.Response[any]{Code: ecode.Forbidden, Message: "用户已禁用", Data: nil})
+		default:
+			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "登录失败", Data: nil})
 		}
-		if v, ok := tokenData["token_type"]; ok {
-			data["token_type"] = v
-		}
-		if v, ok := tokenData["expires_in"]; ok {
-			data["expires_in"] = v
-		}
+		return
 	}
 
-	c.JSON(http.StatusOK, ecode.OKResponse(data))
+	WriteSessionCookie(c, sessionID, conf.GetEnv() == conf.EnvProd)
+	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }

@@ -84,7 +84,7 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 		return
 	}
 
-	otp, err := h.auth.SendEmailOTP(c.Request.Context(), req.Email, req.CaptchaID, req.Captcha)
+	_, err := h.auth.SendEmailOTP(c.Request.Context(), req.Email, req.CaptchaID, req.Captcha)
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrInvalidCaptcha):
@@ -100,8 +100,5 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 	}
 
 	data := gin.H{"sent": true}
-	if h.cfg != nil && h.cfg.Dev.EchoOTP && otp != "" {
-		data["otp"] = otp
-	}
 	c.JSON(http.StatusOK, ecode.OKResponse(data))
 }

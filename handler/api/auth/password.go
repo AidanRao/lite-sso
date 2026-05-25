@@ -16,13 +16,14 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 	var req struct {
 		Email    string `json:"email" binding:"required,email"`
 		Password string `json:"password" binding:"required"`
+		Redirect string `json:"redirect"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
 		return
 	}
 
-	user, tokenData, err := h.auth.LoginWithPassword(c.Request.Context(), c.Request, req.Email, req.Password)
+	user, err := h.auth.LoginWithPassword(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrInvalidCredentials):
@@ -35,33 +36,17 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 		return
 	}
 
-	sessionID, err := h.auth.CreateSession(c.Request.Context(), user.ID)
+	result, sessionID, err := h.auth.CompleteLogin(c.Request.Context(), user.ID, req.Redirect)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "登录失败", Data: nil})
+		switch {
+		case errors.Is(err, common.ErrInvalidRedirect):
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "跳转地址无效", Data: nil})
+		default:
+			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "登录失败", Data: nil})
+		}
 		return
 	}
 	WriteSessionCookie(c, sessionID, conf.GetEnv() == conf.EnvProd)
 
-	data := gin.H{
-		"user": gin.H{
-			"id":         user.ID,
-			"email":      user.Email,
-			"username":   user.Username,
-			"avatar_url": user.AvatarURL,
-		},
-	}
-
-	if tokenData != nil {
-		if v, ok := tokenData["access_token"]; ok {
-			data["access_token"] = v
-		}
-		if v, ok := tokenData["token_type"]; ok {
-			data["token_type"] = v
-		}
-		if v, ok := tokenData["expires_in"]; ok {
-			data["expires_in"] = v
-		}
-	}
-
-	c.JSON(http.StatusOK, ecode.OKResponse(data))
+	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }

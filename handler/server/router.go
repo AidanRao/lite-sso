@@ -18,8 +18,12 @@ import (
 func (s *Server) registerRoutes() {
 	// Static files
 	s.engine.Static("/assets", "./web/assets")
-	s.engine.StaticFile("/", "./web/index.html")
 	s.engine.StaticFile("/register.html", "./web/register.html")
+
+	// SPA root - catch all routes
+	s.engine.NoRoute(func(c *gin.Context) {
+		c.File("./web/index.html")
+	})
 
 	healthHandler := health.NewHealthHandler()
 
@@ -87,6 +91,7 @@ func (s *Server) registerRoutes() {
 			authGroup.GET("/qr/poll", authHandler.PollQRCode)
 			authGroup.POST("/qr/scan", authHandler.ScanQRCode)
 			authGroup.POST("/qr/confirm", authHandler.ConfirmQRCode)
+			authGroup.POST("/qr/complete", authHandler.CompleteQRCode)
 
 			authGroup.GET("/third/:provider", oauthHandler.ThirdPartyLogin)
 			authGroup.GET("/third/:provider/callback", oauthHandler.ThirdPartyCallback)
@@ -94,7 +99,6 @@ func (s *Server) registerRoutes() {
 			authProtected := authGroup.Group("")
 			authProtected.Use(authRequired)
 			authProtected.POST("/logout", authHandler.Logout)
-			authProtected.POST("/third/bind", oauthHandler.BindThirdPartyAccount)
 
 			authGroup.POST("/register", func(c *gin.Context) {
 				c.Set("deprecated", "use /api/user/register instead")
@@ -102,14 +106,21 @@ func (s *Server) registerRoutes() {
 			})
 		}
 
+		oauthAPIGroup := apiGroup.Group("/oauth")
+		{
+			oauthAPIGroup.GET("/client", oauthHandler.ClientInfo)
+		}
+
 		userGroup := apiGroup.Group("/user")
 		{
 			userGroup.POST("/register", userHandler.Register)
+			userGroup.POST("/password/reset", userHandler.ResetPassword)
 
 			userProtected := userGroup.Group("")
 			userProtected.Use(authRequired)
 			userProtected.GET("/profile", userHandler.GetProfile)
 			userProtected.PUT("/profile", userHandler.UpdateProfile)
+			userProtected.GET("/third/:provider/bind", oauthHandler.ThirdPartyBind)
 		}
 	}
 
