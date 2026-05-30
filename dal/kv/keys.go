@@ -16,6 +16,14 @@ func KeyRateLimitEmail(email string) string {
 	return fmt.Sprintf("%s:ratelimit:email:%s", keyPrefix, email)
 }
 
+func KeyPasswordLoginFailures(email string) string {
+	return fmt.Sprintf("%s:password:failures:%s", keyPrefix, email)
+}
+
+func KeyPasswordLoginLock(email string) string {
+	return fmt.Sprintf("%s:password:lock:%s", keyPrefix, email)
+}
+
 func KeyQR(uuid string) string {
 	return fmt.Sprintf("%s:qr:%s", keyPrefix, uuid)
 }

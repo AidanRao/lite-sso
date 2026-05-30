@@ -62,7 +62,67 @@ const route = useRoute()
 const renderedContent = ref('')
 const outline = ref([])
 const activeHeadingID = ref('')
-let headingObserver = null
+let scrollFrame = 0
+
+const slugifyHeading = (title) => title
+  .toLowerCase()
+  .replace(/`([^`]+)`/g, '$1')
+  .replace(/[^\p{Script=Han}a-z0-9]+/gu, '-')
+  .replace(/^-+|-+$/g, '')
+
+const createHeadingID = (title, sequence, usedHeadingIDs) => {
+  const numberedHeading = title.match(/^(\d+(?:\.\d+)*)[.、]?\s*(.*)$/)
+  const numberPath = numberedHeading?.[1]?.replace(/\./g, '-')
+  const titleSlug = slugifyHeading(numberedHeading?.[2] || title)
+  const baseID = numberPath
+    ? ['chapter', numberPath, titleSlug].filter(Boolean).join('-')
+    : ['topic', titleSlug || sequence].join('-')
+
+  let headingID = baseID
+  let duplicateIndex = 2
+  while (usedHeadingIDs.has(headingID)) {
+    headingID = `${baseID}-${duplicateIndex}`
+    duplicateIndex += 1
+  }
+  usedHeadingIDs.add(headingID)
+
+  return headingID
+}
+
+const getHeadingIDFromHash = (hash) => {
+  const rawHeadingID = hash.replace(/^#/, '')
+  if (!rawHeadingID) {
+    return ''
+  }
+
+  let headingID = rawHeadingID
+  try {
+    headingID = decodeURIComponent(rawHeadingID)
+  } catch {
+    headingID = rawHeadingID
+  }
+  return outline.value.some((heading) => heading.id === headingID) ? headingID : ''
+}
+
+const syncActiveHeadingFromHash = (shouldScroll) => {
+  const headingID = getHeadingIDFromHash(window.location.hash)
+  if (!headingID) {
+    return false
+  }
+
+  activeHeadingID.value = headingID
+  if (shouldScroll) {
+    document.getElementById(headingID)?.scrollIntoView({
+      behavior: 'auto',
+      block: 'start'
+    })
+  }
+
+  if (window.location.hash !== `#${headingID}`) {
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${headingID}`)
+  }
+  return true
+}
 
 const createMarkdown = (highlight) => {
   const markdown = new MarkdownIt({
@@ -82,10 +142,11 @@ const createMarkdown = (highlight) => {
   markdown.renderer.rules.heading_open = (tokens, index, options, env, renderer) => {
     const level = Number(tokens[index].tag.slice(1))
     if (level === 2 || level === 3) {
+      const title = tokens[index + 1].content
       const heading = {
-        id: `section-${env.outline.length + 1}`,
+        id: createHeadingID(title, env.outline.length + 1, env.usedHeadingIDs),
         level,
-        title: tokens[index + 1].content
+        title
       }
       tokens[index].attrSet('id', heading.id)
       env.outline.push(heading)
@@ -122,40 +183,61 @@ const activeDocument = computed(() => {
   return findDocument(String(route.params.slug))
 })
 
-const observeHeadings = () => {
-  headingObserver?.disconnect()
+const updateActiveHeadingByScroll = () => {
   if (!outline.value.length) {
     return
   }
 
-  headingObserver = new IntersectionObserver((entries) => {
-    for (const entry of entries) {
-      if (entry.isIntersecting) {
-        activeHeadingID.value = entry.target.id
-        break
-      }
-    }
-  }, {
-    rootMargin: '-88px 0px -72% 0px'
-  })
-
+  const anchorTop = 120
+  let currentHeadingID = outline.value[0]?.id || ''
   for (const heading of outline.value) {
     const element = document.getElementById(heading.id)
-    if (element) {
-      headingObserver.observe(element)
+    if (!element) {
+      continue
+    }
+    if (element.getBoundingClientRect().top <= anchorTop) {
+      currentHeadingID = heading.id
+    } else {
+      break
     }
   }
+  activeHeadingID.value = currentHeadingID
+}
+
+const queueActiveHeadingUpdate = () => {
+  if (scrollFrame) {
+    return
+  }
+  scrollFrame = window.requestAnimationFrame(() => {
+    scrollFrame = 0
+    updateActiveHeadingByScroll()
+  })
+}
+
+const observeHeadings = () => {
+  window.removeEventListener('scroll', queueActiveHeadingUpdate)
+  if (!outline.value.length) {
+    return
+  }
+
+  window.addEventListener('scroll', queueActiveHeadingUpdate, { passive: true })
+  updateActiveHeadingByScroll()
 }
 
 const renderDocument = async (markdown, content) => {
-  const env = { outline: [] }
+  const env = {
+    outline: [],
+    usedHeadingIDs: new Set()
+  }
   renderedContent.value = markdown.render(content, env)
   outline.value = env.outline
-  if (!outline.value.some((heading) => heading.id === activeHeadingID.value)) {
+  const hasSyncedHash = syncActiveHeadingFromHash(false)
+  if (!hasSyncedHash && !outline.value.some((heading) => heading.id === activeHeadingID.value)) {
     activeHeadingID.value = outline.value[0]?.id || ''
   }
   await nextTick()
   observeHeadings()
+  syncActiveHeadingFromHash(true)
 }
 
 const scrollToHeading = (headingID) => {
@@ -164,14 +246,19 @@ const scrollToHeading = (headingID) => {
     behavior: 'smooth',
     block: 'start'
   })
-  window.history.replaceState(null, '', `#${headingID}`)
+  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${headingID}`)
 }
+
+watch(() => route.hash, async () => {
+  await nextTick()
+  syncActiveHeadingFromHash(true)
+})
 
 watch(activeDocument, async (document) => {
   if (!document) {
     renderedContent.value = ''
     outline.value = []
-    headingObserver?.disconnect()
+    window.removeEventListener('scroll', queueActiveHeadingUpdate)
     return
   }
 
@@ -197,7 +284,10 @@ watch(activeDocument, async (document) => {
 }, { immediate: true })
 
 onBeforeUnmount(() => {
-  headingObserver?.disconnect()
+  window.removeEventListener('scroll', queueActiveHeadingUpdate)
+  if (scrollFrame) {
+    window.cancelAnimationFrame(scrollFrame)
+  }
 })
 </script>
 

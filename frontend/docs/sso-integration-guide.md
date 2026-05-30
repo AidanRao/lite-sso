@@ -1,6 +1,6 @@
-# Lite SSO 其他系统接入指南
+# 身份认证系统接入指南
 
-其他系统通过 OAuth 2.0 授权码模式接入 Lite SSO。接入方后端负责使用授权码换取令牌、获取用户信息，并创建本系统登录会话。
+其他系统通过 OAuth 2.0 授权码模式接入。接入方后端负责使用授权码换取令牌、获取用户信息，并创建本系统登录会话。
 
 ## 1. 接入信息
 
@@ -28,7 +28,7 @@ VALUES (
 
 ## 2. 接口地址
 
-假设 SSO 服务地址为 `https://sso.example.com`。
+假设 SSO 服务地址为 `https://sso.aidanrao.top`。
 
 | 用途 | 方法 | 地址 |
 | --- | --- | --- |
@@ -43,7 +43,7 @@ VALUES (
 接入系统生成随机 `state` 并保存在本地会话中，然后将用户浏览器跳转至：
 
 ```text
-https://sso.example.com/oauth/authorize
+https://sso.aidanrao.top/oauth/authorize
   ?response_type=code
   &client_id=order-app
   &redirect_uri=https%3A%2F%2Forder.example.com%2Fauth%2Fsso%2Fcallback
@@ -70,7 +70,7 @@ https://order.example.com/auth/sso/callback?code=<code>&state=<random-state>
 
 ```http
 POST /oauth/token HTTP/1.1
-Host: sso.example.com
+Host: sso.aidanrao.top
 Authorization: Basic base64(order-app:replace-with-secret)
 Content-Type: application/x-www-form-urlencoded
 
@@ -93,7 +93,7 @@ redirect_uri=https%3A%2F%2Forder.example.com%2Fauth%2Fsso%2Fcallback
 
 ```http
 GET /oauth/userinfo HTTP/1.1
-Host: sso.example.com
+Host: sso.aidanrao.top
 Authorization: Bearer <access-token>
 ```
 

@@ -2,6 +2,7 @@ package kv
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -68,6 +69,48 @@ func (s *MemoryStore) SetNX(ctx context.Context, key string, value string, ttl t
 	}
 	s.items[key] = it
 	return true, nil
+}
+
+func (s *MemoryStore) Increment(ctx context.Context, key string, ttl time.Duration) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var current int64
+	if it, ok := s.items[key]; ok {
+		if it.hasExpiry && time.Now().After(it.expiresAt) {
+			delete(s.items, key)
+		} else if parsed, err := strconv.ParseInt(it.value, 10, 64); err == nil {
+			current = parsed
+		}
+	}
+
+	current += 1
+	it := memoryItem{value: strconv.FormatInt(current, 10)}
+	if ttl > 0 {
+		it.hasExpiry = true
+		it.expiresAt = time.Now().Add(ttl)
+	}
+	s.items[key] = it
+	return current, nil
+}
+
+func (s *MemoryStore) TTL(ctx context.Context, key string) (time.Duration, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	it, ok := s.items[key]
+	if !ok {
+		return 0, ErrNotFound
+	}
+	if !it.hasExpiry {
+		return 0, nil
+	}
+	remaining := time.Until(it.expiresAt)
+	if remaining <= 0 {
+		delete(s.items, key)
+		return 0, ErrNotFound
+	}
+	return remaining, nil
 }
 
 func (s *MemoryStore) Del(ctx context.Context, key string) error {

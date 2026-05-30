@@ -9,7 +9,11 @@ api.interceptors.response.use(
   response => response.data,
   error => {
     const message = error.response?.data?.message || error.message || '请求失败'
-    return Promise.reject(new Error(message))
+    const apiError = new Error(message)
+    apiError.status = error.response?.status
+    apiError.code = error.response?.data?.code
+    apiError.data = error.response?.data?.data
+    return Promise.reject(apiError)
   }
 )
 

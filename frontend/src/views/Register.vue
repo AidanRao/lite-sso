@@ -15,7 +15,8 @@
         </div>
         <h1 class="text-5xl font-bold mb-4 tracking-tight">Lite SSO</h1>
         <p class="text-lg opacity-90 max-w-md leading-relaxed">
-          安全、便捷的统一身份认证平台，一站式管理您的所有应用登录
+          正在前往
+          <span class="font-semibold">{{ targetPlatformName }}</span>
         </p>
         <div class="mt-12 flex justify-center">
           <img 
@@ -132,7 +133,7 @@
           </el-form>
 
           <p class="text-center text-gray-500 text-sm mt-8">
-            已有账号？<router-link to="/login" class="text-[#0891b2] hover:text-[#0e7490] font-medium transition-colors">立即登录</router-link>
+            已有账号？<router-link :to="loginRoute" class="text-[#0891b2] hover:text-[#0e7490] font-medium transition-colors">立即登录</router-link>
           </p>
         </div>
       </div>
@@ -148,11 +149,16 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { Mail, Lock, Eye, EyeOff, MessageSquare } from 'lucide-vue-next'
 import { authAPI } from '../api/auth'
 import SendCodeModal from '../components/SendCodeModal.vue'
+import { getLoginRedirect, loadTargetClientName } from '../utils/oauthTarget'
 
+const route = useRoute()
+const redirectUrl = ref(getLoginRedirect(route))
+const targetClientName = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
@@ -167,6 +173,24 @@ const form = ref({
   confirmPassword: '',
   code: ''
 })
+
+const targetPlatformName = computed(() => targetClientName.value || 'Lite SSO')
+const loginRoute = computed(() => {
+  if (!redirectUrl.value || redirectUrl.value === '/profile') {
+    return '/login'
+  }
+
+  return {
+    path: '/login',
+    query: {
+      redirect: redirectUrl.value
+    }
+  }
+})
+
+const loadTargetClient = async () => {
+  targetClientName.value = await loadTargetClientName(redirectUrl.value)
+}
 
 const openSendCodeModal = () => {
   if (!form.value.email) {
@@ -212,7 +236,7 @@ const handleRegister = async () => {
 
     successMessage.value = '注册成功，正在登录...'
     setTimeout(() => {
-      window.location.href = '/profile'
+      window.location.href = redirectUrl.value || '/profile'
     }, 1000)
   } catch (error) {
     errorMessage.value = error.message
@@ -221,4 +245,8 @@ const handleRegister = async () => {
     loading.value = false
   }
 }
+
+onMounted(() => {
+  loadTargetClient()
+})
 </script>

@@ -1,91 +1,53 @@
 <template>
   <main class="profile-page">
-    <section class="profile-hero">
-      <div class="identity">
+    <section class="account-hero">
+      <div class="account-summary">
         <div class="avatar">
           <img v-if="user?.avatar_url" :src="user.avatar_url" :alt="displayName" />
           <span v-else>{{ avatarInitial }}</span>
         </div>
-        <div class="identity-text">
-          <p class="eyebrow">账户中心</p>
+        <div class="account-copy">
           <h1>{{ displayName }}</h1>
-          <div class="identity-meta">
-            <span>
-              <Mail :size="16" />
-              {{ displayEmail }}
-            </span>
-            <span>
-              <ShieldCheck :size="16" />
-              已登录
-            </span>
-          </div>
+          <p>{{ displayEmail }}</p>
         </div>
       </div>
-      <div class="hero-actions">
-        <button class="icon-button" type="button" title="刷新" @click="loadProfile">
-          <RefreshCw :size="18" />
-        </button>
-        <button class="secondary-button" type="button" @click="logout">
-          <LogOut :size="18" />
-          退出登录
-        </button>
-      </div>
+
+      <button class="logout-button" type="button" @click="logout">退出登录</button>
     </section>
 
-    <section class="content-grid">
-      <article class="panel user-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Profile</p>
-            <h2>用户信息</h2>
-          </div>
-          <UserRound :size="22" />
-        </div>
+    <section class="profile-grid">
+      <article class="panel account-panel">
+        <header class="panel-header">
+          <h2>账号</h2>
+        </header>
 
-        <div class="info-list">
-          <div class="info-row">
+        <div class="field-list">
+          <div class="field-row">
             <span>用户 ID</span>
             <strong class="mono">{{ user?.id || '-' }}</strong>
           </div>
-          <div class="info-row">
+          <div class="field-row">
             <span>用户名</span>
             <strong>{{ user?.username || '未设置' }}</strong>
           </div>
-          <div class="info-row">
+          <div class="field-row">
             <span>邮箱</span>
             <strong>{{ user?.email || '未设置' }}</strong>
-          </div>
-          <div class="info-row">
-            <span>头像</span>
-            <strong class="truncate-value">{{ user?.avatar_url || '未设置' }}</strong>
           </div>
         </div>
       </article>
 
       <article class="panel provider-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Connections</p>
-            <h2>第三方登录方式</h2>
-          </div>
-          <Link2 :size="22" />
-        </div>
+        <header class="panel-header">
+          <h2>登录方式</h2>
+        </header>
 
         <div class="provider-list">
           <div v-for="provider in providerCards" :key="provider.id" class="provider-row">
-            <div class="provider-mark" :class="provider.id">
-              <Github v-if="provider.id === 'github'" :size="22" />
-              <span v-else>飞</span>
-            </div>
-            <div class="provider-copy">
+            <div>
               <strong>{{ provider.name }}</strong>
-              <span>{{ provider.bound ? '已绑定到当前账号' : '未绑定' }}</span>
+              <span>{{ provider.bound ? '已绑定' : '未绑定' }}</span>
             </div>
-            <span class="status-pill" :class="{ bound: provider.bound }">
-              <CheckCircle2 v-if="provider.bound" :size="15" />
-              <CircleAlert v-else :size="15" />
-              {{ provider.bound ? '已绑定' : '未绑定' }}
-            </span>
             <button
               v-if="!provider.bound"
               class="bind-button"
@@ -99,33 +61,26 @@
       </article>
 
       <article class="panel apps-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Applications</p>
-            <h2>当前账号下登录的应用</h2>
-          </div>
-          <BriefcaseBusiness :size="22" />
-        </div>
+        <header class="panel-header">
+          <h2>登录应用</h2>
+          <span>{{ applications.length }} 个</span>
+        </header>
 
-        <div v-if="applications.length" class="app-list">
+        <div v-if="applications.length" class="app-table">
+          <div class="app-row app-head">
+            <span>应用</span>
+            <span>Client ID</span>
+            <span>最近登录</span>
+          </div>
           <div v-for="app in applications" :key="app.client_id" class="app-row">
-            <div class="app-icon">
-              <MonitorSmartphone :size="22" />
-            </div>
-            <div class="app-copy">
-              <strong>{{ app.name || app.client_id }}</strong>
-              <span>Client ID: {{ app.client_id }}</span>
-            </div>
+            <strong>{{ app.name || app.client_id }}</strong>
+            <span class="mono">{{ app.client_id }}</span>
             <time>{{ formatDate(app.last_login_at) }}</time>
           </div>
         </div>
 
         <div v-else class="empty-state">
-          <MonitorSmartphone :size="26" />
-          <div>
-            <strong>暂无应用登录记录</strong>
-            <span>通过 OAuth 授权进入业务应用后，这里会显示最近登录的应用。</span>
-          </div>
+          暂无登录应用
         </div>
       </article>
     </section>
@@ -136,19 +91,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import {
-  BriefcaseBusiness,
-  CheckCircle2,
-  CircleAlert,
-  Github,
-  Link2,
-  LogOut,
-  Mail,
-  MonitorSmartphone,
-  RefreshCw,
-  ShieldCheck,
-  UserRound
-} from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
@@ -212,7 +154,7 @@ const bindProvider = (provider) => {
 
 const formatDate = (value) => {
   if (!value) {
-    return '未知时间'
+    return '-'
   }
   return new Intl.DateTimeFormat('zh-CN', {
     month: '2-digit',
@@ -237,47 +179,48 @@ onMounted(() => {
 <style scoped>
 .profile-page {
   min-height: 100vh;
-  padding: 40px 24px;
+  padding: 32px 24px;
   background:
-    linear-gradient(180deg, rgba(241, 245, 249, 0.92), rgba(236, 253, 245, 0.78)),
-    #f8fafc;
+    radial-gradient(circle at 20% 0%, rgba(8, 145, 178, 0.1), transparent 28%),
+    linear-gradient(180deg, #f8fafc 0%, #eff6f5 100%);
   color: #172033;
 }
 
-.profile-hero,
-.content-grid {
-  width: min(1120px, 100%);
+.account-hero,
+.profile-grid {
+  width: min(1080px, 100%);
   margin: 0 auto;
 }
 
-.profile-hero {
+.account-hero {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 8px 0 30px;
+  gap: 20px;
+  margin-bottom: 22px;
+  padding: 18px 0;
 }
 
-.identity {
+.account-summary {
   display: flex;
   align-items: center;
   min-width: 0;
-  gap: 20px;
+  gap: 16px;
 }
 
 .avatar {
-  width: 88px;
-  height: 88px;
-  flex: 0 0 88px;
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
   overflow: hidden;
-  border-radius: 24px;
-  background: linear-gradient(135deg, #0f766e, #2563eb);
-  box-shadow: 0 18px 40px rgba(15, 118, 110, 0.18);
+  border-radius: 20px;
+  background: linear-gradient(135deg, #0891b2 0%, #0f766e 100%);
+  box-shadow: 0 18px 36px rgba(8, 145, 178, 0.18);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  font-size: 34px;
+  color: #ffffff;
+  font-size: 30px;
   font-weight: 800;
 }
 
@@ -287,50 +230,24 @@ onMounted(() => {
   object-fit: cover;
 }
 
-.identity-text {
+.account-copy {
   min-width: 0;
 }
 
-.eyebrow,
-.section-kicker {
+.account-copy h1 {
   margin: 0;
-  color: #0f766e;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 30px;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.identity-text h1 {
-  margin: 7px 0 10px;
-  color: #111827;
-  font-size: 34px;
-  line-height: 1.1;
-}
-
-.identity-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.identity-meta span {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 30px;
-  padding: 0 11px;
-  border: 1px solid #dbe5ed;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
-  color: #475569;
-  font-size: 13px;
-}
-
-.hero-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.account-copy p {
+  margin: 7px 0 0;
+  color: #64748b;
+  font-size: 15px;
 }
 
 button {
@@ -339,110 +256,105 @@ button {
   font: inherit;
 }
 
-.icon-button,
-.secondary-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #d9e4ec;
-  background: #fff;
-  color: #334155;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
-  transition: transform 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-}
-
-.icon-button {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-}
-
-.secondary-button {
-  height: 44px;
-  gap: 8px;
-  padding: 0 16px;
-  border-radius: 12px;
+.logout-button,
+.bind-button {
+  border-radius: 8px;
   font-weight: 700;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease, transform 0.2s ease;
 }
 
-.icon-button:hover,
-.secondary-button:hover {
+.logout-button {
+  height: 42px;
+  padding: 0 16px;
+  border: 1px solid #cbd5e1;
+  background: rgba(255, 255, 255, 0.86);
+  color: #334155;
+}
+
+.logout-button:hover {
+  border-color: #0891b2;
+  color: #0e7490;
   transform: translateY(-1px);
-  border-color: #0f766e;
-  color: #0f766e;
 }
 
-.content-grid {
+.profile-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 0.95fr) minmax(300px, 0.75fr);
+  gap: 16px;
 }
 
 .panel {
   min-width: 0;
-  border: 1px solid rgba(203, 213, 225, 0.78);
+  border: 1px solid rgba(203, 213, 225, 0.86);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.06);
-  padding: 24px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.06);
+  padding: 22px;
 }
 
 .apps-panel {
   grid-column: 1 / -1;
 }
 
-.panel-heading {
+.panel-header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 20px;
-  color: #0f766e;
-}
-
-.panel-heading h2 {
-  margin: 5px 0 0;
-  color: #111827;
-  font-size: 20px;
-}
-
-.info-list,
-.provider-list,
-.app-list {
-  display: grid;
-  gap: 12px;
-}
-
-.info-row,
-.provider-row,
-.app-row {
-  display: grid;
   align-items: center;
-  min-width: 0;
-  border-top: 1px solid #edf2f7;
-  padding-top: 12px;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
-.info-row {
-  grid-template-columns: 116px minmax(0, 1fr);
-  gap: 18px;
+.panel-header h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 18px;
+  line-height: 1.2;
 }
 
-.info-row span,
-.provider-copy span,
-.app-copy span,
-.empty-state span {
+.panel-header span,
+.field-row span,
+.provider-row span,
+.app-head span,
+.app-row time,
+.app-row > span {
   color: #64748b;
   font-size: 14px;
 }
 
-.info-row strong,
-.provider-copy strong,
-.app-copy strong,
-.empty-state strong {
+.field-list,
+.provider-list {
+  display: grid;
+  gap: 0;
+}
+
+.field-row,
+.provider-row {
+  display: grid;
+  align-items: center;
   min-width: 0;
+  border-top: 1px solid #edf2f7;
+  padding: 13px 0;
+}
+
+.field-row:first-child,
+.provider-row:first-child {
+  border-top: 0;
+}
+
+.field-row {
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 16px;
+}
+
+.field-row strong,
+.provider-row strong,
+.app-row strong {
+  min-width: 0;
+  overflow: hidden;
   color: #111827;
   font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mono {
@@ -450,179 +362,124 @@ button {
   font-size: 13px;
 }
 
-.truncate-value {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .provider-row {
-  grid-template-columns: 44px minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
 }
 
-.provider-mark,
-.app-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.provider-mark.github {
-  background: #111827;
-  color: #fff;
-}
-
-.provider-mark.feishu {
-  background: #e0f2fe;
-  color: #0369a1;
-  font-weight: 800;
-}
-
-.provider-copy,
-.app-copy {
+.provider-row div {
   display: grid;
-  gap: 3px;
   min-width: 0;
-}
-
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  min-width: 74px;
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: #f8fafc;
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.status-pill.bound {
-  background: #ecfdf5;
-  color: #047857;
+  gap: 4px;
 }
 
 .bind-button {
   height: 34px;
   min-width: 62px;
-  justify-self: start;
   padding: 0 14px;
-  border-radius: 8px;
-  background: #0f766e;
-  color: #fff;
+  background: #0891b2;
+  color: #ffffff;
   font-size: 14px;
-  font-weight: 750;
-  transition: transform 0.2s ease, background 0.2s ease;
 }
 
 .bind-button:hover {
+  background: #0e7490;
   transform: translateY(-1px);
-  background: #115e59;
+}
+
+.app-table {
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
 }
 
 .app-row {
-  grid-template-columns: 48px minmax(0, 1fr) 120px;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(170px, 0.85fr) 120px;
+  gap: 16px;
+  align-items: center;
+  min-width: 0;
+  padding: 14px 16px;
+  border-top: 1px solid #e2e8f0;
 }
 
-.app-icon {
-  background: #fff7ed;
-  color: #c2410c;
+.app-row:first-child {
+  border-top: 0;
+}
+
+.app-head {
+  background: #f8fafc;
+  font-weight: 700;
 }
 
 .app-row time {
   justify-self: end;
   color: #475569;
-  font-size: 14px;
   font-weight: 700;
 }
 
 .empty-state {
   display: flex;
   align-items: center;
-  gap: 14px;
-  border-top: 1px solid #edf2f7;
-  padding-top: 18px;
-  color: #0f766e;
-}
-
-.empty-state div {
-  display: grid;
-  gap: 4px;
+  min-height: 96px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  padding: 0 18px;
+  color: #64748b;
+  font-weight: 700;
 }
 
 @media (max-width: 820px) {
   .profile-page {
-    padding: 28px 16px;
+    padding: 24px 16px;
   }
 
-  .profile-hero {
+  .account-hero {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .content-grid {
+  .profile-grid {
     grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 560px) {
-  .identity {
+@media (max-width: 620px) {
+  .account-summary {
     align-items: flex-start;
   }
 
   .avatar {
-    width: 64px;
-    height: 64px;
-    flex-basis: 64px;
-    border-radius: 18px;
-    font-size: 26px;
+    width: 58px;
+    height: 58px;
+    flex-basis: 58px;
+    border-radius: 16px;
+    font-size: 24px;
   }
 
-  .identity-text h1 {
-    font-size: 26px;
+  .account-copy h1 {
+    font-size: 24px;
   }
 
-  .hero-actions {
+  .logout-button {
     width: 100%;
-  }
-
-  .secondary-button {
-    flex: 1;
   }
 
   .panel {
     padding: 18px;
   }
 
-  .info-row,
+  .field-row,
   .provider-row,
   .app-row {
     grid-template-columns: 1fr;
-    align-items: flex-start;
+    gap: 6px;
   }
 
-  .provider-row,
-  .app-row {
-    position: relative;
-    padding-left: 56px;
+  .app-head {
+    display: none;
   }
 
-  .provider-mark,
-  .app-icon {
-    position: absolute;
-    left: 0;
-    top: 12px;
-  }
-
-  .status-pill,
   .app-row time {
     justify-self: start;
   }

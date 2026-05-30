@@ -16,9 +16,22 @@ var (
 	ErrInvalidOTP         = errors.New("invalid otp")
 	ErrInvalidCaptcha     = errors.New("invalid captcha")
 	ErrRateLimited        = errors.New("rate limited")
+	ErrAccountLocked      = errors.New("account locked")
 	ErrEmailNotSent       = errors.New("email not sent")
 	ErrInvalidRedirect    = errors.New("invalid redirect")
 )
+
+type AccountLockedError struct {
+	RetryAfterSeconds int `json:"retry_after_seconds"`
+}
+
+func (e AccountLockedError) Error() string {
+	return ErrAccountLocked.Error()
+}
+
+func (e AccountLockedError) Unwrap() error {
+	return ErrAccountLocked
+}
 
 // OAuth related errors
 var (

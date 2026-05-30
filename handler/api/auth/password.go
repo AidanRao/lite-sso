@@ -3,6 +3,7 @@ package auth
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -27,7 +28,23 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrInvalidCredentials):
-			c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "邮箱或密码错误", Data: nil})
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "邮箱或密码错误", Data: nil})
+		case errors.Is(err, common.ErrAccountLocked):
+			var lockedError common.AccountLockedError
+			retryAfterSeconds := 0
+			if errors.As(err, &lockedError) {
+				retryAfterSeconds = lockedError.RetryAfterSeconds
+			}
+			if retryAfterSeconds > 0 {
+				c.Header("Retry-After", strconv.Itoa(retryAfterSeconds))
+			}
+			c.JSON(http.StatusTooManyRequests, ecode.Response[any]{
+				Code:    ecode.TooManyRequests,
+				Message: "密码错误次数过多，请稍后再试",
+				Data: gin.H{
+					"retry_after_seconds": retryAfterSeconds,
+				},
+			})
 		case errors.Is(err, common.ErrUserInactive):
 			c.JSON(http.StatusForbidden, ecode.Response[any]{Code: ecode.Forbidden, Message: "用户已禁用", Data: nil})
 		default:

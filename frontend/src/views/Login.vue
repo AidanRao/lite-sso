@@ -1,6 +1,10 @@
 <template>
-  <div class="min-h-screen flex overflow-hidden">
-    <div class="hidden md:flex flex-[1.5] bg-gradient-to-br from-[#0891b2] via-[#0e7490] to-[#164e63] flex-col items-center justify-center p-12 relative overflow-hidden">
+  <div class="min-h-screen md:h-screen flex overflow-hidden">
+    <router-link to="/docs" class="fixed left-4 top-4 z-20 text-sm font-medium text-gray-400 hover:text-[#0891b2] transition-colors md:hidden">
+      开发文档
+    </router-link>
+
+    <div class="hidden md:flex flex-[1.5] bg-gradient-to-br from-[#0891b2] via-[#0e7490] to-[#164e63] flex-col items-center justify-center p-8 xl:p-12 relative overflow-hidden">
       <div class="absolute inset-0 bg-radial-gradient-circle opacity-15"></div>
       <div class="absolute top-10 left-10 w-32 h-32 bg-white/5 rounded-full blur-3xl"></div>
       <div class="absolute bottom-10 right-10 w-48 h-48 bg-cyan-300/10 rounded-full blur-3xl"></div>
@@ -13,9 +17,10 @@
             </svg>
           </div>
         </div>
-        <h1 class="text-5xl font-bold mb-4 tracking-tight">Lite SSO</h1>
+        <h1 class="text-5xl font-bold mb-4 tracking-tight">身份认证系统</h1>
         <p class="text-lg opacity-90 max-w-md leading-relaxed">
-          安全、便捷的统一身份认证平台，一站式管理您的所有应用登录
+          正在前往
+          <span class="font-semibold">{{ targetPlatformName }}</span>
         </p>
         <div class="mt-12 flex justify-center">
           <img 
@@ -25,12 +30,16 @@
           />
         </div>
       </div>
+
+      <router-link to="/docs" class="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 text-sm font-medium text-white/70 hover:text-white transition-colors">
+        开发文档
+      </router-link>
     </div>
 
-    <div class="flex-1 min-h-screen bg-gradient-to-br from-[#ecfeff] to-[#f0fdfa] flex flex-col items-center p-4 sm:p-8">
-      <div class="w-full max-w-md flex flex-1 flex-col justify-center py-8">
-        <div class="bg-white rounded-2xl shadow-xl shadow-[#0891b2]/5 p-6 sm:p-10">
-          <div class="text-center mb-8">
+    <div class="login-auth-pane flex-1 min-h-screen md:h-screen bg-gradient-to-br from-[#ecfeff] to-[#f0fdfa] flex items-center justify-center overflow-y-auto p-4 sm:p-6 lg:p-8">
+      <div class="login-stack w-full max-w-md py-6 md:py-0">
+        <div class="login-card bg-white rounded-2xl shadow-xl shadow-[#0891b2]/5 p-6 sm:p-8 xl:p-10">
+          <div class="login-header text-center mb-6 xl:mb-8">
             <h2 class="text-2xl font-bold text-gray-800">欢迎回来</h2>
             <p v-if="targetClientName" class="text-gray-500 text-sm mt-2">
               登录后将进入 <span class="font-semibold text-[#0891b2]">{{ targetClientName }}</span>
@@ -38,14 +47,12 @@
             <p v-else class="text-gray-500 text-sm mt-2">请登录您的账号</p>
           </div>
 
-          <div v-if="successMessage" class="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl text-green-600 text-sm flex items-center gap-2">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-            </svg>
-            {{ successMessage }}
+          <div v-if="errorMessage" class="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm flex items-center gap-2">
+            <AlertTriangle class="w-4 h-4 flex-shrink-0" />
+            {{ errorMessage }}
           </div>
 
-          <div class="flex mb-8 border-b border-gray-100">
+          <div class="login-tabs flex mb-6 xl:mb-8 border-b border-gray-100">
             <button
               v-for="tab in tabs"
               :key="tab.key"
@@ -58,7 +65,7 @@
             </button>
           </div>
 
-          <div class="min-h-[292px] overflow-hidden">
+          <div class="login-form-panel min-h-[260px] xl:min-h-[292px] overflow-hidden">
             <div v-show="activeTab === 'password'" class="space-y-5">
               <el-form :model="passwordForm" :rules="passwordRules" ref="pwdFormRef" @submit.prevent="handlePasswordLogin">
                 <el-form-item prop="email" class="mb-5">
@@ -101,12 +108,17 @@
                   </el-form-item>
                 </div>
                 <div class="pt-4">
-                  <button type="submit" class="w-full h-12 bg-[#0891b2] text-white rounded-xl font-semibold text-base hover:bg-[#0e7490] transition-colors flex items-center justify-center" :disabled="loading">
+                  <button
+                    type="submit"
+                    class="w-full h-12 text-white rounded-xl font-semibold text-base transition-colors flex items-center justify-center disabled:cursor-not-allowed"
+                    :class="[passwordButtonClass, passwordLoginInvalid ? 'cursor-not-allowed' : '']"
+                    :disabled="passwordLoginDisabled"
+                  >
                     <svg v-if="loading" class="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                       <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    {{ loading ? '登录中...' : '登录' }}
+                    {{ passwordLoginButtonText }}
                   </button>
                 </div>
               </el-form>
@@ -178,33 +190,29 @@
           </div>
         </div>
 
-        <div class="my-8 flex items-center gap-4">
+        <div class="login-divider my-4 xl:my-6 flex items-center gap-4">
             <div class="flex-1 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent"></div>
             <span class="text-gray-400 text-sm font-medium">其他登录方式</span>
             <div class="flex-1 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent"></div>
           </div>
 
-          <div class="space-y-3">
+          <div class="grid grid-cols-2 gap-2">
             <button
               v-for="provider in oauthProviders"
               :key="provider.id"
               @click="oauthLogin(provider.id)"
-              class="w-full py-4 flex items-center justify-center gap-3 border-2 border-gray-200 rounded-xl bg-white hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm transition-all duration-200 text-gray-700 font-medium"
+              class="login-provider-button w-full py-2.5 flex items-center justify-center gap-2 border-2 border-gray-200 rounded-xl bg-white hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm transition-all duration-200 text-gray-700 font-medium"
             >
               <span v-html="provider.icon" class="flex-shrink-0 w-5 h-5"></span>
               <span>{{ provider.name }} 登录</span>
             </button>
           </div>
 
-          <p class="text-center text-gray-500 text-sm mt-8">
-            还没有账号？<router-link to="/register" class="text-[#0891b2] hover:text-[#0e7490] font-medium transition-colors">立即注册</router-link>
+          <p class="login-register-link text-center text-gray-500 text-sm mt-5 xl:mt-8">
+            还没有账号？<router-link :to="registerRoute" class="text-[#0891b2] hover:text-[#0e7490] font-medium transition-colors">立即注册</router-link>
           </p>
         </div>
       </div>
-
-      <router-link to="/docs" class="self-center flex-shrink-0 text-sm font-medium text-gray-400 hover:text-[#0891b2] transition-colors">
-        开发文档
-      </router-link>
     </div>
   </div>
 
@@ -217,29 +225,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Mail, Lock, Eye, EyeOff, MessageSquare } from 'lucide-vue-next'
+import { Mail, Lock, Eye, EyeOff, MessageSquare, AlertTriangle } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
 import { authAPI } from '../api/auth'
 import SendCodeModal from '../components/SendCodeModal.vue'
+import { getLoginRedirect, loadTargetClientName } from '../utils/oauthTarget'
 
 const route = useRoute()
 
-const getLoginRedirect = () => {
-  if (route.query.redirect) {
-    return route.query.redirect
-  }
-
-  const params = new URLSearchParams(window.location.search)
-  if (params.has('client_id') || params.has('response_type') || params.has('redirect_uri')) {
-    return `/oauth/authorize?${params.toString()}`
-  }
-
-  return '/profile'
-}
-
-const redirectUrl = ref(getLoginRedirect())
+const redirectUrl = ref(getLoginRedirect(route))
 const targetClientName = ref('')
 
 const tabs = [
@@ -264,7 +260,8 @@ const oauthProviders = [
 const activeTab = ref('password')
 const showPassword = ref(false)
 const loading = ref(false)
-const successMessage = ref('')
+const errorMessage = ref('')
+const passwordLockSeconds = ref(0)
 const countdown = ref(0)
 const showSendCodeModal = ref(false)
 const qrCodeUrl = ref('')
@@ -272,6 +269,7 @@ const qrStatus = ref('请使用 Lite SSO App 扫描二维码')
 const qrTimer = ref(0)
 const qrCheckInterval = ref(null)
 const qrTimerInterval = ref(null)
+const passwordLockInterval = ref(null)
 const currentQRID = ref('')
 
 const pwdFormRef = ref(null)
@@ -287,16 +285,52 @@ const emailForm = ref({
   code: ''
 })
 
+const passwordEmailValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(passwordForm.value.email.trim()))
+const passwordValueValid = computed(() => passwordForm.value.password.length >= 3)
+const passwordFormValid = computed(() => passwordEmailValid.value && passwordValueValid.value)
+const passwordLoginInvalid = computed(() => !passwordFormValid.value && passwordLockSeconds.value <= 0 && !loading.value)
+const passwordLoginDisabled = computed(() => loading.value || passwordLockSeconds.value > 0)
+const targetPlatformName = computed(() => targetClientName.value || 'Lite SSO')
+const registerRoute = computed(() => {
+  if (!redirectUrl.value || redirectUrl.value === '/profile') {
+    return '/register'
+  }
+
+  return {
+    path: '/register',
+    query: {
+      redirect: redirectUrl.value
+    }
+  }
+})
+const passwordButtonClass = computed(() => (
+  passwordLockSeconds.value > 0
+    ? 'bg-gray-300 hover:bg-gray-300'
+    : 'bg-[#0891b2] hover:bg-[#0e7490]'
+))
+const passwordLoginButtonText = computed(() => {
+  if (loading.value) {
+    return '登录中...'
+  }
+  if (passwordLockSeconds.value > 0) {
+    return `${passwordLockSeconds.value} 秒后重试`
+  }
+  return '登录'
+})
+
 watch(() => passwordForm.value.email, (email) => {
   if (emailForm.value.email !== email) {
     emailForm.value.email = email
   }
+  stopPasswordLockCountdown()
+  errorMessage.value = ''
 })
 
 watch(() => emailForm.value.email, (email) => {
   if (passwordForm.value.email !== email) {
     passwordForm.value.email = email
   }
+  errorMessage.value = ''
 })
 
 const passwordRules = {
@@ -323,41 +357,8 @@ const emailRules = {
 
 const responseData = (response) => response?.data || response || {}
 
-const targetClientID = () => {
-  if (!redirectUrl.value || redirectUrl.value === '/profile') {
-    return ''
-  }
-
-  try {
-    const parsed = new URL(redirectUrl.value, window.location.origin)
-    if (parsed.pathname !== '/oauth/authorize') {
-      return ''
-    }
-    return parsed.searchParams.get('client_id') || ''
-  } catch (error) {
-    return ''
-  }
-}
-
 const loadTargetClient = async () => {
-  const clientID = targetClientID()
-  if (!clientID) {
-    targetClientName.value = ''
-    return
-  }
-
-  try {
-    const response = await fetch(`/api/oauth/client?client_id=${encodeURIComponent(clientID)}`)
-    if (!response.ok) {
-      targetClientName.value = ''
-      return
-    }
-
-    const result = await response.json()
-    targetClientName.value = result?.data?.name || ''
-  } catch (error) {
-    targetClientName.value = ''
-  }
+  targetClientName.value = await loadTargetClientName(redirectUrl.value)
 }
 
 const finishLogin = (response) => {
@@ -365,20 +366,53 @@ const finishLogin = (response) => {
   window.location.href = data.redirect_url || redirectUrl.value || '/profile'
 }
 
+const stopPasswordLockCountdown = () => {
+  if (passwordLockInterval.value) {
+    clearInterval(passwordLockInterval.value)
+    passwordLockInterval.value = null
+  }
+  passwordLockSeconds.value = 0
+}
+
+const startPasswordLockCountdown = (seconds) => {
+  stopPasswordLockCountdown()
+  passwordLockSeconds.value = Math.max(1, Number(seconds) || 1)
+  passwordLockInterval.value = setInterval(() => {
+    passwordLockSeconds.value -= 1
+    if (passwordLockSeconds.value <= 0) {
+      stopPasswordLockCountdown()
+      return
+    }
+  }, 1000)
+}
+
 const handlePasswordLogin = async () => {
   try {
-    if (!pwdFormRef.value) return
-    await pwdFormRef.value.validate()
+    if (passwordLoginDisabled.value || !pwdFormRef.value) return
+    try {
+      await pwdFormRef.value.validate()
+    } catch (error) {
+      return
+    }
     loading.value = true
+    errorMessage.value = ''
     const response = await authAPI.loginWithPassword({
       ...passwordForm.value,
       redirect: redirectUrl.value
     })
-    successMessage.value = '登录成功，正在跳转...'
+    ElMessage.success('登录成功，正在跳转...')
     setTimeout(() => {
       finishLogin(response)
     }, 1000)
   } catch (error) {
+    if (error.status === 429) {
+      const retryAfterSeconds = Math.max(1, Number(error.data?.retry_after_seconds) || 1)
+      ElMessage.error(`密码错误次数过多，请 ${retryAfterSeconds} 秒后再试`)
+      startPasswordLockCountdown(retryAfterSeconds)
+      passwordForm.value.password = ''
+      return
+    }
+    ElMessage.error(error.message || '邮箱或密码错误')
   } finally {
     loading.value = false
   }
@@ -408,16 +442,18 @@ const handleEmailLogin = async () => {
     if (!emailFormRef.value) return
     await emailFormRef.value.validate()
     loading.value = true
+    errorMessage.value = ''
     const response = await authAPI.loginWithEmail({
       email: emailForm.value.email,
       otp: emailForm.value.code,
       redirect: redirectUrl.value
     })
-    successMessage.value = '登录成功，正在跳转...'
+    ElMessage.success('登录成功，正在跳转...')
     setTimeout(() => {
       finishLogin(response)
     }, 1000)
   } catch (error) {
+    errorMessage.value = error.message || '登录失败'
   } finally {
     loading.value = false
   }
@@ -455,7 +491,7 @@ const refreshQRCode = async () => {
             login_ticket: checkData.login_ticket
           })
           qrStatus.value = '登录成功'
-          successMessage.value = '登录成功，正在跳转...'
+          ElMessage.success('登录成功，正在跳转...')
           setTimeout(() => {
             finishLogin(completeResponse)
           }, 1000)
@@ -488,11 +524,71 @@ onMounted(() => {
 onUnmounted(() => {
   if (qrCheckInterval.value) clearInterval(qrCheckInterval.value)
   if (qrTimerInterval.value) clearInterval(qrTimerInterval.value)
+  if (passwordLockInterval.value) clearInterval(passwordLockInterval.value)
 })
 
 watch(activeTab, (tab) => {
+  stopPasswordLockCountdown()
+  errorMessage.value = ''
   if (tab === 'qr' && !currentQRID.value) {
     refreshQRCode()
   }
 })
 </script>
+
+<style scoped>
+@media (max-height: 760px) and (min-width: 768px) {
+  .login-auth-pane {
+    align-items: flex-start;
+    padding-bottom: 16px;
+    padding-top: 16px;
+  }
+
+  .login-stack {
+    padding-bottom: 0;
+    padding-top: 0;
+  }
+
+  .login-card {
+    padding: 24px;
+  }
+
+  .login-header,
+  .login-tabs {
+    margin-bottom: 16px;
+  }
+
+  .login-form-panel {
+    min-height: 238px;
+  }
+
+  .login-divider {
+    margin-bottom: 10px;
+    margin-top: 10px;
+  }
+
+  .login-provider-button {
+    padding-bottom: 7px;
+    padding-top: 7px;
+  }
+
+  .login-register-link {
+    margin-top: 14px;
+  }
+}
+
+@media (max-height: 680px) and (min-width: 768px) {
+  .login-card {
+    padding: 20px;
+  }
+
+  .login-header,
+  .login-tabs {
+    margin-bottom: 12px;
+  }
+
+  .login-form-panel {
+    min-height: 226px;
+  }
+}
+</style>
