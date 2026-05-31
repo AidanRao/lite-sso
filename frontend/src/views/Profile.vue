@@ -12,7 +12,10 @@
         </div>
       </div>
 
-      <button class="logout-button" type="button" @click="logout">退出登录</button>
+      <div class="account-actions">
+        <button v-if="isAdmin" class="admin-button" type="button" @click="router.push('/admin')">管理后台</button>
+        <button class="logout-button" type="button" @click="logout">退出登录</button>
+      </div>
     </section>
 
     <section class="profile-grid">
@@ -97,6 +100,7 @@ const route = useRoute()
 const user = ref(null)
 const applications = ref([])
 const thirdPartyProviders = ref([])
+const isAdmin = ref(false)
 
 const providerMeta = [
   { id: 'github', name: 'GitHub' },
@@ -131,6 +135,7 @@ const loadProfile = async () => {
     user.value = data.user || null
     applications.value = Array.isArray(data.applications) ? data.applications : []
     thirdPartyProviders.value = Array.isArray(data.third_party_providers) ? data.third_party_providers : []
+    isAdmin.value = Boolean(data.is_admin)
   } catch (error) {
     ElMessage.error(error.message || '获取资料失败')
   }
@@ -256,7 +261,15 @@ button {
   font: inherit;
 }
 
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .logout-button,
+.admin-button,
 .bind-button {
   border-radius: 8px;
   font-weight: 700;
@@ -271,9 +284,21 @@ button {
   color: #334155;
 }
 
+.admin-button {
+  height: 42px;
+  padding: 0 16px;
+  background: #0f766e;
+  color: #ffffff;
+}
+
 .logout-button:hover {
   border-color: #0891b2;
   color: #0e7490;
+  transform: translateY(-1px);
+}
+
+.admin-button:hover {
+  background: #115e59;
   transform: translateY(-1px);
 }
 
@@ -461,7 +486,9 @@ button {
     font-size: 24px;
   }
 
-  .logout-button {
+  .account-actions,
+  .logout-button,
+  .admin-button {
     width: 100%;
   }
 

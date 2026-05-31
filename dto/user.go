@@ -14,6 +14,7 @@ type ProfileResponse struct {
 	User                *UserResponse                `json:"user"`
 	Applications        []UserApplicationResponse    `json:"applications"`
 	ThirdPartyProviders []ThirdPartyProviderResponse `json:"third_party_providers"`
+	IsAdmin             bool                         `json:"is_admin"`
 }
 
 type UserApplicationResponse struct {

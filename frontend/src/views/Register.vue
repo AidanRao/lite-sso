@@ -1,32 +1,6 @@
 <template>
   <div class="min-h-screen flex overflow-hidden">
-    <div class="flex-[1.5] bg-gradient-to-br from-[#0891b2] via-[#0e7490] to-[#164e63] flex flex-col items-center justify-center p-12 relative overflow-hidden">
-      <div class="absolute inset-0 bg-radial-gradient-circle opacity-15"></div>
-      <div class="absolute top-10 left-10 w-32 h-32 bg-white/5 rounded-full blur-3xl"></div>
-      <div class="absolute bottom-10 right-10 w-48 h-48 bg-cyan-300/10 rounded-full blur-3xl"></div>
-      
-      <div class="relative z-10 text-center text-white">
-        <div class="mb-8">
-          <div class="inline-flex items-center justify-center w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl mb-6">
-            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-          </div>
-        </div>
-        <h1 class="text-5xl font-bold mb-4 tracking-tight">Lite SSO</h1>
-        <p class="text-lg opacity-90 max-w-md leading-relaxed">
-          正在前往
-          <span class="font-semibold">{{ targetPlatformName }}</span>
-        </p>
-        <div class="mt-12 flex justify-center">
-          <img 
-            src="/assets/images/default.png" 
-            alt="SSO Illustration" 
-            class="w-72 h-72 rounded-2xl shadow-2xl object-cover hover:scale-105 transition-all duration-500"
-          />
-        </div>
-      </div>
-    </div>
+    <AuthSplashPane class="hidden md:flex flex-[1.5]" title="身份认证系统" :target-name="targetPlatformName" :show-docs-link="false" />
 
     <div class="flex-1 bg-gradient-to-br from-[#ecfeff] to-[#f0fdfa] flex items-center justify-center p-8">
       <div class="w-full max-w-md">
@@ -153,6 +127,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Mail, Lock, Eye, EyeOff, MessageSquare } from 'lucide-vue-next'
 import { authAPI } from '../api/auth'
+import AuthSplashPane from '../components/AuthSplashPane.vue'
 import SendCodeModal from '../components/SendCodeModal.vue'
 import { getLoginRedirect, loadTargetClientName } from '../utils/oauthTarget'
 

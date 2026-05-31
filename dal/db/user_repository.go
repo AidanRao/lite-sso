@@ -24,6 +24,14 @@ func (r *UserRepository) FindByID(ctx context.Context, userID string) (*model.Us
 	return &user, nil
 }
 
+func (r *UserRepository) FindAll(ctx context.Context) ([]model.User, error) {
+	var users []model.User
+	if err := r.db.WithContext(ctx).Order("created_at DESC").Find(&users).Error; err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
 func (r *UserRepository) ExistsEmail(ctx context.Context, email string) (bool, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("email = ?", email).Count(&count).Error; err != nil {

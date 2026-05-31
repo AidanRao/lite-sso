@@ -39,6 +39,9 @@ var (
 	ErrProviderAuthFailed       = errors.New("provider authentication failed")
 	ErrThirdPartyAlreadyBound   = errors.New("third party already bound")
 	ErrThirdPartyBoundToAnother = errors.New("third party bound to another user")
+	ErrOAuthClientExists        = errors.New("oauth client already exists")
+	ErrOAuthClientNotFound      = errors.New("oauth client not found")
+	ErrInvalidOAuthClient       = errors.New("invalid oauth client")
 )
 
 // QR Code related errors

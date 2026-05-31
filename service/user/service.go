@@ -183,6 +183,7 @@ func (s *UserService) GetProfileOverview(ctx context.Context, userID string) (*d
 		User:                dto.ToUserResponse(user),
 		Applications:        appResponses,
 		ThirdPartyProviders: providerResponses,
+		IsAdmin:             s.cfg.IsAdminUser(userID),
 	}, nil
 }
 

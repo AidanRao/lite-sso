@@ -7,6 +7,7 @@ import (
 
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
+	"sso-server/handler/api/admin"
 	"sso-server/handler/api/auth"
 	"sso-server/handler/api/oauth"
 	"sso-server/handler/api/user"
@@ -75,8 +76,14 @@ func (s *Server) registerRoutes() {
 		OAuth2: o,
 	})
 
+	adminHandler := admin.NewAdminHandler(admin.AdminDeps{
+		Config: s.cfg,
+		DB:     db.DB,
+	})
+
 	authRequired := RequireSessionAuth(kvStore)
 	authRequiredOrRedirect := RequireSessionAuthOrRedirect(kvStore)
+	adminRequired := RequireAdmin(s.cfg)
 
 	apiGroup := s.engine.Group("/api")
 	{
@@ -121,6 +128,16 @@ func (s *Server) registerRoutes() {
 			userProtected.GET("/profile", userHandler.GetProfile)
 			userProtected.PUT("/profile", userHandler.UpdateProfile)
 			userProtected.GET("/third/:provider/bind", oauthHandler.ThirdPartyBind)
+		}
+
+		adminGroup := apiGroup.Group("/admin")
+		adminGroup.Use(authRequired, adminRequired)
+		{
+			adminGroup.GET("/users", adminHandler.ListUsers)
+			adminGroup.GET("/users/:id", adminHandler.GetUserDetail)
+			adminGroup.GET("/oauth-clients", adminHandler.ListOAuthClients)
+			adminGroup.POST("/oauth-clients", adminHandler.CreateOAuthClient)
+			adminGroup.PUT("/oauth-clients/:id", adminHandler.UpdateOAuthClient)
 		}
 	}
 

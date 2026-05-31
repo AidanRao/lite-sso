@@ -54,3 +54,25 @@ export const authAPI = {
     return api.post('/auth/qr/complete', data)
   }
 }
+
+export const adminAPI = {
+  listUsers: () => {
+    return api.get('/admin/users')
+  },
+
+  getUserDetail: (id) => {
+    return api.get(`/admin/users/${id}`)
+  },
+
+  listOAuthClients: () => {
+    return api.get('/admin/oauth-clients')
+  },
+
+  createOAuthClient: (data) => {
+    return api.post('/admin/oauth-clients', data)
+  },
+
+  updateOAuthClient: (id, data) => {
+    return api.put(`/admin/oauth-clients/${id}`, data)
+  }
+}

@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"sso-server/common/ecode"
+	"sso-server/conf"
 	"sso-server/dal/kv"
 	serviceauth "sso-server/service/auth"
 )
@@ -54,6 +55,24 @@ func RequireSessionAuthOrRedirect(kvStore kv.Store) gin.HandlerFunc {
 		ctx := context.WithValue(c.Request.Context(), "user_id", userID)
 		c.Request = c.Request.WithContext(ctx)
 		c.Set("user_id", userID)
+		c.Next()
+	}
+}
+
+func RequireAdmin(cfg *conf.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetString("user_id")
+		if userID == "" {
+			c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+			c.Abort()
+			return
+		}
+		if !cfg.IsAdminUser(userID) {
+			c.JSON(http.StatusForbidden, ecode.Response[any]{Code: ecode.Forbidden, Message: "无管理员权限", Data: nil})
+			c.Abort()
+			return
+		}
+
 		c.Next()
 	}
 }

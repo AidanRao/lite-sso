@@ -30,3 +30,7 @@ oauth:
     client_id: "feishu-client-id"
     client_secret: "feishu-client-secret"
     redirect_uri: "http://localhost:8080/api/auth/third/feishu/callback"
+
+admin:
+  user_ids:
+    - "replace-with-user-id"

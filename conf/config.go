@@ -32,6 +32,24 @@ type Config struct {
 	Email    EmailConfig           `mapstructure:"email"`
 	Dev      DevConfig             `mapstructure:"dev"`
 	OAuth    ThirdPartyOAuthConfig `mapstructure:"oauth"`
+	Admin    AdminConfig           `mapstructure:"admin"`
+}
+
+func (c *Config) IsAdminUser(userID string) bool {
+	if c == nil || strings.TrimSpace(userID) == "" {
+		return false
+	}
+
+	for _, adminUserID := range c.Admin.UserIDs {
+		if strings.TrimSpace(adminUserID) == userID {
+			return true
+		}
+	}
+	return false
+}
+
+type AdminConfig struct {
+	UserIDs []string `mapstructure:"user_ids"`
 }
 
 type ThirdPartyOAuthConfig struct {
@@ -114,6 +132,7 @@ func Load() (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err
 	}
+	cfg.Admin.UserIDs = readStringSlice(v, "admin.user_ids", cfg.Admin.UserIDs)
 
 	return &cfg, nil
 }
@@ -144,6 +163,7 @@ func bindEnvs(v *viper.Viper) {
 		"oauth.feishu.client_id",
 		"oauth.feishu.client_secret",
 		"oauth.feishu.redirect_uri",
+		"admin.user_ids",
 	}
 
 	for _, key := range envKeys {
@@ -165,9 +185,29 @@ func setDefaults(v *viper.Viper, env Environment) {
 		"security.lockout_duration":    "30m",
 		"dev.skip_send_email":          false,
 		"dev.fixed_email_otp":          "",
+		"admin.user_ids":               []string{},
 	}
 
 	for key, value := range defaults {
 		v.SetDefault(key, value)
 	}
+}
+
+func readStringSlice(v *viper.Viper, key string, fallback []string) []string {
+	values := v.GetStringSlice(key)
+	if len(values) == 0 {
+		values = fallback
+	}
+	if len(values) == 1 {
+		values = strings.Split(values[0], ",")
+	}
+
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }

@@ -1,24 +1,10 @@
 <template>
   <div class="min-h-screen flex overflow-hidden">
-    <div class="hidden lg:flex flex-[1.2] bg-gradient-to-br from-[#0f766e] via-[#0891b2] to-[#155e75] items-center justify-center p-12 relative overflow-hidden">
-      <div class="absolute inset-0 bg-radial-gradient-circle opacity-15"></div>
-      <div class="relative z-10 text-center text-white">
-        <div class="inline-flex items-center justify-center w-16 h-16 bg-white/20 rounded-2xl mb-6">
-          <KeyRound class="w-8 h-8" />
-        </div>
-        <h1 class="text-5xl font-bold mb-4 tracking-tight">重置密码</h1>
-        <p class="text-lg opacity-90 max-w-md leading-relaxed">
-          通过邮箱验证码确认身份后，设置一个新的登录密码。
-        </p>
-        <div class="mt-12 flex justify-center">
-          <img
-            src="/assets/images/default.png"
-            alt="SSO Illustration"
-            class="w-72 h-72 rounded-2xl shadow-2xl object-cover"
-          />
-        </div>
-      </div>
-    </div>
+    <AuthSplashPane class="hidden lg:flex flex-[1.2]" title="重置密码" :show-docs-link="false">
+      <template #subtitle>
+        通过邮箱验证码确认身份后，设置一个新的登录密码。
+      </template>
+    </AuthSplashPane>
 
     <div class="flex-1 bg-gradient-to-br from-[#ecfeff] to-[#f0fdfa] flex items-center justify-center p-8">
       <div class="w-full max-w-md">
@@ -141,8 +127,9 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowLeft, Eye, EyeOff, KeyRound, Lock, Mail, MessageSquare } from 'lucide-vue-next'
+import { ArrowLeft, Eye, EyeOff, Lock, Mail, MessageSquare } from 'lucide-vue-next'
 import { authAPI } from '../api/auth'
+import AuthSplashPane from '../components/AuthSplashPane.vue'
 import SendCodeModal from '../components/SendCodeModal.vue'
 
 const router = useRouter()

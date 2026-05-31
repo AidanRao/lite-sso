@@ -4,37 +4,7 @@
       开发文档
     </router-link>
 
-    <div class="hidden md:flex flex-[1.5] bg-gradient-to-br from-[#0891b2] via-[#0e7490] to-[#164e63] flex-col items-center justify-center p-8 xl:p-12 relative overflow-hidden">
-      <div class="absolute inset-0 bg-radial-gradient-circle opacity-15"></div>
-      <div class="absolute top-10 left-10 w-32 h-32 bg-white/5 rounded-full blur-3xl"></div>
-      <div class="absolute bottom-10 right-10 w-48 h-48 bg-cyan-300/10 rounded-full blur-3xl"></div>
-      
-      <div class="relative z-10 text-center text-white">
-        <div class="mb-8">
-          <div class="inline-flex items-center justify-center w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl mb-6">
-            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-          </div>
-        </div>
-        <h1 class="text-5xl font-bold mb-4 tracking-tight">身份认证系统</h1>
-        <p class="text-lg opacity-90 max-w-md leading-relaxed">
-          正在前往
-          <span class="font-semibold">{{ targetPlatformName }}</span>
-        </p>
-        <div class="mt-12 flex justify-center">
-          <img 
-            src="/assets/images/default.png" 
-            alt="SSO Illustration" 
-            class="w-72 h-72 rounded-2xl shadow-2xl object-cover hover:scale-105 transition-all duration-500"
-          />
-        </div>
-      </div>
-
-      <router-link to="/docs" class="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 text-sm font-medium text-white/70 hover:text-white transition-colors">
-        开发文档
-      </router-link>
-    </div>
+    <AuthSplashPane class="hidden md:flex flex-[1.5]" title="身份认证系统" :target-name="targetPlatformName" />
 
     <div class="login-auth-pane flex-1 min-h-screen md:h-screen bg-gradient-to-br from-[#ecfeff] to-[#f0fdfa] flex items-center justify-center overflow-y-auto p-4 sm:p-6 lg:p-8">
       <div class="login-stack w-full max-w-md py-6 md:py-0">
@@ -201,9 +171,9 @@
               v-for="provider in oauthProviders"
               :key="provider.id"
               @click="oauthLogin(provider.id)"
-              class="login-provider-button w-full py-2.5 flex items-center justify-center gap-2 border-2 border-gray-200 rounded-xl bg-white hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm transition-all duration-200 text-gray-700 font-medium"
+              class="login-provider-button w-full flex items-center justify-center gap-2 border-2 border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm transition-all duration-200 text-gray-700 font-medium"
             >
-              <span v-html="provider.icon" class="flex-shrink-0 w-5 h-5"></span>
+              <span v-html="provider.icon" class="login-provider-icon flex-shrink-0"></span>
               <span>{{ provider.name }} 登录</span>
             </button>
           </div>
@@ -230,6 +200,7 @@ import { useRoute } from 'vue-router'
 import { Mail, Lock, Eye, EyeOff, MessageSquare, AlertTriangle } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
 import { authAPI } from '../api/auth'
+import AuthSplashPane from '../components/AuthSplashPane.vue'
 import SendCodeModal from '../components/SendCodeModal.vue'
 import { getLoginRedirect, loadTargetClientName } from '../utils/oauthTarget'
 
@@ -575,6 +546,25 @@ watch(activeTab, (tab) => {
   .login-register-link {
     margin-top: 14px;
   }
+}
+
+.login-provider-button {
+  height: 48px;
+  border-radius: 8px;
+  padding: 0 14px;
+}
+
+.login-provider-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+}
+
+.login-provider-icon :deep(svg) {
+  width: 20px;
+  height: 20px;
 }
 
 @media (max-height: 680px) and (min-width: 768px) {
