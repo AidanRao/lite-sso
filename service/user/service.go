@@ -196,7 +196,19 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID string, username
 	}
 
 	if username != nil {
-		user.Username = username
+		trimmedUsername := strings.TrimSpace(*username)
+		if trimmedUsername == "" {
+			user.Username = nil
+		} else {
+			exists, err := userRepo.ExistsUsernameExceptID(ctx, trimmedUsername, userID)
+			if err != nil {
+				return nil, err
+			}
+			if exists {
+				return nil, common.ErrUsernameExists
+			}
+			user.Username = &trimmedUsername
+		}
 	}
 	if avatarURL != nil {
 		user.AvatarURL = avatarURL

@@ -1,8 +1,16 @@
 <template>
   <div
     class="auth-splash-pane flex-col items-center justify-center p-8 xl:p-12 relative overflow-hidden"
-    :style="{ backgroundImage: splashBackgroundImage }"
   >
+    <div
+      v-for="(splashImage, index) in splashImages"
+      :key="splashImage"
+      class="auth-splash-bg"
+      :class="{ 'is-active': currentSplashIndex === index }"
+      :style="{ backgroundImage: `url('${splashImage}')` }"
+    ></div>
+    <div class="auth-splash-overlay"></div>
+
     <div class="relative z-10 text-center">
       <h1 class="auth-splash-title text-5xl font-bold mb-4 tracking-tight">{{ title }}</h1>
       <p class="auth-splash-subtitle text-lg max-w-md leading-relaxed">
@@ -31,7 +39,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 
 defineProps({
   title: {
@@ -64,11 +72,6 @@ const splashImages = [
 const currentSplashIndex = ref(0)
 const splashInterval = ref(null)
 
-const currentSplashImage = computed(() => splashImages[currentSplashIndex.value] || splashImages[0])
-const splashBackgroundImage = computed(() => (
-  `linear-gradient(135deg, rgba(82, 54, 34, 0.5), rgba(140, 98, 52, 0.34)), linear-gradient(180deg, rgba(25, 22, 18, 0.18), rgba(25, 22, 18, 0.42)), url("${currentSplashImage.value}")`
-))
-
 onMounted(() => {
   if (splashImages.length > 1) {
     splashInterval.value = setInterval(() => {
@@ -87,9 +90,38 @@ onUnmounted(() => {
 <style scoped>
 .auth-splash-pane {
   background-color: #eee8d7;
+  color: #fff8ec;
+  isolation: isolate;
+}
+
+.auth-splash-bg,
+.auth-splash-overlay {
+  position: absolute;
+  inset: 0;
+}
+
+.auth-splash-bg {
+  z-index: 0;
   background-position: center;
   background-size: cover;
-  color: #fff8ec;
+  opacity: 0;
+  transform: scale(1.04);
+  transition:
+    opacity 1200ms ease,
+    transform 7000ms ease;
+  will-change: opacity, transform;
+}
+
+.auth-splash-bg.is-active {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.auth-splash-overlay {
+  z-index: 1;
+  background:
+    linear-gradient(135deg, rgba(82, 54, 34, 0.5), rgba(140, 98, 52, 0.34)),
+    linear-gradient(180deg, rgba(25, 22, 18, 0.18), rgba(25, 22, 18, 0.42));
 }
 
 .auth-splash-title {
@@ -119,5 +151,16 @@ onUnmounted(() => {
 
 .auth-splash-doc-link:hover {
   color: #fff8ec;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-splash-bg {
+    transition: none;
+    transform: none;
+  }
+
+  .auth-splash-bg.is-active {
+    transform: none;
+  }
 }
 </style>

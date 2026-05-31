@@ -1,6 +1,7 @@
 package user_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -142,5 +143,101 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 	}
 	if resp.Data.ThirdPartyProviders[0].Provider != "github" || !resp.Data.ThirdPartyProviders[0].Bound {
 		t.Fatalf("expected github bound, got %s", w.Body.String())
+	}
+}
+
+func TestUserProfile_UpdateUsername(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db, err := gorm.Open(sqlite.Open("file:update_username?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := db.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	kvStore := kv.NewMemoryStore()
+	if err := kvStore.Set(context.Background(), kv.KeySession("sid-update"), "u1", 12*time.Hour); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	h := apiuser.NewUserHandler(apiuser.UserDeps{
+		Config: &conf.Config{},
+		DB:     db,
+		KV:     kvStore,
+	})
+
+	r := gin.New()
+	r.PUT("/api/user/profile", serverhandler.RequireSessionAuth(kvStore), h.UpdateProfile)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/user/profile", bytes.NewBufferString(`{"username":"  alice  "}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "sso_session", Value: "sid-update"})
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			User struct {
+				Username *string `json:"username"`
+			} `json:"user"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Data.User.Username == nil || *resp.Data.User.Username != "alice" {
+		t.Fatalf("expected trimmed username alice, got %s", w.Body.String())
+	}
+}
+
+func TestUserProfile_UpdateUsernameRejectsDuplicate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db, err := gorm.Open(sqlite.Open("file:update_duplicate_username?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	username := "bob"
+	if err := db.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := db.Create(&model.User{ID: "u2", Username: &username, IsActive: true}).Error; err != nil {
+		t.Fatalf("create duplicate owner: %v", err)
+	}
+
+	kvStore := kv.NewMemoryStore()
+	if err := kvStore.Set(context.Background(), kv.KeySession("sid-duplicate"), "u1", 12*time.Hour); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	h := apiuser.NewUserHandler(apiuser.UserDeps{
+		Config: &conf.Config{},
+		DB:     db,
+		KV:     kvStore,
+	})
+
+	r := gin.New()
+	r.PUT("/api/user/profile", serverhandler.RequireSessionAuth(kvStore), h.UpdateProfile)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/user/profile", bytes.NewBufferString(`{"username":"bob"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "sso_session", Value: "sid-duplicate"})
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d, body=%s", w.Code, w.Body.String())
 	}
 }

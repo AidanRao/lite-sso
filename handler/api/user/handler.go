@@ -167,6 +167,8 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		switch {
 		case errors.Is(err, common.ErrUserNotFound):
 			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+		case errors.Is(err, common.ErrUsernameExists):
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "用户名已存在", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "更新失败", Data: nil})
 		}

@@ -27,11 +27,22 @@
         <div class="field-list">
           <div class="field-row">
             <span>用户 ID</span>
-            <strong class="mono">{{ user?.id || '-' }}</strong>
+            <div class="id-value">
+              <strong class="mono">{{ user?.id || '-' }}</strong>
+              <button class="icon-button" type="button" title="复制用户 ID" :disabled="!user?.id" @click="copyUserID">
+                <Check v-if="idCopied" :size="17" />
+                <Copy v-else :size="17" />
+              </button>
+            </div>
           </div>
           <div class="field-row">
             <span>用户名</span>
-            <strong>{{ user?.username || '未设置' }}</strong>
+            <div class="username-value">
+              <strong>{{ user?.username || '未设置' }}</strong>
+              <button class="icon-button" type="button" title="修改用户名" :disabled="!user" @click="openUsernameDialog">
+                <Pencil :size="17" />
+              </button>
+            </div>
           </div>
           <div class="field-row">
             <span>邮箱</span>
@@ -87,13 +98,38 @@
         </div>
       </article>
     </section>
+
+    <div v-if="usernameDialogOpen" class="dialog-mask" @click.self="closeUsernameDialog">
+      <form class="dialog" @submit.prevent="saveUsername">
+        <header>
+          <h2>修改用户名</h2>
+          <button class="icon-button" type="button" title="关闭" @click="closeUsernameDialog">
+            <X :size="18" />
+          </button>
+        </header>
+
+        <label>
+          <span>用户名</span>
+          <input ref="usernameInput" v-model="usernameDraft" maxlength="50" placeholder="未设置" />
+        </label>
+
+        <footer>
+          <button class="text-button secondary" type="button" @click="closeUsernameDialog">取消</button>
+          <button class="text-button primary" type="submit" :disabled="usernameSaving || !hasUsernameChanged">
+            保存
+          </button>
+        </footer>
+      </form>
+    </div>
   </main>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Check, Copy, Pencil, X } from 'lucide-vue-next'
+import { userAPI } from '../api/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -101,6 +137,12 @@ const user = ref(null)
 const applications = ref([])
 const thirdPartyProviders = ref([])
 const isAdmin = ref(false)
+const usernameDraft = ref('')
+const usernameSaving = ref(false)
+const usernameDialogOpen = ref(false)
+const usernameInput = ref(null)
+const idCopied = ref(false)
+let copyTimer = null
 
 const providerMeta = [
   { id: 'github', name: 'GitHub' },
@@ -110,6 +152,7 @@ const providerMeta = [
 const displayName = computed(() => user.value?.username || user.value?.email || 'SSO 用户')
 const displayEmail = computed(() => user.value?.email || '邮箱未设置')
 const avatarInitial = computed(() => displayName.value.slice(0, 1).toUpperCase())
+const hasUsernameChanged = computed(() => usernameDraft.value.trim() !== (user.value?.username || ''))
 
 const providerCards = computed(() => {
   const bindings = new Map(thirdPartyProviders.value.map((item) => [item.provider, item.bound]))
@@ -121,23 +164,77 @@ const providerCards = computed(() => {
 
 const loadProfile = async () => {
   try {
-    const response = await fetch('/api/user/profile')
-    if (response.status === 401) {
-      router.push('/login?redirect=/profile')
-      return
-    }
-    if (!response.ok) {
-      throw new Error('获取资料失败')
-    }
-
-    const result = await response.json()
+    const result = await userAPI.getProfile()
     const data = result?.data || {}
     user.value = data.user || null
+    usernameDraft.value = user.value?.username || ''
     applications.value = Array.isArray(data.applications) ? data.applications : []
     thirdPartyProviders.value = Array.isArray(data.third_party_providers) ? data.third_party_providers : []
     isAdmin.value = Boolean(data.is_admin)
   } catch (error) {
+    if (error.status === 401) {
+      router.push('/login?redirect=/profile')
+      return
+    }
     ElMessage.error(error.message || '获取资料失败')
+  }
+}
+
+const openUsernameDialog = async () => {
+  usernameDraft.value = user.value?.username || ''
+  usernameDialogOpen.value = true
+  await nextTick()
+  usernameInput.value?.focus()
+}
+
+const closeUsernameDialog = () => {
+  if (usernameSaving.value) {
+    return
+  }
+  usernameDraft.value = user.value?.username || ''
+  usernameDialogOpen.value = false
+}
+
+const saveUsername = async () => {
+  if (usernameSaving.value || !hasUsernameChanged.value) {
+    return
+  }
+
+  usernameSaving.value = true
+  try {
+    const result = await userAPI.updateProfile({
+      username: usernameDraft.value
+    })
+    user.value = result?.data?.user || user.value
+    usernameDraft.value = user.value?.username || ''
+    usernameDialogOpen.value = false
+    ElMessage.success('用户名已更新')
+  } catch (error) {
+    if (error.status === 401) {
+      router.push('/login?redirect=/profile')
+      return
+    }
+    ElMessage.error(error.message || '更新失败')
+  } finally {
+    usernameSaving.value = false
+  }
+}
+
+const copyUserID = async () => {
+  if (!user.value?.id) {
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(user.value.id)
+    idCopied.value = true
+    ElMessage.success('用户 ID 已复制')
+    window.clearTimeout(copyTimer)
+    copyTimer = window.setTimeout(() => {
+      idCopied.value = false
+    }, 1400)
+  } catch (error) {
+    ElMessage.error(error.message || '复制失败')
   }
 }
 
@@ -178,6 +275,10 @@ onMounted(() => {
     router.replace('/profile')
   }
   loadProfile()
+})
+
+onBeforeUnmount(() => {
+  window.clearTimeout(copyTimer)
 })
 </script>
 
@@ -270,7 +371,9 @@ button {
 
 .logout-button,
 .admin-button,
-.bind-button {
+.bind-button,
+.text-button,
+.icon-button {
   border-radius: 8px;
   font-weight: 700;
   transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease, transform 0.2s ease;
@@ -300,6 +403,30 @@ button {
 .admin-button:hover {
   background: #115e59;
   transform: translateY(-1px);
+}
+
+.icon-button {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #dbe5ee;
+  background: #ffffff;
+  color: #0f766e;
+}
+
+.icon-button:hover:not(:disabled) {
+  border-color: #0891b2;
+  background: #ecfeff;
+  transform: translateY(-1px);
+}
+
+.icon-button:disabled,
+.text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .profile-grid {
@@ -369,6 +496,119 @@ button {
 .field-row {
   grid-template-columns: 92px minmax(0, 1fr);
   gap: 16px;
+}
+
+.id-value,
+.username-value {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+
+.id-value strong,
+.username-value strong {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.dialog {
+  display: grid;
+  width: min(420px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  gap: 16px;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 20px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.25);
+}
+
+.dialog header,
+.dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dialog h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.dialog label {
+  display: grid;
+  gap: 8px;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.dialog input {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid #dbe5ee;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  font: inherit;
+  font-weight: 700;
+  outline: none;
+  padding: 0 12px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dialog input:focus {
+  border-color: #0891b2;
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.12);
+}
+
+.dialog footer {
+  justify-content: flex-end;
+}
+
+.text-button {
+  min-width: 72px;
+  height: 38px;
+  padding: 0 16px;
+}
+
+.text-button.primary {
+  background: #0891b2;
+  color: #ffffff;
+}
+
+.text-button.primary:hover:not(:disabled) {
+  background: #0e7490;
+  transform: translateY(-1px);
+}
+
+.text-button.secondary {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+}
+
+.text-button.secondary:hover {
+  border-color: #0891b2;
+  color: #0e7490;
+  transform: translateY(-1px);
 }
 
 .field-row strong,
@@ -501,6 +741,11 @@ button {
   .app-row {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .id-value,
+  .username-value {
+    gap: 8px;
   }
 
   .app-head {

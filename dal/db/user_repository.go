@@ -48,6 +48,14 @@ func (r *UserRepository) ExistsUsername(ctx context.Context, username string) (b
 	return count > 0, nil
 }
 
+func (r *UserRepository) ExistsUsernameExceptID(ctx context.Context, username string, userID string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("username = ? AND id <> ?", username, userID).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (r *UserRepository) Create(ctx context.Context, user *model.User) error {
 	return r.db.WithContext(ctx).Create(user).Error
 }
