@@ -4,7 +4,10 @@ import (
 	"embed"
 	"encoding/json"
 	"html/template"
+	"log"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -12,7 +15,7 @@ import (
 	"sso-server/common/ecode"
 	"sso-server/conf"
 	"sso-server/dal/db"
-	"sso-server/handler/oauth2"
+	"sso-server/model"
 	serviceauth "sso-server/service/auth"
 )
 
@@ -45,11 +48,12 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 	ClearSessionCookie(c, conf.GetEnv() == conf.EnvProd)
 
-	logoutURIs := h.getLogoutURIs(c)
+	clients := h.getLogoutClients(c)
+	logoutURIs := getLogoutURIs(clients)
 	redirectURI := c.Query("redirect")
 
-	allowedRedirectURIs := h.getAllowedRedirectURIs(c)
-	if redirectURI != "" && oauth2.ValidateRedirectURI(allowedRedirectURIs, redirectURI) != nil {
+	if redirectURI != "" && !isAllowedLogoutRedirect(clients, redirectURI) {
+		log.Printf("Logout: invalid redirect, redirect=%q", redirectURI)
 		redirectURI = ""
 	}
 
@@ -70,56 +74,65 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	})
 }
 
-func (h *AuthHandler) getLogoutURIs(c *gin.Context) []string {
+func (h *AuthHandler) getLogoutClients(c *gin.Context) []model.OAuthClient {
 	if h.db == nil {
 		return nil
 	}
 
+	userID := c.GetString("user_id")
 	clientRepo := db.NewOAuthClientRepository(h.db)
-	clients, err := clientRepo.FindAll(c.Request.Context())
+	clients, err := clientRepo.FindByUserID(c.Request.Context(), userID)
 	if err != nil {
 		return nil
 	}
+	return clients
+}
 
+func getLogoutURIs(clients []model.OAuthClient) []string {
 	var uris []string
 	for _, client := range clients {
-		if client.LogoutURIs == "" {
+		if client.LogoutURI == "" {
 			continue
 		}
-		var clientUris []string
-		if err := json.Unmarshal([]byte(client.LogoutURIs), &clientUris); err != nil {
-			continue
-		}
-		uris = append(uris, clientUris...)
+		uris = append(uris, client.LogoutURI)
 	}
 	return uris
 }
 
-func (h *AuthHandler) getAllowedRedirectURIs(c *gin.Context) string {
-	if h.db == nil {
-		return ""
+func isAllowedLogoutRedirect(clients []model.OAuthClient, redirectURI string) bool {
+	if isRelativeLogoutRedirect(redirectURI) {
+		return true
 	}
 
-	clientRepo := db.NewOAuthClientRepository(h.db)
-	clients, err := clientRepo.FindAll(c.Request.Context())
-	if err != nil {
-		return ""
-	}
-
-	var uris []string
 	for _, client := range clients {
-		if client.RedirectURIs == "" {
+		if client.HomepageURL == "" {
 			continue
 		}
-		var clientUris []string
-		if err := json.Unmarshal([]byte(client.RedirectURIs), &clientUris); err != nil {
-			continue
+		if isSameHostname(client.HomepageURL, redirectURI) {
+			return true
 		}
-		uris = append(uris, clientUris...)
 	}
-	if len(uris) == 0 {
-		return ""
+	return false
+}
+
+func isRelativeLogoutRedirect(redirectURI string) bool {
+	redirect, err := url.Parse(strings.TrimSpace(redirectURI))
+	if err != nil {
+		return false
 	}
-	result, _ := json.Marshal(uris)
-	return string(result)
+	return !redirect.IsAbs() && redirect.Host == "" && strings.HasPrefix(redirect.Path, "/")
+}
+
+func isSameHostname(homepageURL string, redirectURI string) bool {
+	homepage, err := url.Parse(strings.TrimSpace(homepageURL))
+	if err != nil || homepage.Hostname() == "" {
+		return false
+	}
+
+	redirect, err := url.Parse(strings.TrimSpace(redirectURI))
+	if err != nil || redirect.Hostname() == "" {
+		return false
+	}
+
+	return strings.EqualFold(homepage.Hostname(), redirect.Hostname())
 }

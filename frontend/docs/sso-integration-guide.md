@@ -10,19 +10,21 @@ SSO 管理员需为接入系统登记客户端信息：
 | --- | --- | --- |
 | `client_id` | 系统标识 | `order-app` |
 | `client_secret` | 系统密钥，仅保存在后端 | `replace-with-secret` |
-| `redirect_uris` | 登录回调地址，JSON 数组字符串 | `["https://order.example.com/auth/sso/callback"]` |
-| `logout_uris` | 可选，全局登出通知地址 | `["https://order.example.com/auth/sso/logout"]` |
+| `homepage_url` | 系统首页地址，用于退出后的 `redirect` 域名校验 | `https://order.example.com` |
+| `redirect_uri` | 登录回调地址 | `https://order.example.com/auth/sso/callback` |
+| `logout_uri` | 可选，全局登出通知地址 | `https://order.example.com/auth/sso/logout` |
 
 登记示例：
 
 ```sql
-INSERT INTO oauth_clients (name, client_id, client_secret, redirect_uris, logout_uris)
+INSERT INTO oauth_clients (name, client_id, client_secret, homepage_url, redirect_uri, logout_uri)
 VALUES (
     '订单系统',
     'order-app',
     'replace-with-secret',
-    '["https://order.example.com/auth/sso/callback"]',
-    '["https://order.example.com/auth/sso/logout"]'
+    'https://order.example.com',
+    'https://order.example.com/auth/sso/callback',
+    'https://order.example.com/auth/sso/logout'
 );
 ```
 
@@ -35,6 +37,7 @@ VALUES (
 | 发起登录 | `GET` | `/oauth/authorize` |
 | 换取令牌 | `POST` | `/oauth/token` |
 | 获取用户信息 | `GET` | `/oauth/userinfo` |
+| 退出登录 | `POST` | `/api/auth/logout` |
 
 ## 3. 接入流程
 
@@ -109,6 +112,28 @@ Authorization: Bearer <access-token>
 ```
 
 接入系统应以 `id` 作为 SSO 用户唯一标识，并在获取用户信息后创建自己的登录会话。
+
+### 3.5 退出登录
+
+系统退出分为接入系统本地会话退出和 SSO 全局会话退出：
+
+1. 用户在接入系统点击退出时，接入系统应先清除自己的本地会话。
+2. 如需同时退出 SSO，应通过前端请求或表单提交到 SSO 的 `POST /api/auth/logout`。
+3. SSO 会清除 `sso_session`，并读取所有已登记的 `logout_uri`。
+4. 如果存在 `logout_uri`，SSO 会返回一个退出中转页，通过隐藏 iframe 逐个访问这些地址，通知各接入系统清除本地会话。
+5. 如果请求携带 `redirect` 参数，SSO 只会在该地址的域名与任一管理端登记的 `homepage_url` 域名一致时跳转；未通过校验时会忽略该参数。
+
+接入系统的 `logout_uri` 用于接收 SSO 的全局退出通知，建议实现为幂等接口。该接口被 SSO 退出中转页以浏览器 iframe 方式访问，因此应支持 `GET` 请求，不依赖请求体，并在收到请求后清除当前浏览器对应的本地登录 Cookie 或会话。
+
+示例：
+
+```http
+GET /auth/sso/logout HTTP/1.1
+Host: order.example.com
+Cookie: order_session=<local-session>
+```
+
+响应可返回 `204 No Content` 或轻量 HTML，SSO 不会读取响应内容。
 
 ## 4. Python / Flask 示例
 
@@ -205,6 +230,12 @@ def callback():
     return jsonify(session["user"])
 
 
+@app.get("/auth/sso/logout")
+def sso_logout():
+    session.clear()
+    return "", 204
+
+
 if __name__ == "__main__":
     app.run(port=5000, debug=True)
 ```
@@ -217,5 +248,6 @@ if __name__ == "__main__":
 - 每次登录必须生成并校验 `state`。
 - 当前 SSO 不签发 `refresh_token`，令牌过期后需要重新登录。
 - 当前未提供 PKCE，推荐由服务端应用接入。
-- 当前 `redirect_uri` 按 Host 校验，生产环境应使用 HTTPS 和独立可信域名。
-- 如需联动登出，可登记 `logout_uris`，由 SSO 登出流程通知接入系统清除本地会话。
+- `redirect_uri` 必须与管理端登记的地址完全一致，生产环境应使用 HTTPS。
+- 退出登录携带的 `redirect` 只校验域名是否与已登记的 `homepage_url` 一致，不要求路径与 `homepage_url` 相同。
+- 如需联动登出，可登记 `logout_uri`，由 SSO 登出流程通知接入系统清除本地会话。

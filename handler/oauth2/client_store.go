@@ -42,6 +42,6 @@ func (s *ClientStore) GetByID(ctx context.Context, id string) (gooauth2.ClientIn
 	return &models.Client{
 		ID:     client.ClientID,
 		Secret: client.ClientSecret,
-		Domain: client.RedirectURIs,
+		Domain: client.RedirectURI,
 	}, nil
 }

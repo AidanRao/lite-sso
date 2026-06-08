@@ -26,13 +26,11 @@ type UserDeps struct {
 
 type UserHandler struct {
 	user *serviceuser.UserService
-	cfg  *conf.Config
 }
 
 func NewUserHandler(deps UserDeps) *UserHandler {
 	return &UserHandler{
 		user: serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2),
-		cfg:  deps.Config,
 	}
 }
 
@@ -124,7 +122,6 @@ func (h *UserHandler) ResetPassword(c *gin.Context) {
 
 // GetProfile retrieves user profile
 func (h *UserHandler) GetProfile(c *gin.Context) {
-	// TODO: Get user ID from context (from auth middleware)
 	userID := c.GetString("user_id")
 	if userID == "" {
 		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
@@ -155,7 +152,6 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	// TODO: Get user ID from context (from auth middleware)
 	userID := c.GetString("user_id")
 	if userID == "" {
 		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})

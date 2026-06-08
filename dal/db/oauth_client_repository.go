@@ -40,6 +40,25 @@ func (r *OAuthClientRepository) FindAll(ctx context.Context) ([]model.OAuthClien
 	return clients, nil
 }
 
+func (r *OAuthClientRepository) FindByUserID(ctx context.Context, userID string) ([]model.OAuthClient, error) {
+	var clients []model.OAuthClient
+	if userID == "" {
+		return clients, nil
+	}
+
+	err := r.db.WithContext(ctx).
+		Table("oauth_clients AS oc").
+		Select("oc.*").
+		Joins("JOIN user_oauth_clients AS uoc ON uoc.client_id = oc.client_id").
+		Where("uoc.user_id = ?", userID).
+		Order("uoc.last_login_at DESC").
+		Scan(&clients).Error
+	if err != nil {
+		return nil, err
+	}
+	return clients, nil
+}
+
 func (r *OAuthClientRepository) ExistsClientID(ctx context.Context, clientID string, excludeID uint) (bool, error) {
 	var count int64
 	query := r.db.WithContext(ctx).Model(&model.OAuthClient{}).Where("client_id = ?", clientID)

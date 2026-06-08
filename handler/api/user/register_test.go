@@ -1,4 +1,4 @@
-package auth_test
+package user_test
 
 import (
 	"context"
@@ -22,10 +22,10 @@ import (
 	"sso-server/model"
 )
 
-func TestAuthRegister_CreatesUserAndReturnsToken(t *testing.T) {
+func TestUserRegister_CreatesUserAndReturnsToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	db, err := gorm.Open(sqlite.Open("file:auth_register_session?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:user_register_session?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

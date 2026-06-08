@@ -130,6 +130,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Check, Copy, Pencil, X } from 'lucide-vue-next'
 import { userAPI } from '../api/auth'
+import { submitGlobalLogout } from '../utils/logout'
 
 const router = useRouter()
 const route = useRoute()
@@ -238,15 +239,8 @@ const copyUserID = async () => {
   }
 }
 
-const logout = async () => {
-  try {
-    await fetch('/api/auth/logout', {
-      method: 'POST'
-    })
-  } catch (error) {
-    ElMessage.error(error.message || '退出失败')
-  }
-  router.push('/login')
+const logout = () => {
+  submitGlobalLogout('/login')
 }
 
 const bindProvider = (provider) => {

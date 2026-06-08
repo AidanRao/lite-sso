@@ -131,16 +131,6 @@ func (s *UserService) verifyOTP(ctx context.Context, email string, otp string) (
 	return true, nil
 }
 
-// GetProfile retrieves user profile
-func (s *UserService) GetProfile(ctx context.Context, userID string) (*dto.UserResponse, error) {
-	userRepo := db.NewUserRepository(s.db)
-	user, err := userRepo.FindByID(ctx, userID)
-	if err != nil {
-		return nil, common.ErrUserNotFound
-	}
-	return dto.ToUserResponse(user), nil
-}
-
 func (s *UserService) GetProfileOverview(ctx context.Context, userID string) (*dto.ProfileResponse, error) {
 	userRepo := db.NewUserRepository(s.db)
 	user, err := userRepo.FindByID(ctx, userID)

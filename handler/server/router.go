@@ -107,10 +107,6 @@ func (s *Server) registerRoutes() {
 			authProtected.Use(authRequired)
 			authProtected.POST("/logout", authHandler.Logout)
 
-			authGroup.POST("/register", func(c *gin.Context) {
-				c.Set("deprecated", "use /api/user/register instead")
-				userHandler.Register(c)
-			})
 		}
 
 		oauthAPIGroup := apiGroup.Group("/oauth")
@@ -136,6 +132,7 @@ func (s *Server) registerRoutes() {
 			adminGroup.GET("/users", adminHandler.ListUsers)
 			adminGroup.GET("/users/:id", adminHandler.GetUserDetail)
 			adminGroup.GET("/oauth-clients", adminHandler.ListOAuthClients)
+			adminGroup.GET("/oauth-clients/:id/secret", adminHandler.GetOAuthClientSecret)
 			adminGroup.POST("/oauth-clients", adminHandler.CreateOAuthClient)
 			adminGroup.PUT("/oauth-clients/:id", adminHandler.UpdateOAuthClient)
 		}

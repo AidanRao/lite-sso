@@ -77,6 +77,23 @@ func (h *AdminHandler) ListOAuthClients(c *gin.Context) {
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"clients": clients}))
 }
 
+// GetOAuthClientSecret returns a connected platform secret for administrators.
+func (h *AdminHandler) GetOAuthClientSecret(c *gin.Context) {
+	id64, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id64 == 0 {
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
+		return
+	}
+
+	secret, err := h.admin.GetOAuthClientSecret(c.Request.Context(), uint(id64))
+	if err != nil {
+		writeOAuthClientError(c, err, "获取平台密钥失败")
+		return
+	}
+
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"secret": secret}))
+}
+
 // CreateOAuthClient creates a connected platform.
 func (h *AdminHandler) CreateOAuthClient(c *gin.Context) {
 	var req dto.CreateOAuthClientRequest

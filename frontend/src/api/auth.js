@@ -31,7 +31,7 @@ export const authAPI = {
   },
 
   register: (data) => {
-    return api.post('/auth/register', data)
+    return api.post('/user/register', data)
   },
 
   resetPassword: (data) => {
@@ -76,6 +76,10 @@ export const adminAPI = {
 
   listOAuthClients: () => {
     return api.get('/admin/oauth-clients')
+  },
+
+  getOAuthClientSecret: (id) => {
+    return api.get(`/admin/oauth-clients/${id}/secret`)
   },
 
   createOAuthClient: (data) => {

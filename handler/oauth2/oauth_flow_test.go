@@ -39,7 +39,7 @@ func TestOAuth2_Authorize_RequiresSession(t *testing.T) {
 		Name:         "app",
 		ClientID:     "c1",
 		ClientSecret: "s1",
-		RedirectURIs: `["http://localhost/cb"]`,
+		RedirectURI:  "http://localhost/cb",
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 		Name:         "app",
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-		RedirectURIs: `["` + redirectURI + `"]`,
+		RedirectURI:  redirectURI,
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
 	}

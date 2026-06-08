@@ -30,7 +30,7 @@ func TestOAuthClientInfo_ReturnsClientName(t *testing.T) {
 		Name:         "订单系统",
 		ClientID:     "order-app",
 		ClientSecret: "secret",
-		RedirectURIs: `["http://localhost/callback"]`,
+		RedirectURI:  "http://localhost/callback",
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
 	}

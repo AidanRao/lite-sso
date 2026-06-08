@@ -9,6 +9,7 @@ worktrees/
 # Build artifacts
 bin/
 dist/
+sso-server
 
 # Logs
 *.log

@@ -3,7 +3,6 @@ package systemadmin
 
 import (
 	"context"
-	"encoding/json"
 	"net/url"
 	"strings"
 
@@ -106,6 +105,20 @@ func (s *AdminService) ListOAuthClients(ctx context.Context) ([]dto.OAuthClientR
 	return responses, nil
 }
 
+// GetOAuthClientSecret returns an OAuth client secret for administrators.
+func (s *AdminService) GetOAuthClientSecret(ctx context.Context, id uint) (*dto.OAuthClientSecretResponse, error) {
+	client, err := s.clientRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, common.ErrOAuthClientNotFound
+	}
+
+	return &dto.OAuthClientSecretResponse{
+		ID:           client.ID,
+		ClientID:     client.ClientID,
+		ClientSecret: client.ClientSecret,
+	}, nil
+}
+
 func toAdminUserResponse(user *model.User, cfg *conf.Config) *dto.AdminUserResponse {
 	return &dto.AdminUserResponse{
 		ID:        user.ID,
@@ -124,11 +137,15 @@ func (s *AdminService) CreateOAuthClient(ctx context.Context, req dto.CreateOAut
 	name := strings.TrimSpace(req.Name)
 	clientID := strings.TrimSpace(req.ClientID)
 	clientSecret := strings.TrimSpace(req.ClientSecret)
-	redirectURIs, err := normalizeURIs(req.RedirectURIs, true)
+	homepageURL, err := normalizeURI(req.HomepageURL)
 	if err != nil {
 		return nil, err
 	}
-	logoutURIs, err := normalizeURIs(req.LogoutURIs, false)
+	redirectURI, err := normalizeURI(req.RedirectURI)
+	if err != nil {
+		return nil, err
+	}
+	logoutURI, err := normalizeOptionalURI(req.LogoutURI)
 	if err != nil {
 		return nil, err
 	}
@@ -144,21 +161,13 @@ func (s *AdminService) CreateOAuthClient(ctx context.Context, req dto.CreateOAut
 		return nil, common.ErrOAuthClientExists
 	}
 
-	redirectRaw, err := marshalURIs(redirectURIs)
-	if err != nil {
-		return nil, err
-	}
-	logoutRaw, err := marshalURIs(logoutURIs)
-	if err != nil {
-		return nil, err
-	}
-
 	client := &model.OAuthClient{
 		Name:         name,
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-		RedirectURIs: redirectRaw,
-		LogoutURIs:   logoutRaw,
+		HomepageURL:  homepageURL,
+		RedirectURI:  redirectURI,
+		LogoutURI:    logoutURI,
 	}
 	if err := s.clientRepo.Create(ctx, client); err != nil {
 		return nil, err
@@ -176,11 +185,15 @@ func (s *AdminService) UpdateOAuthClient(ctx context.Context, id uint, req dto.U
 
 	name := strings.TrimSpace(req.Name)
 	clientID := strings.TrimSpace(req.ClientID)
-	redirectURIs, err := normalizeURIs(req.RedirectURIs, true)
+	homepageURL, err := normalizeURI(req.HomepageURL)
 	if err != nil {
 		return nil, err
 	}
-	logoutURIs, err := normalizeURIs(req.LogoutURIs, false)
+	redirectURI, err := normalizeURI(req.RedirectURI)
+	if err != nil {
+		return nil, err
+	}
+	logoutURI, err := normalizeOptionalURI(req.LogoutURI)
 	if err != nil {
 		return nil, err
 	}
@@ -196,19 +209,11 @@ func (s *AdminService) UpdateOAuthClient(ctx context.Context, id uint, req dto.U
 		return nil, common.ErrOAuthClientExists
 	}
 
-	redirectRaw, err := marshalURIs(redirectURIs)
-	if err != nil {
-		return nil, err
-	}
-	logoutRaw, err := marshalURIs(logoutURIs)
-	if err != nil {
-		return nil, err
-	}
-
 	client.Name = name
 	client.ClientID = clientID
-	client.RedirectURIs = redirectRaw
-	client.LogoutURIs = logoutRaw
+	client.HomepageURL = homepageURL
+	client.RedirectURI = redirectURI
+	client.LogoutURI = logoutURI
 	if req.ClientSecret != nil && strings.TrimSpace(*req.ClientSecret) != "" {
 		client.ClientSecret = strings.TrimSpace(*req.ClientSecret)
 	}
@@ -222,53 +227,28 @@ func (s *AdminService) UpdateOAuthClient(ctx context.Context, id uint, req dto.U
 
 func toOAuthClientResponse(client *model.OAuthClient) dto.OAuthClientResponse {
 	return dto.OAuthClientResponse{
-		ID:           client.ID,
-		Name:         client.Name,
-		ClientID:     client.ClientID,
-		RedirectURIs: parseURIList(client.RedirectURIs),
-		LogoutURIs:   parseURIList(client.LogoutURIs),
+		ID:          client.ID,
+		Name:        client.Name,
+		ClientID:    client.ClientID,
+		HomepageURL: client.HomepageURL,
+		RedirectURI: client.RedirectURI,
+		LogoutURI:   client.LogoutURI,
 	}
 }
 
-func normalizeURIs(values []string, required bool) ([]string, error) {
-	result := make([]string, 0, len(values))
-	seen := make(map[string]bool, len(values))
-	for _, value := range values {
-		trimmed := strings.TrimSpace(value)
-		if trimmed == "" {
-			continue
-		}
-		parsed, err := url.ParseRequestURI(trimmed)
-		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-			return nil, common.ErrInvalidOAuthClient
-		}
-		if !seen[trimmed] {
-			result = append(result, trimmed)
-			seen[trimmed] = true
-		}
+func normalizeURI(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	parsed, err := url.ParseRequestURI(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", common.ErrInvalidOAuthClient
 	}
-	if required && len(result) == 0 {
-		return nil, common.ErrInvalidOAuthClient
-	}
-	return result, nil
+	return trimmed, nil
 }
 
-func marshalURIs(values []string) (string, error) {
-	raw, err := json.Marshal(values)
-	if err != nil {
-		return "", err
+func normalizeOptionalURI(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
 	}
-	return string(raw), nil
-}
-
-func parseURIList(raw string) []string {
-	if strings.TrimSpace(raw) == "" {
-		return []string{}
-	}
-
-	var values []string
-	if err := json.Unmarshal([]byte(raw), &values); err != nil {
-		return []string{}
-	}
-	return values
+	return normalizeURI(trimmed)
 }

@@ -29,7 +29,6 @@ type AuthDeps struct {
 type AuthHandler struct {
 	captcha *captcha.Service
 	auth    *auth.AuthService
-	cfg     *conf.Config
 	db      *gorm.DB
 }
 
@@ -55,7 +54,6 @@ func NewAuthHandler(deps AuthDeps) *AuthHandler {
 	return &AuthHandler{
 		captcha: captcha.NewService(captchaStore),
 		auth:    auth.NewAuthService(cfg, deps.DB, kvStore, mailerImpl, deps.OAuth2),
-		cfg:     cfg,
 		db:      deps.DB,
 	}
 }

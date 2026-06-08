@@ -76,14 +76,14 @@
         <div v-else class="data-table clients-table">
           <div class="table-row table-head">
             <span>平台</span>
-            <span>Client ID</span>
+            <span>Homepage URL</span>
             <span>回调地址</span>
             <span></span>
           </div>
           <div v-for="client in clients" :key="client.id" class="table-row">
             <strong>{{ client.name }}</strong>
-            <span class="mono">{{ client.client_id }}</span>
-            <span class="uri-list">{{ client.redirect_uris.join('\n') }}</span>
+            <span class="uri-list">{{ client.homepage_url }}</span>
+            <span class="uri-list">{{ client.redirect_uri }}</span>
             <button class="icon-button" type="button" title="编辑平台" @click="openEditDialog(client)">
               <Pencil :size="17" />
             </button>
@@ -111,16 +111,44 @@
           <input v-model.trim="form.client_id" required maxlength="50" />
         </label>
         <label>
-          <span>{{ editingClient ? '新密钥' : 'Client Secret' }}</span>
-          <input v-model.trim="form.client_secret" :required="!editingClient" maxlength="255" autocomplete="new-password" />
+          <span>Homepage URL</span>
+          <input v-model.trim="form.homepage_url" required maxlength="255" />
         </label>
+        <div class="secret-field">
+          <span>Client Secret</span>
+          <div class="secret-row">
+            <output class="secret-output mono">{{ secretLoading ? '密钥加载中' : (clientSecretDisplay || '未获取密钥') }}</output>
+            <button
+              class="icon-button"
+              type="button"
+              title="复制密钥"
+              :disabled="!form.client_secret || secretLoading"
+              @click="copyClientSecret"
+            >
+              <Copy :size="17" />
+            </button>
+            <button
+              class="icon-button"
+              type="button"
+              :title="secretVisible ? '隐藏密钥' : '显示密钥'"
+              :disabled="!form.client_secret || secretLoading"
+              @click="secretVisible = !secretVisible"
+            >
+              <EyeOff v-if="secretVisible" :size="17" />
+              <Eye v-else :size="17" />
+            </button>
+            <button class="icon-button" type="button" title="重新生成密钥" @click="regenerateClientSecret">
+              <RefreshCw :size="17" />
+            </button>
+          </div>
+        </div>
         <label>
           <span>回调地址</span>
-          <textarea v-model="form.redirect_uris" required rows="4" />
+          <input v-model.trim="form.redirect_uri" required maxlength="255" />
         </label>
         <label>
           <span>登出通知地址</span>
-          <textarea v-model="form.logout_uris" rows="3" />
+          <input v-model.trim="form.logout_uri" maxlength="255" />
         </label>
 
         <footer>
@@ -128,7 +156,7 @@
             <X :size="17" />
             <span>取消</span>
           </button>
-          <button class="icon-text-button primary" type="submit" :disabled="saving">
+          <button class="icon-text-button primary" type="submit" :disabled="saving || secretLoading">
             <Save :size="17" />
             <span>保存</span>
           </button>
@@ -215,11 +243,12 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, PanelsTopLeft, Pencil, Plus, RefreshCw, Save, Users, X } from 'lucide-vue-next'
+import { ArrowLeft, Copy, Eye, EyeOff, PanelsTopLeft, Pencil, Plus, RefreshCw, Save, Users, X } from 'lucide-vue-next'
 import { adminAPI } from '../api/auth'
+import { generateClientSecret, maskClientSecret } from '../utils/clientSecret'
 
 const router = useRouter()
 const activeTab = ref('users')
@@ -230,14 +259,23 @@ const userDetailOpen = ref(false)
 const detailLoading = ref(false)
 const editingClient = ref(null)
 const selectedUserDetail = ref(null)
+const secretVisible = ref(false)
+const secretLoading = ref(false)
 const users = ref([])
 const clients = ref([])
 const form = reactive({
   name: '',
   client_id: '',
   client_secret: '',
-  redirect_uris: '',
-  logout_uris: ''
+  homepage_url: '',
+  redirect_uri: '',
+  logout_uri: ''
+})
+const clientSecretDisplay = computed(() => {
+  if (secretVisible.value) {
+    return form.client_secret
+  }
+  return maskClientSecret(form.client_secret)
 })
 
 const loadData = async () => {
@@ -268,6 +306,7 @@ const loadData = async () => {
 const openCreateDialog = () => {
   editingClient.value = null
   resetForm()
+  regenerateClientSecret()
   dialogOpen.value = true
 }
 
@@ -292,14 +331,17 @@ const closeUserDetail = () => {
   selectedUserDetail.value = null
 }
 
-const openEditDialog = (client) => {
+const openEditDialog = async (client) => {
   editingClient.value = client
   form.name = client.name || ''
   form.client_id = client.client_id || ''
   form.client_secret = ''
-  form.redirect_uris = (client.redirect_uris || []).join('\n')
-  form.logout_uris = (client.logout_uris || []).join('\n')
+  form.homepage_url = client.homepage_url || ''
+  secretVisible.value = false
+  form.redirect_uri = client.redirect_uri || ''
+  form.logout_uri = client.logout_uri || ''
   dialogOpen.value = true
+  await loadClientSecret(client.id)
 }
 
 const closeDialog = () => {
@@ -311,11 +353,15 @@ const closeDialog = () => {
 const saveClient = async () => {
   saving.value = true
   try {
+    if (!editingClient.value && !form.client_secret) {
+      regenerateClientSecret()
+    }
     const payload = {
       name: form.name,
       client_id: form.client_id,
-      redirect_uris: splitLines(form.redirect_uris),
-      logout_uris: splitLines(form.logout_uris)
+      homepage_url: form.homepage_url,
+      redirect_uri: form.redirect_uri,
+      logout_uri: form.logout_uri
     }
     if (!editingClient.value || form.client_secret.trim()) {
       payload.client_secret = form.client_secret.trim()
@@ -341,12 +387,41 @@ const resetForm = () => {
   form.name = ''
   form.client_id = ''
   form.client_secret = ''
-  form.redirect_uris = ''
-  form.logout_uris = ''
+  form.homepage_url = ''
+  secretVisible.value = false
+  secretLoading.value = false
+  form.redirect_uri = ''
+  form.logout_uri = ''
 }
 
-const splitLines = (value) => {
-  return value.split('\n').map((item) => item.trim()).filter(Boolean)
+const regenerateClientSecret = () => {
+  form.client_secret = generateClientSecret()
+  secretVisible.value = false
+}
+
+const loadClientSecret = async (id) => {
+  secretLoading.value = true
+  try {
+    const response = await adminAPI.getOAuthClientSecret(id)
+    form.client_secret = response?.data?.secret?.client_secret || ''
+    secretVisible.value = false
+  } catch (error) {
+    ElMessage.error(error.message || '获取平台密钥失败')
+  } finally {
+    secretLoading.value = false
+  }
+}
+
+const copyClientSecret = async () => {
+  if (!form.client_secret) {
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(form.client_secret)
+    ElMessage.success('密钥已复制')
+  } catch (error) {
+    ElMessage.error(error.message || '复制密钥失败')
+  }
 }
 
 const avatarInitial = (item) => {
@@ -732,12 +807,36 @@ button:disabled {
   padding-top: 4px;
 }
 
-.dialog label {
+.dialog label,
+.secret-field {
   display: grid;
   gap: 7px;
   color: #334155;
   font-size: 14px;
   font-weight: 750;
+}
+
+.secret-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, 40px);
+  gap: 8px;
+  align-items: center;
+}
+
+.secret-output {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 40px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f172a;
+  padding: 0 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dialog input,
@@ -947,6 +1046,10 @@ button:disabled {
   .dialog footer {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .secret-row {
+    grid-template-columns: minmax(0, 1fr) repeat(3, 40px);
   }
 
   .detail-fields,

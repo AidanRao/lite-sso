@@ -71,7 +71,7 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 		Name:         "demo app",
 		ClientID:     "c1",
 		ClientSecret: "s1",
-		RedirectURIs: `["http://localhost/cb"]`,
+		RedirectURI:  "http://localhost/cb",
 	}).Error; err != nil {
 		t.Fatalf("create oauth client: %v", err)
 	}
