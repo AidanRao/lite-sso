@@ -160,6 +160,7 @@ func (s *UserService) GetProfileOverview(ctx context.Context, userID string) (*d
 		appResponses = append(appResponses, dto.UserApplicationResponse{
 			ClientID:    app.ClientID,
 			Name:        app.Name,
+			HomepageURL: app.HomepageURL,
 			LastLoginAt: app.LastLoginAt,
 		})
 	}

@@ -71,6 +71,7 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 		Name:         "demo app",
 		ClientID:     "c1",
 		ClientSecret: "s1",
+		HomepageURL:  "https://demo.example.com",
 		RedirectURI:  "http://localhost/cb",
 	}).Error; err != nil {
 		t.Fatalf("create oauth client: %v", err)
@@ -120,8 +121,9 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 				ID string `json:"id"`
 			} `json:"user"`
 			Applications []struct {
-				ClientID string `json:"client_id"`
-				Name     string `json:"name"`
+				ClientID    string `json:"client_id"`
+				Name        string `json:"name"`
+				HomepageURL string `json:"homepage_url"`
 			} `json:"applications"`
 			ThirdPartyProviders []struct {
 				Provider string `json:"provider"`
@@ -137,6 +139,9 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 	}
 	if len(resp.Data.Applications) != 1 || resp.Data.Applications[0].Name != "demo app" {
 		t.Fatalf("expected demo app, got %s", w.Body.String())
+	}
+	if resp.Data.Applications[0].HomepageURL != "https://demo.example.com" {
+		t.Fatalf("expected homepage url, got %s", w.Body.String())
 	}
 	if len(resp.Data.ThirdPartyProviders) != 2 {
 		t.Fatalf("expected two providers, got %s", w.Body.String())

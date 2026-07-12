@@ -75,6 +75,7 @@ func (s *AdminService) GetUserDetail(ctx context.Context, userID string) (*dto.A
 		appResponses = append(appResponses, dto.UserApplicationResponse{
 			ClientID:    app.ClientID,
 			Name:        app.Name,
+			HomepageURL: app.HomepageURL,
 			LastLoginAt: app.LastLoginAt,
 		})
 	}
@@ -184,7 +185,6 @@ func (s *AdminService) UpdateOAuthClient(ctx context.Context, id uint, req dto.U
 	}
 
 	name := strings.TrimSpace(req.Name)
-	clientID := strings.TrimSpace(req.ClientID)
 	homepageURL, err := normalizeURI(req.HomepageURL)
 	if err != nil {
 		return nil, err
@@ -197,20 +197,11 @@ func (s *AdminService) UpdateOAuthClient(ctx context.Context, id uint, req dto.U
 	if err != nil {
 		return nil, err
 	}
-	if name == "" || clientID == "" {
+	if name == "" {
 		return nil, common.ErrInvalidOAuthClient
 	}
 
-	exists, err := s.clientRepo.ExistsClientID(ctx, clientID, id)
-	if err != nil {
-		return nil, err
-	}
-	if exists {
-		return nil, common.ErrOAuthClientExists
-	}
-
 	client.Name = name
-	client.ClientID = clientID
 	client.HomepageURL = homepageURL
 	client.RedirectURI = redirectURI
 	client.LogoutURI = logoutURI

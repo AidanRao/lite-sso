@@ -99,11 +99,25 @@ func TestAdminOAuthClients_CreateAndUpdate(t *testing.T) {
 		t.Fatalf("expected update 200, got %d, body=%s", updateResp.Code, updateResp.Body.String())
 	}
 
+	var updated struct {
+		Data struct {
+			Client struct {
+				ClientID string `json:"client_id"`
+			} `json:"client"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(updateResp.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("unmarshal update response: %v", err)
+	}
+	if updated.Data.Client.ClientID != "order-app" {
+		t.Fatalf("client id should stay immutable in response, body=%s", updateResp.Body.String())
+	}
+
 	var client model.OAuthClient
 	if err := database.First(&client, "id = ?", created.Data.Client.ID).Error; err != nil {
 		t.Fatalf("find client: %v", err)
 	}
-	if client.Name != "订单中心" || client.ClientID != "order-center" {
+	if client.Name != "订单中心" || client.ClientID != "order-app" {
 		t.Fatalf("client not updated: %+v", client)
 	}
 	if client.HomepageURL != "https://order.example.com/home" {

@@ -20,6 +20,7 @@ type ProfileResponse struct {
 type UserApplicationResponse struct {
 	ClientID    string    `json:"client_id"`
 	Name        string    `json:"name"`
+	HomepageURL string    `json:"homepage_url"`
 	LastLoginAt time.Time `json:"last_login_at"`
 }
 

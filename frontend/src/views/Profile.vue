@@ -87,7 +87,16 @@
             <span>最近登录</span>
           </div>
           <div v-for="app in applications" :key="app.client_id" class="app-row">
-            <strong>{{ app.name || app.client_id }}</strong>
+            <a
+              v-if="app.homepage_url"
+              class="app-link"
+              :href="app.homepage_url"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {{ app.name || app.client_id }}
+            </a>
+            <strong v-else>{{ app.name || app.client_id }}</strong>
             <span class="mono">{{ app.client_id }}</span>
             <time>{{ formatDate(app.last_login_at) }}</time>
           </div>
@@ -607,13 +616,23 @@ button {
 
 .field-row strong,
 .provider-row strong,
-.app-row strong {
+.app-row strong,
+.app-link {
   min-width: 0;
   overflow: hidden;
   color: #111827;
   font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.app-link {
+  text-decoration: none;
+}
+
+.app-link:hover {
+  color: #0e7490;
+  text-decoration: underline;
 }
 
 .mono {

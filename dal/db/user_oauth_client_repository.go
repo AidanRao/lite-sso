@@ -17,6 +17,7 @@ type UserOAuthClientRepository struct {
 type UserOAuthClientView struct {
 	ClientID    string
 	Name        string
+	HomepageURL string
 	LastLoginAt time.Time
 }
 
@@ -51,7 +52,7 @@ func (r *UserOAuthClientRepository) ListByUserID(ctx context.Context, userID str
 	var apps []UserOAuthClientView
 	err := r.db.WithContext(ctx).
 		Table("user_oauth_clients AS uoc").
-		Select("uoc.client_id, oc.name, uoc.last_login_at").
+		Select("uoc.client_id, oc.name, oc.homepage_url, uoc.last_login_at").
 		Joins("JOIN oauth_clients AS oc ON oc.client_id = uoc.client_id").
 		Where("uoc.user_id = ?", userID).
 		Order("uoc.last_login_at DESC").

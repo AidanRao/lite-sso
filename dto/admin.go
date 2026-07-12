@@ -51,7 +51,6 @@ type CreateOAuthClientRequest struct {
 // UpdateOAuthClientRequest represents the request body for updating an OAuth client.
 type UpdateOAuthClientRequest struct {
 	Name         string  `json:"name" binding:"required"`
-	ClientID     string  `json:"client_id" binding:"required"`
 	ClientSecret *string `json:"client_secret"`
 	HomepageURL  string  `json:"homepage_url" binding:"required"`
 	RedirectURI  string  `json:"redirect_uri" binding:"required"`

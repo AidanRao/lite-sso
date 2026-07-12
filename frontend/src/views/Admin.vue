@@ -40,7 +40,6 @@
           <div class="table-row table-head">
             <span>用户</span>
             <span>用户 ID</span>
-            <span>状态</span>
             <span>创建时间</span>
           </div>
           <div
@@ -64,10 +63,6 @@
               </div>
             </div>
             <span class="mono">{{ item.id }}</span>
-            <span>
-              <span :class="['status', item.is_active ? 'ok' : 'disabled']">{{ item.is_active ? '启用' : '停用' }}</span>
-              <span v-if="item.is_admin" class="status admin">管理员</span>
-            </span>
             <time>{{ formatDate(item.created_at) }}</time>
           </div>
           <div v-if="!users.length && !loading" class="empty-state">暂无用户</div>
@@ -108,7 +103,8 @@
         </label>
         <label>
           <span>Client ID</span>
-          <input v-model.trim="form.client_id" required maxlength="50" />
+          <output v-if="editingClient" class="readonly-output mono">{{ form.client_id }}</output>
+          <input v-else v-model.trim="form.client_id" required maxlength="50" />
         </label>
         <label>
           <span>Homepage URL</span>
@@ -194,14 +190,6 @@
               <div>
                 <span>用户 ID</span>
                 <strong class="mono">{{ selectedUserDetail?.user?.id || '-' }}</strong>
-              </div>
-              <div>
-                <span>状态</span>
-                <strong>{{ selectedUserDetail?.user?.is_active ? '启用' : '停用' }}</strong>
-              </div>
-              <div>
-                <span>管理员</span>
-                <strong>{{ selectedUserDetail?.user?.is_admin ? '是' : '否' }}</strong>
               </div>
               <div>
                 <span>创建时间</span>
@@ -358,7 +346,6 @@ const saveClient = async () => {
     }
     const payload = {
       name: form.name,
-      client_id: form.client_id,
       homepage_url: form.homepage_url,
       redirect_uri: form.redirect_uri,
       logout_uri: form.logout_uri
@@ -371,6 +358,7 @@ const saveClient = async () => {
       await adminAPI.updateOAuthClient(editingClient.value.id, payload)
       ElMessage.success('平台已更新')
     } else {
+      payload.client_id = form.client_id
       await adminAPI.createOAuthClient(payload)
       ElMessage.success('平台已新增')
     }
@@ -660,7 +648,7 @@ button:disabled {
 }
 
 .users-table .table-row {
-  grid-template-columns: minmax(190px, 1.1fr) minmax(180px, 1fr) minmax(150px, 0.7fr) 150px;
+  grid-template-columns: minmax(190px, 1.1fr) minmax(180px, 1fr) 150px;
 }
 
 .clients-table .table-row {
@@ -732,11 +720,6 @@ button:disabled {
 .status.disabled {
   background: #fee2e2;
   color: #991b1b;
-}
-
-.status.admin {
-  background: #e0f2fe;
-  color: #075985;
 }
 
 .uri-list {
@@ -823,6 +806,7 @@ button:disabled {
   align-items: center;
 }
 
+.readonly-output,
 .secret-output {
   display: flex;
   align-items: center;
