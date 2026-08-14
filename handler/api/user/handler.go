@@ -173,3 +173,31 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"user": user}))
 }
+
+// UnbindThirdParty removes a third-party login method from the current user.
+func (h *UserHandler) UnbindThirdParty(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		return
+	}
+
+	err := h.user.UnbindThirdParty(c.Request.Context(), userID, c.Param("provider"))
+	if err != nil {
+		switch {
+		case errors.Is(err, common.ErrInvalidProvider):
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "不支持的第三方平台", Data: nil})
+		case errors.Is(err, common.ErrEmailRequiredForUnbind):
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "请先设置邮箱，再撤销第三方授权", Data: nil})
+		case errors.Is(err, common.ErrThirdPartyNotBound):
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "尚未绑定该第三方平台", Data: nil})
+		case errors.Is(err, common.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+		default:
+			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "撤销授权失败", Data: nil})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"unbound": true}))
+}

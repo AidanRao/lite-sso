@@ -70,6 +70,16 @@
             >
               绑定
             </button>
+            <button
+              v-else
+              class="unbind-button"
+              type="button"
+              :disabled="!user?.email || Boolean(unbindingProvider)"
+              :title="user?.email ? `撤销 ${provider.name} 授权` : '请先设置邮箱，再撤销第三方授权'"
+              @click="unbindProvider(provider)"
+            >
+              {{ unbindingProvider === provider.id ? '撤销中' : '撤销授权' }}
+            </button>
           </div>
         </div>
       </article>
@@ -136,7 +146,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Copy, Pencil, X } from 'lucide-vue-next'
 import { userAPI } from '../api/auth'
 import { submitGlobalLogout } from '../utils/logout'
@@ -152,6 +162,7 @@ const usernameSaving = ref(false)
 const usernameDialogOpen = ref(false)
 const usernameInput = ref(null)
 const idCopied = ref(false)
+const unbindingProvider = ref('')
 let copyTimer = null
 
 const providerMeta = [
@@ -255,6 +266,43 @@ const logout = () => {
 const bindProvider = (provider) => {
   const redirect = encodeURIComponent('/profile?bind=success')
   window.location.href = `/api/user/third/${provider}/bind?redirect=${redirect}`
+}
+
+const unbindProvider = async (provider) => {
+  if (!user.value?.email || unbindingProvider.value) {
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `撤销后将无法再使用 ${provider.name} 登录当前账号，确定继续吗？`,
+      `撤销 ${provider.name} 授权`,
+      {
+        confirmButtonText: '撤销授权',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
+    return
+  }
+
+  unbindingProvider.value = provider.id
+  try {
+    await userAPI.unbindThirdParty(provider.id)
+    thirdPartyProviders.value = thirdPartyProviders.value.map((item) => (
+      item.provider === provider.id ? { ...item, bound: false } : item
+    ))
+    ElMessage.success(`${provider.name} 授权已撤销`)
+  } catch (error) {
+    if (error.status === 401) {
+      router.push('/login?redirect=/profile')
+      return
+    }
+    ElMessage.error(error.message || '撤销授权失败')
+  } finally {
+    unbindingProvider.value = ''
+  }
 }
 
 const formatDate = (value) => {
@@ -375,6 +423,7 @@ button {
 .logout-button,
 .admin-button,
 .bind-button,
+.unbind-button,
 .text-button,
 .icon-button {
   border-radius: 8px;
@@ -660,9 +709,31 @@ button {
   font-size: 14px;
 }
 
-.bind-button:hover {
+.bind-button:hover:not(:disabled) {
   background: #0e7490;
   transform: translateY(-1px);
+}
+
+.unbind-button {
+  height: 34px;
+  min-width: 84px;
+  padding: 0 12px;
+  border: 1px solid #fca5a5;
+  background: #ffffff;
+  color: #dc2626;
+  font-size: 14px;
+}
+
+.unbind-button:hover:not(:disabled) {
+  border-color: #ef4444;
+  background: #fef2f2;
+  transform: translateY(-1px);
+}
+
+.bind-button:disabled,
+.unbind-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .app-table {

@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -18,6 +19,8 @@ import (
 	"sso-server/handler/oauth2"
 	"sso-server/model"
 )
+
+var supportedThirdPartyProviders = []string{"github", "feishu"}
 
 type UserService struct {
 	cfg    *conf.Config
@@ -165,9 +168,12 @@ func (s *UserService) GetProfileOverview(ctx context.Context, userID string) (*d
 		})
 	}
 
-	providerResponses := []dto.ThirdPartyProviderResponse{
-		{Provider: "github", Bound: boundProviders["github"]},
-		{Provider: "feishu", Bound: boundProviders["feishu"]},
+	providerResponses := make([]dto.ThirdPartyProviderResponse, 0, len(supportedThirdPartyProviders))
+	for _, provider := range supportedThirdPartyProviders {
+		providerResponses = append(providerResponses, dto.ThirdPartyProviderResponse{
+			Provider: provider,
+			Bound:    boundProviders[provider],
+		})
 	}
 
 	return &dto.ProfileResponse{
@@ -176,6 +182,38 @@ func (s *UserService) GetProfileOverview(ctx context.Context, userID string) (*d
 		ThirdPartyProviders: providerResponses,
 		IsAdmin:             s.cfg.IsAdminUser(userID),
 	}, nil
+}
+
+// UnbindThirdParty removes a third-party login method from the current user.
+func (s *UserService) UnbindThirdParty(ctx context.Context, userID string, provider string) error {
+	if !isSupportedThirdPartyProvider(provider) {
+		return common.ErrInvalidProvider
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		userRepo := db.NewUserRepository(tx)
+		user, err := userRepo.FindByID(ctx, userID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.ErrUserNotFound
+			}
+			return err
+		}
+		if user.Email == nil || strings.TrimSpace(*user.Email) == "" {
+			return common.ErrEmailRequiredForUnbind
+		}
+
+		thirdPartyRepo := db.NewUserThirdPartyRepository(tx)
+		binding, err := thirdPartyRepo.FindByUserID(ctx, userID, provider)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.ErrThirdPartyNotBound
+			}
+			return err
+		}
+
+		return thirdPartyRepo.Delete(ctx, binding.ID)
+	})
 }
 
 // UpdateProfile updates user profile
@@ -217,4 +255,13 @@ func stringPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func isSupportedThirdPartyProvider(provider string) bool {
+	for _, supportedProvider := range supportedThirdPartyProviders {
+		if provider == supportedProvider {
+			return true
+		}
+	}
+	return false
 }

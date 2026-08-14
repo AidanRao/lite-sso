@@ -39,6 +39,8 @@ var (
 	ErrProviderAuthFailed       = errors.New("provider authentication failed")
 	ErrThirdPartyAlreadyBound   = errors.New("third party already bound")
 	ErrThirdPartyBoundToAnother = errors.New("third party bound to another user")
+	ErrThirdPartyNotBound       = errors.New("third party not bound")
+	ErrEmailRequiredForUnbind   = errors.New("email required to unbind third party")
 	ErrOAuthClientExists        = errors.New("oauth client already exists")
 	ErrOAuthClientNotFound      = errors.New("oauth client not found")
 	ErrInvalidOAuthClient       = errors.New("invalid oauth client")

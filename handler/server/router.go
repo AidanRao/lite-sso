@@ -126,6 +126,7 @@ func (s *Server) registerRoutes() {
 			userProtected.GET("/profile", userHandler.GetProfile)
 			userProtected.PUT("/profile", userHandler.UpdateProfile)
 			userProtected.GET("/third/:provider/bind", oauthHandler.ThirdPartyBind)
+			userProtected.DELETE("/third/:provider", userHandler.UnbindThirdParty)
 		}
 
 		adminGroup := apiGroup.Group("/admin")

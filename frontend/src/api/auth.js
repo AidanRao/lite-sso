@@ -62,6 +62,10 @@ export const userAPI = {
 
   updateProfile: (data) => {
     return api.put('/user/profile', data)
+  },
+
+  unbindThirdParty: (provider) => {
+    return api.delete(`/user/third/${provider}`)
   }
 }
 
