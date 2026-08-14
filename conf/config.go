@@ -83,8 +83,7 @@ type DatabaseConfig struct {
 }
 
 type CacheConfig struct {
-	URL      string `mapstructure:"url"`
-	Password string `mapstructure:"password"`
+	URL string `mapstructure:"url"`
 }
 
 type SecurityConfig struct {
@@ -145,8 +144,6 @@ func bindEnvs(v *viper.Viper) {
 		"database.user",
 		"database.password",
 		"database.name",
-		"cache.url",
-		"cache.password",
 		"security.access_token_expire",
 		"security.max_login_attempts",
 		"security.lockout_duration",
@@ -176,6 +173,9 @@ func bindEnvs(v *viper.Viper) {
 		panic(err)
 	}
 	if err := v.BindEnv("database.sslmode", "DB_SSLMODE"); err != nil {
+		panic(err)
+	}
+	if err := v.BindEnv("cache.url", "REDIS_URL"); err != nil {
 		panic(err)
 	}
 }

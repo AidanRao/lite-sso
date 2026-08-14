@@ -204,15 +204,9 @@ func toRedisV8Options(cfg *conf.Config) *redis.Options {
 	raw := cfg.Cache.URL
 	opt, err := redis.ParseURL(raw)
 	if err == nil {
-		if cfg.Cache.Password != "" {
-			opt.Password = cfg.Cache.Password
-		}
 		return opt
 	}
 
 	opt = &redis.Options{Addr: raw}
-	if cfg.Cache.Password != "" {
-		opt.Password = cfg.Cache.Password
-	}
 	return opt
 }

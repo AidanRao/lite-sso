@@ -17,20 +17,16 @@ func Init(cfg *conf.Config) error {
 	if err != nil {
 		return err
 	}
-	if cfg.Cache.Password != "" {
-		opt.Password = cfg.Cache.Password
-	}
 
 	Client = redis.NewClient(opt)
 	return Client.Ping(context.Background()).Err()
 }
 
 func toRedisOptions(raw string) (*redis.Options, error) {
-	if strings.HasPrefix(raw, "redis://") || strings.HasPrefix(raw, "rediss://") {
-		return redis.ParseURL(raw)
-	}
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, fmt.Errorf("redis url is empty")
 	}
-	return &redis.Options{Addr: raw}, nil
+
+	return redis.ParseURL(raw)
 }

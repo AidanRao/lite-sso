@@ -10,8 +10,7 @@ database:
   sslmode: "disable"
 
 cache:
-  url: "localhost:63783"
-  password: "123456"
+  url: "redis://:123456@localhost:63783"
 
 security:
   access_token_expire: "12h"
