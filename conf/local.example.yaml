@@ -7,6 +7,7 @@ database:
   user: "postgres"
   password: "123456"
   name: "sso-server"
+  sslmode: "disable"
 
 cache:
   url: "localhost:63783"

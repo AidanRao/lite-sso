@@ -79,6 +79,7 @@ type DatabaseConfig struct {
 	User     string `mapstructure:"user"`
 	Password string `mapstructure:"password"`
 	Name     string `mapstructure:"name"`
+	SSLMode  string `mapstructure:"sslmode"`
 }
 
 type CacheConfig struct {
@@ -139,7 +140,6 @@ func Load() (*Config, error) {
 
 func bindEnvs(v *viper.Viper) {
 	envKeys := []string{
-		"server.port",
 		"database.host",
 		"database.port",
 		"database.user",
@@ -170,6 +170,13 @@ func bindEnvs(v *viper.Viper) {
 		if err := v.BindEnv(key); err != nil {
 			panic(err)
 		}
+	}
+
+	if err := v.BindEnv("server.port", "PORT", "SERVER_PORT"); err != nil {
+		panic(err)
+	}
+	if err := v.BindEnv("database.sslmode", "DB_SSLMODE"); err != nil {
+		panic(err)
 	}
 }
 

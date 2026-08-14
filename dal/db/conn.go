@@ -2,12 +2,15 @@ package db
 
 import (
 	"fmt"
+	"strings"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"sso-server/conf"
 )
+
+const defaultSSLMode = "disable"
 
 var DB *gorm.DB
 
@@ -19,14 +22,7 @@ func Init(cfg *conf.Config) error {
 
 // Open creates and verifies a database connection using the application configuration.
 func Open(cfg *conf.Config) (*gorm.DB, error) {
-	dsn := fmt.Sprintf(
-		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=Asia/Shanghai",
-		cfg.Database.Host,
-		cfg.Database.User,
-		cfg.Database.Password,
-		cfg.Database.Name,
-		cfg.Database.Port,
-	)
+	dsn := buildDSN(cfg)
 
 	database, err := gorm.Open(postgres.New(postgres.Config{
 		DSN: dsn,
@@ -45,4 +41,21 @@ func Open(cfg *conf.Config) (*gorm.DB, error) {
 	}
 
 	return database, nil
+}
+
+func buildDSN(cfg *conf.Config) string {
+	sslMode := strings.TrimSpace(cfg.Database.SSLMode)
+	if sslMode == "" {
+		sslMode = defaultSSLMode
+	}
+
+	return fmt.Sprintf(
+		"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=Asia/Shanghai",
+		cfg.Database.Host,
+		cfg.Database.User,
+		cfg.Database.Password,
+		cfg.Database.Name,
+		cfg.Database.Port,
+		sslMode,
+	)
 }
