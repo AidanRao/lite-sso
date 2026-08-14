@@ -2,36 +2,34 @@ package kv
 
 import "fmt"
 
-const keyPrefix = "lite-sso"
-
 func KeyCaptcha(captchaID string) string {
-	return fmt.Sprintf("%s:captcha:%s", keyPrefix, captchaID)
+	return fmt.Sprintf("captcha:%s", captchaID)
 }
 
 func KeyOTP(email string) string {
-	return fmt.Sprintf("%s:otp:%s", keyPrefix, email)
+	return fmt.Sprintf("otp:%s", email)
 }
 
 func KeyRateLimitEmail(email string) string {
-	return fmt.Sprintf("%s:ratelimit:email:%s", keyPrefix, email)
+	return fmt.Sprintf("ratelimit:email:%s", email)
 }
 
 func KeyPasswordLoginFailures(email string) string {
-	return fmt.Sprintf("%s:password:failures:%s", keyPrefix, email)
+	return fmt.Sprintf("password:failures:%s", email)
 }
 
 func KeyPasswordLoginLock(email string) string {
-	return fmt.Sprintf("%s:password:lock:%s", keyPrefix, email)
+	return fmt.Sprintf("password:lock:%s", email)
 }
 
 func KeyQR(uuid string) string {
-	return fmt.Sprintf("%s:qr:%s", keyPrefix, uuid)
+	return fmt.Sprintf("qr:%s", uuid)
 }
 
 func KeySession(sessionID string) string {
-	return fmt.Sprintf("%s:session:%s", keyPrefix, sessionID)
+	return fmt.Sprintf("session:%s", sessionID)
 }
 
 func KeyOAuthState(state string) string {
-	return fmt.Sprintf("%s:oauth:state:%s", keyPrefix, state)
+	return fmt.Sprintf("oauth:state:%s", state)
 }

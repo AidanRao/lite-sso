@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
 	"sso-server/handler/api/admin"
@@ -38,10 +39,11 @@ func (s *Server) registerRoutes() {
 		o = nil
 	}
 
-	kvStore := kv.Store(kv.NewMemoryStore())
+	baseKVStore := kv.Store(kv.NewMemoryStore())
 	if kv.Client != nil {
-		kvStore = kv.NewRedisStore(kv.Client)
+		baseKVStore = kv.NewRedisStore(kv.Client)
 	}
+	kvStore := kv.Store(kv.NewNamespacedStore(baseKVStore, conf.GetEnvironmentName()))
 
 	var mailerImpl mailer.Mailer
 	if s.cfg != nil {

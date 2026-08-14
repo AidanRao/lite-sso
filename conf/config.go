@@ -17,11 +17,19 @@ const (
 )
 
 func GetEnv() Environment {
-	env := os.Getenv("ENV")
-	if env == "prod" {
+	if GetEnvironmentName() == string(EnvProd) {
 		return EnvProd
 	}
 	return EnvLocal
+}
+
+// GetEnvironmentName returns the normalized environment name used for Redis key isolation.
+func GetEnvironmentName() string {
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("ENV")))
+	if env == "" {
+		return string(EnvLocal)
+	}
+	return env
 }
 
 type Config struct {
