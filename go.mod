@@ -4,7 +4,6 @@ go 1.26
 
 require (
 	github.com/gin-gonic/gin v1.9.1
-	github.com/go-mail/mail v2.3.1+incompatible
 	github.com/go-oauth2/oauth2/v4 v4.5.4
 	github.com/go-oauth2/redis/v4 v4.1.1
 	github.com/go-redis/redis/v8 v8.11.5
@@ -83,7 +82,5 @@ require (
 	golang.org/x/text v0.36.0 // indirect
 	google.golang.org/appengine v1.6.6 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
-	gopkg.in/mail.v2 v2.3.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

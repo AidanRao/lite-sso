@@ -23,7 +23,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	srv := server.New(cfg)
+	srv, err := server.New(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
 	log.Printf("Starting sso-server on %s", cfg.Server.Port)
 	if err := srv.Start(); err != nil {
 		log.Fatal(err)

@@ -17,8 +17,13 @@ security:
   max_login_attempts: 5
   lockout_duration: "30m"
 
+message_center:
+  url: "https://message-center.example.com"
+  api_key: "replace-with-api-client-key"
+  sender_key: "noreply"
+
 dev:
-  skip_send_email: true
+  skip_send_message: true
   fixed_email_otp: "123456"
 
 oauth:

@@ -1,28 +1,37 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	"sso-server/conf"
+	"sso-server/manager/messagecenter"
 )
 
 type Server struct {
-	cfg    *conf.Config
-	engine *gin.Engine
+	cfg                 *conf.Config
+	engine              *gin.Engine
+	messageCenterClient *messagecenter.Client
 }
 
-func New(cfg *conf.Config) *Server {
+func New(cfg *conf.Config) (*Server, error) {
+	messageCenterClient, err := newMessageCenterClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 
 	srv := &Server{
-		cfg:    cfg,
-		engine: engine,
+		cfg:                 cfg,
+		engine:              engine,
+		messageCenterClient: messageCenterClient,
 	}
 	srv.registerRoutes()
-	return srv
+	return srv, nil
 }
 
 func (s *Server) Start() error {
@@ -31,4 +40,23 @@ func (s *Server) Start() error {
 		Handler: s.engine,
 	}
 	return httpServer.ListenAndServe()
+}
+
+func newMessageCenterClient(cfg *conf.Config) (*messagecenter.Client, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("create message center client: configuration is required")
+	}
+	if conf.GetEnvironmentName() == string(conf.EnvLocal) && cfg.Dev.SkipSendMessage {
+		return nil, nil
+	}
+
+	client, err := messagecenter.NewClient(messagecenter.Config{
+		URL:       cfg.MessageCenter.URL,
+		APIKey:    cfg.MessageCenter.APIKey,
+		SenderKey: cfg.MessageCenter.SenderKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create message center client: %w", err)
+	}
+	return client, nil
 }

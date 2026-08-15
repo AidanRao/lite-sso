@@ -20,41 +20,40 @@ import (
 	"sso-server/handler/api/auth"
 	"sso-server/handler/oauth2"
 	"sso-server/model"
-	"sso-server/util/mailer"
+	serviceauth "sso-server/service/auth"
 )
 
-type testMailer struct {
-	lastEmail    string
-	lastSubject  string
-	lastTextBody string
-	lastHtmlBody string
-	sendCount    int
+type testMessageSender struct {
+	lastRecipient   string
+	lastTemplateKey string
+	lastVariables   map[string]string
+	sendCount       int
 }
 
-func (m *testMailer) SendEmail(ctx context.Context, email string, subject string, textBody string, htmlBody string) error {
+func (m *testMessageSender) Send(ctx context.Context, recipient string, templateKey string, variables map[string]string) error {
 	m.sendCount++
-	m.lastEmail = email
-	m.lastSubject = subject
-	m.lastTextBody = textBody
-	m.lastHtmlBody = htmlBody
+	m.lastRecipient = recipient
+	m.lastTemplateKey = templateKey
+	m.lastVariables = variables
 	return nil
 }
 
 func TestAuthEmailSend_SetsOTPAndRateLimit(t *testing.T) {
+	t.Setenv("ENV", "local")
 	gin.SetMode(gin.TestMode)
 
 	kvStore := kv.NewMemoryStore()
 	_ = kvStore.Set(context.Background(), kv.KeyCaptcha("cid"), "1234", time.Minute)
 
-	m := &testMailer{}
+	m := &testMessageSender{}
 	h := auth.NewAuthHandler(auth.AuthDeps{
 		Config: &conf.Config{
 			Dev: conf.DevConfig{
-				SkipSendEmail: true,
+				FixedEmailOTP: "123456",
 			},
 		},
-		KV:     kvStore,
-		Mailer: m,
+		KV:            kvStore,
+		MessageSender: m,
 	})
 
 	r := gin.New()
@@ -88,9 +87,21 @@ func TestAuthEmailSend_SetsOTPAndRateLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected rate limit key set, got err %v", err)
 	}
+	if m.sendCount != 1 {
+		t.Fatalf("expected one message, got %d", m.sendCount)
+	}
+	if m.lastRecipient != "u1@example.com" {
+		t.Fatalf("expected recipient u1@example.com, got %q", m.lastRecipient)
+	}
+	if m.lastTemplateKey != "sso-verify-code-email" {
+		t.Fatalf("expected verification template, got %q", m.lastTemplateKey)
+	}
+	if m.lastVariables["code"] != "123456" {
+		t.Fatalf("expected code variable 123456, got %#v", m.lastVariables)
+	}
 }
 
-func TestAuthEmailSend_LocalFixedOTPStoresAndSkipsMail(t *testing.T) {
+func TestAuthEmailSend_LocalFixedOTPStoresAndSkipsMessage(t *testing.T) {
 	t.Setenv("ENV", "local")
 	gin.SetMode(gin.TestMode)
 
@@ -99,16 +110,16 @@ func TestAuthEmailSend_LocalFixedOTPStoresAndSkipsMail(t *testing.T) {
 		t.Fatalf("seed captcha: %v", err)
 	}
 
-	m := &testMailer{}
+	m := &testMessageSender{}
 	h := auth.NewAuthHandler(auth.AuthDeps{
 		Config: &conf.Config{
 			Dev: conf.DevConfig{
-				FixedEmailOTP: "654321",
-				SkipSendEmail: true,
+				FixedEmailOTP:   "654321",
+				SkipSendMessage: true,
 			},
 		},
-		KV:     kvStore,
-		Mailer: m,
+		KV:            kvStore,
+		MessageSender: m,
 	})
 
 	r := gin.New()
@@ -144,9 +155,9 @@ func TestAuthEmailSend_RateLimited(t *testing.T) {
 	_, _ = kvStore.SetNX(context.Background(), kv.KeyRateLimitEmail("u1@example.com"), "1", time.Minute)
 
 	h := auth.NewAuthHandler(auth.AuthDeps{
-		Config: &conf.Config{},
-		KV:     kvStore,
-		Mailer: &testMailer{},
+		Config:        &conf.Config{},
+		KV:            kvStore,
+		MessageSender: &testMessageSender{},
 	})
 
 	r := gin.New()
@@ -343,4 +354,4 @@ func TestAuthEmailLogin_SetsSessionCookie(t *testing.T) {
 	}
 }
 
-var _ mailer.Mailer = (*testMailer)(nil)
+var _ serviceauth.MessageSender = (*testMessageSender)(nil)

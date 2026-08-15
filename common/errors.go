@@ -17,7 +17,7 @@ var (
 	ErrInvalidCaptcha     = errors.New("invalid captcha")
 	ErrRateLimited        = errors.New("rate limited")
 	ErrAccountLocked      = errors.New("account locked")
-	ErrEmailNotSent       = errors.New("email not sent")
+	ErrMessageNotSent     = errors.New("message not sent")
 	ErrInvalidRedirect    = errors.New("invalid redirect")
 )
 

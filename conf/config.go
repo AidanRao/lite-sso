@@ -13,14 +13,20 @@ type Environment string
 
 const (
 	EnvLocal Environment = "local"
+	EnvTest  Environment = "test"
 	EnvProd  Environment = "prod"
 )
 
 func GetEnv() Environment {
-	if GetEnvironmentName() == string(EnvProd) {
+	name := GetEnvironmentName()
+	switch name {
+	case string(EnvProd):
 		return EnvProd
+	case string(EnvTest):
+		return EnvTest
+	default:
+		return EnvLocal
 	}
-	return EnvLocal
 }
 
 // GetEnvironmentName returns the normalized environment name used for Redis key isolation.
@@ -33,14 +39,14 @@ func GetEnvironmentName() string {
 }
 
 type Config struct {
-	Server   ServerConfig          `mapstructure:"server"`
-	Database DatabaseConfig        `mapstructure:"database"`
-	Cache    CacheConfig           `mapstructure:"cache"`
-	Security SecurityConfig        `mapstructure:"security"`
-	Email    EmailConfig           `mapstructure:"email"`
-	Dev      DevConfig             `mapstructure:"dev"`
-	OAuth    ThirdPartyOAuthConfig `mapstructure:"oauth"`
-	Admin    AdminConfig           `mapstructure:"admin"`
+	Server        ServerConfig          `mapstructure:"server"`
+	Database      DatabaseConfig        `mapstructure:"database"`
+	Cache         CacheConfig           `mapstructure:"cache"`
+	Security      SecurityConfig        `mapstructure:"security"`
+	MessageCenter MessageCenterConfig   `mapstructure:"message_center"`
+	Dev           DevConfig             `mapstructure:"dev"`
+	OAuth         ThirdPartyOAuthConfig `mapstructure:"oauth"`
+	Admin         AdminConfig           `mapstructure:"admin"`
 }
 
 func (c *Config) IsAdminUser(userID string) bool {
@@ -100,17 +106,15 @@ type SecurityConfig struct {
 	LockoutDuration   time.Duration `mapstructure:"lockout_duration"`
 }
 
-type EmailConfig struct {
-	SMTPHost string `mapstructure:"smtp_host"`
-	SMTPPort int    `mapstructure:"smtp_port"`
-	SMTPUser string `mapstructure:"smtp_user"`
-	SMTPPass string `mapstructure:"smtp_pass"`
-	SMTPFrom string `mapstructure:"smtp_from"`
+type MessageCenterConfig struct {
+	URL       string `mapstructure:"url"`
+	APIKey    string `mapstructure:"api_key"`
+	SenderKey string `mapstructure:"sender_key"`
 }
 
 type DevConfig struct {
-	FixedEmailOTP string `mapstructure:"fixed_email_otp"`
-	SkipSendEmail bool   `mapstructure:"skip_send_email"`
+	FixedEmailOTP   string `mapstructure:"fixed_email_otp"`
+	SkipSendMessage bool   `mapstructure:"skip_send_message"`
 }
 
 func Load() (*Config, error) {
@@ -155,13 +159,11 @@ func bindEnvs(v *viper.Viper) {
 		"security.access_token_expire",
 		"security.max_login_attempts",
 		"security.lockout_duration",
-		"email.smtp_host",
-		"email.smtp_port",
-		"email.smtp_user",
-		"email.smtp_pass",
-		"email.smtp_from",
+		"message_center.url",
+		"message_center.api_key",
+		"message_center.sender_key",
 		"dev.fixed_email_otp",
-		"dev.skip_send_email",
+		"dev.skip_send_message",
 		"oauth.github.client_id",
 		"oauth.github.client_secret",
 		"oauth.github.redirect_uri",
@@ -198,7 +200,7 @@ func setDefaults(v *viper.Viper, env Environment) {
 		"security.access_token_expire": "12h",
 		"security.max_login_attempts":  5,
 		"security.lockout_duration":    "30m",
-		"dev.skip_send_email":          false,
+		"dev.skip_send_message":        false,
 		"dev.fixed_email_otp":          "",
 		"admin.user_ids":               []string{},
 	}

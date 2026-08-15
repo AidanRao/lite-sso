@@ -14,7 +14,6 @@ import (
 	"sso-server/handler/api/user"
 	"sso-server/handler/health"
 	"sso-server/handler/oauth2"
-	"sso-server/util/mailer"
 )
 
 func (s *Server) registerRoutes() {
@@ -45,23 +44,12 @@ func (s *Server) registerRoutes() {
 	}
 	kvStore := kv.Store(kv.NewNamespacedStore(baseKVStore, conf.GetEnvironmentName()))
 
-	var mailerImpl mailer.Mailer
-	if s.cfg != nil {
-		mailerImpl = mailer.NewSMTPMailer(mailer.SMTPConfig{
-			Host: s.cfg.Email.SMTPHost,
-			Port: s.cfg.Email.SMTPPort,
-			User: s.cfg.Email.SMTPUser,
-			Pass: s.cfg.Email.SMTPPass,
-			From: s.cfg.Email.SMTPFrom,
-		})
-	}
-
 	authHandler := auth.NewAuthHandler(auth.AuthDeps{
-		Config: s.cfg,
-		DB:     db.DB,
-		KV:     kvStore,
-		Mailer: mailerImpl,
-		OAuth2: o,
+		Config:        s.cfg,
+		DB:            db.DB,
+		KV:            kvStore,
+		MessageSender: s.messageCenterClient,
+		OAuth2:        o,
 	})
 
 	userHandler := user.NewUserHandler(user.UserDeps{

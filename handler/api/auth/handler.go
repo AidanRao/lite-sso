@@ -15,15 +15,14 @@ import (
 	"sso-server/handler/oauth2"
 	"sso-server/service/auth"
 	"sso-server/util/captcha"
-	"sso-server/util/mailer"
 )
 
 type AuthDeps struct {
-	Config *conf.Config
-	DB     *gorm.DB
-	KV     kv.Store
-	Mailer mailer.Mailer
-	OAuth2 *oauth2.OAuth2
+	Config        *conf.Config
+	DB            *gorm.DB
+	KV            kv.Store
+	MessageSender auth.MessageSender
+	OAuth2        *oauth2.OAuth2
 }
 
 type AuthHandler struct {
@@ -39,21 +38,10 @@ func NewAuthHandler(deps AuthDeps) *AuthHandler {
 		kvStore = kv.NewMemoryStore()
 	}
 
-	mailerImpl := deps.Mailer
-	if mailerImpl == nil && cfg != nil {
-		mailerImpl = mailer.NewSMTPMailer(mailer.SMTPConfig{
-			Host: cfg.Email.SMTPHost,
-			Port: cfg.Email.SMTPPort,
-			User: cfg.Email.SMTPUser,
-			Pass: cfg.Email.SMTPPass,
-			From: cfg.Email.SMTPFrom,
-		})
-	}
-
 	captchaStore := captcha.NewStore(kvStore, 5*time.Minute)
 	return &AuthHandler{
 		captcha: captcha.NewService(captchaStore),
-		auth:    auth.NewAuthService(cfg, deps.DB, kvStore, mailerImpl, deps.OAuth2),
+		auth:    auth.NewAuthService(cfg, deps.DB, kvStore, deps.MessageSender, deps.OAuth2),
 		db:      deps.DB,
 	}
 }
@@ -89,8 +77,6 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码错误", Data: nil})
 		case errors.Is(err, common.ErrRateLimited):
 			c.JSON(http.StatusTooManyRequests, ecode.Response[any]{Code: ecode.TooManyRequests, Message: "请求过于频繁", Data: nil})
-		case errors.Is(err, mailer.ErrNotConfigured):
-			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "邮件服务未配置", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "发送失败", Data: nil})
 		}

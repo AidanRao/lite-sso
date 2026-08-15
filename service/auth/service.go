@@ -2,13 +2,8 @@ package auth
 
 import (
 	"context"
-	"fmt"
 	"log"
-
-	"os"
-	"path/filepath"
 	"strings"
-	"text/template"
 	"time"
 
 	"gorm.io/gorm"
@@ -19,24 +14,30 @@ import (
 	"sso-server/dal/kv"
 	"sso-server/handler/oauth2"
 	"sso-server/model"
-	"sso-server/util/mailer"
 )
 
-type AuthService struct {
-	cfg    *conf.Config
-	db     *gorm.DB
-	kv     kv.Store
-	mailer mailer.Mailer
-	oauth2 *oauth2.OAuth2
+const verifyCodeEmailTemplateKey = "sso-verify-code-email"
+
+// MessageSender sends a templated message to one recipient.
+type MessageSender interface {
+	Send(ctx context.Context, recipient string, templateKey string, variables map[string]string) error
 }
 
-func NewAuthService(cfg *conf.Config, db *gorm.DB, kvStore kv.Store, mailerImpl mailer.Mailer, oauth2Impl *oauth2.OAuth2) *AuthService {
+type AuthService struct {
+	cfg           *conf.Config
+	db            *gorm.DB
+	kv            kv.Store
+	messageSender MessageSender
+	oauth2        *oauth2.OAuth2
+}
+
+func NewAuthService(cfg *conf.Config, db *gorm.DB, kvStore kv.Store, messageSender MessageSender, oauth2Impl *oauth2.OAuth2) *AuthService {
 	return &AuthService{
-		cfg:    cfg,
-		db:     db,
-		kv:     kvStore,
-		mailer: mailerImpl,
-		oauth2: oauth2Impl,
+		cfg:           cfg,
+		db:            db,
+		kv:            kvStore,
+		messageSender: messageSender,
+		oauth2:        oauth2Impl,
 	}
 }
 
@@ -67,73 +68,26 @@ func (s *AuthService) SendEmailOTP(ctx context.Context, email string, captchaID 
 		return "", err
 	}
 
-	if s.cfg != nil && s.cfg.Dev.SkipSendEmail {
-		log.Printf("SendEmailOTP: skipping email send in dev mode")
+	if s.skipMessageSend() {
+		log.Printf("SendEmailOTP: skipping message send in local mode")
 		return "", nil
 	}
 
-	if s.mailer == nil {
-		return "", mailer.ErrNotConfigured
+	if s.messageSender == nil {
+		return "", common.ErrMessageNotSent
 	}
 
-	// Load email templates
-	templatePath := "templates/mail"
-	txtPath := filepath.Join(templatePath, "otp.txt")
-	htmlPath := filepath.Join(templatePath, "otp.html")
-
-	// Load text template
-	txtContent, err := os.ReadFile(txtPath)
-	if err != nil {
-		log.Printf("SendEmailOTP: failed to load text template, path=%s, err=%v", txtPath, err)
-		return "", fmt.Errorf("failed to load text template: %w", err)
-	}
-	txtTemplate, err := template.New("otp").Parse(string(txtContent))
-	if err != nil {
-		log.Printf("SendEmailOTP: failed to parse text template, err=%v", err)
-		return "", fmt.Errorf("failed to parse text template: %w", err)
-	}
-
-	// Load HTML template
-	htmlContent, err := os.ReadFile(htmlPath)
-	if err != nil {
-		log.Printf("SendEmailOTP: failed to load HTML template, path=%s, err=%v", htmlPath, err)
-		return "", fmt.Errorf("failed to load HTML template: %w", err)
-	}
-	htmlTemplate, err := template.New("otp").Parse(string(htmlContent))
-	if err != nil {
-		log.Printf("SendEmailOTP: failed to parse HTML template, err=%v", err)
-		return "", fmt.Errorf("failed to parse HTML template: %w", err)
-	}
-
-	// Template data
-	data := struct {
-		OTP string
-	}{
-		OTP: otp,
-	}
-
-	// Execute text template
-	var textBody strings.Builder
-	if err := txtTemplate.Execute(&textBody, data); err != nil {
-		log.Printf("SendEmailOTP: failed to execute text template, err=%v", err)
-		return "", fmt.Errorf("failed to execute text template: %w", err)
-	}
-
-	// Execute HTML template
-	var htmlBody strings.Builder
-	if err := htmlTemplate.Execute(&htmlBody, data); err != nil {
-		log.Printf("SendEmailOTP: failed to execute HTML template, err=%v", err)
-		return "", fmt.Errorf("failed to execute HTML template: %w", err)
-	}
-
-	// Send email
-	if err := s.mailer.SendEmail(ctx, email, "Your verification code", textBody.String(), htmlBody.String()); err != nil {
-		log.Printf("SendEmailOTP: failed to send email, err=%v", err)
+	if err := s.messageSender.Send(ctx, email, verifyCodeEmailTemplateKey, map[string]string{"code": otp}); err != nil {
+		log.Printf("SendEmailOTP: failed to send message, err=%v", err)
 		return "", err
 	}
 
-	log.Printf("SendEmailOTP: email sent successfully to %s", email)
+	log.Printf("SendEmailOTP: message accepted for %s", email)
 	return "", nil
+}
+
+func (s *AuthService) skipMessageSend() bool {
+	return s.cfg != nil && conf.GetEnvironmentName() == string(conf.EnvLocal) && s.cfg.Dev.SkipSendMessage
 }
 
 func (s *AuthService) emailOTP() (string, error) {
@@ -144,7 +98,7 @@ func (s *AuthService) emailOTP() (string, error) {
 }
 
 func (s *AuthService) useFixedEmailOTP() bool {
-	return s.cfg != nil && conf.GetEnv() == conf.EnvLocal && strings.TrimSpace(s.cfg.Dev.FixedEmailOTP) != ""
+	return s.cfg != nil && conf.GetEnvironmentName() == string(conf.EnvLocal) && strings.TrimSpace(s.cfg.Dev.FixedEmailOTP) != ""
 }
 
 func (s *AuthService) verifyCaptcha(ctx context.Context, captchaID string, captchaAnswer string) (bool, error) {
