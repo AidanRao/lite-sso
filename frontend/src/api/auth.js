@@ -1,13 +1,43 @@
 import axios from 'axios'
 
+let accessToken = ''
+let refreshPromise = null
+
 const api = axios.create({
   baseURL: '/api',
   timeout: 10000
 })
 
+const refreshClient = axios.create({
+  baseURL: '/api',
+  timeout: 10000,
+  withCredentials: true
+})
+
+api.interceptors.request.use(config => {
+  if (accessToken) {
+    config.headers = config.headers || {}
+    config.headers.Authorization = `Bearer ${accessToken}`
+  }
+  config.withCredentials = true
+  return config
+})
+
 api.interceptors.response.use(
   response => response.data,
-  error => {
+  async error => {
+    const originalRequest = error.config
+    if (error.response?.status === 401 && originalRequest && !originalRequest._authRetry && !originalRequest.url?.includes('/auth/token/refresh')) {
+      originalRequest._authRetry = true
+      try {
+        const refreshed = await refreshAccessToken()
+        originalRequest.headers = originalRequest.headers || {}
+        originalRequest.headers.Authorization = `Bearer ${refreshed}`
+        return api(originalRequest)
+      } catch (refreshError) {
+        clearAccessToken()
+      }
+    }
     const message = error.response?.data?.message || error.message || '请求失败'
     const apiError = new Error(message)
     apiError.status = error.response?.status
@@ -16,6 +46,27 @@ api.interceptors.response.use(
     return Promise.reject(apiError)
   }
 )
+
+export const setAccessToken = (token) => {
+  accessToken = token || ''
+}
+
+export const clearAccessToken = () => {
+  accessToken = ''
+}
+
+export const refreshAccessToken = async () => {
+  if (!refreshPromise) {
+    refreshPromise = refreshClient.post('/auth/token/refresh').then(response => {
+      const data = response.data?.data || response.data
+      setAccessToken(data?.access_token)
+      return accessToken
+    }).finally(() => {
+      refreshPromise = null
+    })
+  }
+  return refreshPromise
+}
 
 export const authAPI = {
   loginWithPassword: (data) => {
@@ -29,6 +80,8 @@ export const authAPI = {
   sendEmailCode: (data) => {
     return api.post('/auth/email/send', data)
   },
+
+  refreshToken: () => refreshAccessToken(),
 
   register: (data) => {
     return api.post('/user/register', data)

@@ -14,6 +14,7 @@ import (
 	"sso-server/conf"
 	"sso-server/dal/kv"
 	"sso-server/handler/oauth2"
+	serviceauth "sso-server/service/auth"
 	serviceuser "sso-server/service/user"
 )
 
@@ -26,32 +27,31 @@ type UserDeps struct {
 
 type UserHandler struct {
 	user *serviceuser.UserService
+	auth *serviceauth.AuthService
 }
 
 func NewUserHandler(deps UserDeps) *UserHandler {
 	return &UserHandler{
 		user: serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2),
+		auth: serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
 	}
 }
 
 // Register handles user registration
 func (h *UserHandler) Register(c *gin.Context) {
 	var req struct {
-		Email    string  `json:"email" binding:"required,email"`
-		Password string  `json:"password" binding:"required"`
-		Username *string `json:"username"`
-		OTP      string  `json:"otp" binding:"required"`
+		Email       string  `json:"email" binding:"required,email"`
+		Password    string  `json:"password" binding:"required"`
+		Username    *string `json:"username"`
+		ChallengeID string  `json:"challenge_id" binding:"required"`
+		Code        string  `json:"code" binding:"required,len=6"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
 		return
 	}
-	if len(strings.TrimSpace(req.Password)) < 8 {
-		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "密码长度至少8位", Data: nil})
-		return
-	}
-
-	user, tokenData, err := h.user.RegisterWithEmailOTP(c.Request.Context(), c.Request, req.Email, req.Password, req.Username, req.OTP)
+	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
+	user, err := h.user.RegisterWithEmailChallenge(c.Request.Context(), req.Email, req.Password, req.Username, req.ChallengeID, req.Code, deviceID)
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrInvalidOTP):
@@ -60,54 +60,48 @@ func (h *UserHandler) Register(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "邮箱已存在", Data: nil})
 		case errors.Is(err, common.ErrUsernameExists):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "用户名已存在", Data: nil})
+		case errors.Is(err, common.ErrOTPExpired), errors.Is(err, common.ErrOTPAttemptsExceeded):
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码无效或已过期", Data: nil})
+		case strings.Contains(err.Error(), "password"):
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "密码长度必须为12至256位", Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "注册失败", Data: nil})
 		}
 		return
 	}
 
-	sessionID, err := h.user.CreateSession(c.Request.Context(), user.ID)
+	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, "", serviceauth.LoginMetadata{
+		DeviceID:  deviceID,
+		IP:        serviceauth.RequestIP(c.Request),
+		UserAgent: c.Request.UserAgent(),
+	}, serviceauth.AuthMethodPassword)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "注册失败", Data: nil})
 		return
 	}
-	apiauth.WriteSessionCookie(c, sessionID, conf.GetEnv() == conf.EnvProd)
-
-	data := gin.H{"user": user}
-	if tokenData != nil {
-		if v, ok := tokenData["access_token"]; ok {
-			data["access_token"] = v
-		}
-		if v, ok := tokenData["token_type"]; ok {
-			data["token_type"] = v
-		}
-		if v, ok := tokenData["expires_in"]; ok {
-			data["expires_in"] = v
-		}
+	if isNewDevice {
+		apiauth.WriteDeviceCookie(c, deviceID)
 	}
-
-	c.JSON(http.StatusOK, ecode.OKResponse(data))
+	apiauth.WriteRefreshCookie(c, pair.RefreshToken, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
+	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }
 
 func (h *UserHandler) ResetPassword(c *gin.Context) {
 	var req struct {
-		Email    string `json:"email" binding:"required,email"`
-		Password string `json:"password" binding:"required"`
-		OTP      string `json:"otp" binding:"required"`
+		Email       string `json:"email" binding:"required,email"`
+		Password    string `json:"password" binding:"required"`
+		ChallengeID string `json:"challenge_id" binding:"required"`
+		Code        string `json:"code" binding:"required,len=6"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
 		return
 	}
-	if len(strings.TrimSpace(req.Password)) < 8 {
-		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "密码长度至少8位", Data: nil})
-		return
-	}
-
-	err := h.user.ResetPasswordWithEmailOTP(c.Request.Context(), req.Email, req.Password, req.OTP)
+	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
+	err := h.user.ResetPasswordWithEmailChallenge(c.Request.Context(), req.Email, req.Password, req.ChallengeID, req.Code, deviceID)
 	if err != nil {
 		switch {
-		case errors.Is(err, common.ErrInvalidOTP):
+		case errors.Is(err, common.ErrInvalidOTP), errors.Is(err, common.ErrChallengeInvalid), errors.Is(err, common.ErrOTPExpired), errors.Is(err, common.ErrOTPAttemptsExceeded):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码错误", Data: nil})
 		case errors.Is(err, common.ErrUserNotFound):
 			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
@@ -117,6 +111,9 @@ func (h *UserHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
+	if isNewDevice {
+		apiauth.WriteDeviceCookie(c, deviceID)
+	}
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"reset": true}))
 }
 

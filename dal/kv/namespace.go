@@ -58,3 +58,39 @@ func (s *NamespacedStore) TTL(ctx context.Context, key string) (time.Duration, e
 func (s *NamespacedStore) Del(ctx context.Context, key string) error {
 	return s.store.Del(ctx, s.namespacedKey(key))
 }
+
+func (s *NamespacedStore) RateLimit(ctx context.Context, key string, rate int, burst int, period time.Duration) (bool, time.Duration, error) {
+	securityStore, ok := s.store.(SecurityStore)
+	if !ok {
+		return false, 0, ErrScriptUnsupported
+	}
+	return securityStore.RateLimit(ctx, s.namespacedKey(key), rate, burst, period)
+}
+
+func (s *NamespacedStore) AddToSet(ctx context.Context, key string, value string, ttl time.Duration) error {
+	securityStore, ok := s.store.(SecurityStore)
+	if !ok {
+		return ErrScriptUnsupported
+	}
+	return securityStore.AddToSet(ctx, s.namespacedKey(key), value, ttl)
+}
+
+func (s *NamespacedStore) SetCardinality(ctx context.Context, key string) (int64, error) {
+	securityStore, ok := s.store.(SecurityStore)
+	if !ok {
+		return 0, ErrScriptUnsupported
+	}
+	return securityStore.SetCardinality(ctx, s.namespacedKey(key))
+}
+
+func (s *NamespacedStore) Eval(ctx context.Context, script string, keys []string, args ...interface{}) (interface{}, error) {
+	securityStore, ok := s.store.(SecurityStore)
+	if !ok {
+		return nil, ErrScriptUnsupported
+	}
+	namespacedKeys := make([]string, len(keys))
+	for i, key := range keys {
+		namespacedKeys[i] = s.namespacedKey(key)
+	}
+	return securityStore.Eval(ctx, script, namespacedKeys, args...)
+}

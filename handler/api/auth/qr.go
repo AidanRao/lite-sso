@@ -9,12 +9,13 @@ import (
 	"sso-server/common"
 	"sso-server/common/ecode"
 	"sso-server/conf"
-	"sso-server/service/auth"
+	serviceauth "sso-server/service/auth"
 )
 
 // GenerateQRCode generates a QR code for login
 func (h *AuthHandler) GenerateQRCode(c *gin.Context) {
-	code, err := h.auth.GenerateQRCode(c.Request.Context(), c.Query("redirect"))
+	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
+	code, err := h.auth.GenerateQRCodeWithDevice(c.Request.Context(), c.Query("redirect"), deviceID)
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrInvalidRedirect):
@@ -23,6 +24,9 @@ func (h *AuthHandler) GenerateQRCode(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "生成二维码失败", Data: nil})
 		}
 		return
+	}
+	if isNewDevice {
+		WriteDeviceCookie(c, deviceID)
 	}
 
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{
@@ -53,7 +57,7 @@ func (h *AuthHandler) PollQRCode(c *gin.Context) {
 		"status": qrData.Status,
 	}
 
-	if qrData.Status == auth.QRCodeStatusConfirmed {
+	if qrData.Status == serviceauth.QRCodeStatusConfirmed {
 		data["login_ticket"] = qrData.LoginTicket
 	}
 
@@ -63,15 +67,19 @@ func (h *AuthHandler) PollQRCode(c *gin.Context) {
 // ScanQRCode scans a QR code
 func (h *AuthHandler) ScanQRCode(c *gin.Context) {
 	var req struct {
-		Code   string `json:"code" binding:"required"`
-		UserID string `json:"user_id" binding:"required"`
+		Code string `json:"code" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
 		return
 	}
 
-	err := h.auth.ScanQRCode(c.Request.Context(), req.Code, req.UserID)
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		return
+	}
+	err := h.auth.ScanQRCode(c.Request.Context(), req.Code, userID)
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrQRCodeExpired):
@@ -92,15 +100,19 @@ func (h *AuthHandler) ScanQRCode(c *gin.Context) {
 // ConfirmQRCode confirms a QR code login
 func (h *AuthHandler) ConfirmQRCode(c *gin.Context) {
 	var req struct {
-		Code   string `json:"code" binding:"required"`
-		UserID string `json:"user_id" binding:"required"`
+		Code string `json:"code" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
 		return
 	}
 
-	err := h.auth.ConfirmQRCode(c.Request.Context(), req.Code, req.UserID)
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		return
+	}
+	err := h.auth.ConfirmQRCode(c.Request.Context(), req.Code, userID)
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrQRCodeExpired):
@@ -130,7 +142,12 @@ func (h *AuthHandler) CompleteQRCode(c *gin.Context) {
 		return
 	}
 
-	result, sessionID, err := h.auth.CompleteQRCodeLogin(c.Request.Context(), req.Code, req.LoginTicket)
+	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
+	result, pair, err := h.auth.CompleteQRCodeLoginWithMetadata(c.Request.Context(), req.Code, req.LoginTicket, serviceauth.LoginMetadata{
+		DeviceID:  deviceID,
+		IP:        serviceauth.RequestIP(c.Request),
+		UserAgent: c.Request.UserAgent(),
+	})
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrQRCodeExpired):
@@ -145,6 +162,9 @@ func (h *AuthHandler) CompleteQRCode(c *gin.Context) {
 		return
 	}
 
-	WriteSessionCookie(c, sessionID, conf.GetEnv() == conf.EnvProd)
+	if isNewDevice {
+		WriteDeviceCookie(c, deviceID)
+	}
+	WriteRefreshCookie(c, pair.RefreshToken, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }

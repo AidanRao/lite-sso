@@ -10,6 +10,26 @@ func KeyOTP(email string) string {
 	return fmt.Sprintf("otp:%s", email)
 }
 
+func KeyChallenge(challengeID string) string {
+	return fmt.Sprintf("auth:challenge:%s", challengeID)
+}
+
+func KeyAuthRateLimit(scope string, value string) string {
+	return fmt.Sprintf("auth:rate:%s:%s", scope, value)
+}
+
+func KeyAuthFailure(scope string, value string) string {
+	return fmt.Sprintf("auth:fail:%s:%s", scope, value)
+}
+
+func KeyAuthDistinctAccounts(scope string, value string) string {
+	return fmt.Sprintf("auth:accounts:%s:%s", scope, value)
+}
+
+func KeyAuthCooldown(scope string, value string) string {
+	return fmt.Sprintf("auth:cooldown:%s:%s", scope, value)
+}
+
 func KeyRateLimitEmail(email string) string {
 	return fmt.Sprintf("ratelimit:email:%s", email)
 }

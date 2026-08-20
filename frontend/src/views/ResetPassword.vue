@@ -64,7 +64,7 @@
               <el-input
                 v-model="form.password"
                 :type="showPassword ? 'text' : 'password'"
-                placeholder="请输入新密码（至少8位）"
+                placeholder="请输入新密码（至少12位）"
                 :prefix-icon="Lock"
                 class="h-12 password-input"
               >
@@ -119,6 +119,7 @@
   <SendCodeModal
     :visible="showSendCodeModal"
     :email="form.email"
+    purpose="PASSWORD_RESET"
     @close="showSendCodeModal = false"
     @success="handleSendCodeSuccess"
   />
@@ -140,6 +141,7 @@ const showPassword = ref(false)
 const showConfirmPassword = ref(false)
 const showSendCodeModal = ref(false)
 const countdown = ref(0)
+const challengeId = ref('')
 
 const form = ref({
   email: '',
@@ -156,7 +158,8 @@ const openSendCodeModal = () => {
   showSendCodeModal.value = true
 }
 
-const handleSendCodeSuccess = () => {
+const handleSendCodeSuccess = (data) => {
+  challengeId.value = data.challenge_id || ''
   successMessage.value = '验证码已发送'
   errorMessage.value = ''
   countdown.value = 60
@@ -174,8 +177,8 @@ const handleReset = async () => {
       errorMessage.value = '请填写邮箱和验证码'
       return
     }
-    if (form.value.password.length < 8) {
-      errorMessage.value = '密码长度至少为8个字符'
+    if (form.value.password.length < 12) {
+      errorMessage.value = '密码长度至少为12个字符'
       return
     }
     if (form.value.password !== form.value.confirmPassword) {
@@ -189,7 +192,8 @@ const handleReset = async () => {
 
     await authAPI.resetPassword({
       email: form.value.email,
-      otp: form.value.otp,
+      challenge_id: challengeId.value,
+      code: form.value.otp,
       password: form.value.password
     })
 

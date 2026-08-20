@@ -41,12 +41,14 @@ type thirdPartyState struct {
 	Redirect string `json:"redirect"`
 	Action   string `json:"action"`
 	UserID   string `json:"user_id,omitempty"`
+	DeviceID string `json:"device_id,omitempty"`
 }
 
 type ThirdPartyCallbackResult struct {
 	User     *dto.UserResponse
 	Redirect string
 	Action   string
+	DeviceID string
 }
 
 func NewOAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, userRepo *db.UserRepository) *OAuthService {
@@ -75,6 +77,10 @@ func (s *OAuthService) GetUserInfo(ctx context.Context, userID string) (*dto.Use
 
 // HandleThirdPartyLogin 发起第三方 OAuth 登录流程。
 func (s *OAuthService) HandleThirdPartyLogin(ctx context.Context, provider string, redirect string) (string, error) {
+	return s.HandleThirdPartyLoginWithDevice(ctx, provider, redirect, "")
+}
+
+func (s *OAuthService) HandleThirdPartyLoginWithDevice(ctx context.Context, provider string, redirect string, deviceID string) (string, error) {
 	p, ok := s.getProvider(provider)
 	if !ok {
 		return "", common.ErrInvalidProvider
@@ -97,6 +103,7 @@ func (s *OAuthService) HandleThirdPartyLogin(ctx context.Context, provider strin
 		Provider: provider,
 		Redirect: redirectURL,
 		Action:   ThirdPartyActionLogin,
+		DeviceID: deviceID,
 	})
 	if err != nil {
 		return "", common.ErrProviderAuthFailed
@@ -111,6 +118,10 @@ func (s *OAuthService) HandleThirdPartyLogin(ctx context.Context, provider strin
 }
 
 func (s *OAuthService) HandleThirdPartyBind(ctx context.Context, userID string, provider string, redirect string) (string, error) {
+	return s.HandleThirdPartyBindWithDevice(ctx, userID, provider, redirect, "")
+}
+
+func (s *OAuthService) HandleThirdPartyBindWithDevice(ctx context.Context, userID string, provider string, redirect string, deviceID string) (string, error) {
 	p, ok := s.getProvider(provider)
 	if !ok {
 		return "", common.ErrInvalidProvider
@@ -141,6 +152,7 @@ func (s *OAuthService) HandleThirdPartyBind(ctx context.Context, userID string, 
 		Redirect: redirectURL,
 		Action:   ThirdPartyActionBind,
 		UserID:   userID,
+		DeviceID: deviceID,
 	})
 	if err != nil {
 		return "", common.ErrProviderAuthFailed
@@ -187,6 +199,7 @@ func (s *OAuthService) HandleThirdPartyCallbackWithState(ctx context.Context, pr
 			User:     dto.ToUserResponse(user),
 			Redirect: stateData.Redirect,
 			Action:   ThirdPartyActionBind,
+			DeviceID: stateData.DeviceID,
 		}, nil
 	}
 
@@ -200,6 +213,7 @@ func (s *OAuthService) HandleThirdPartyCallbackWithState(ctx context.Context, pr
 		User:     dto.ToUserResponse(user),
 		Redirect: stateData.Redirect,
 		Action:   ThirdPartyActionLogin,
+		DeviceID: stateData.DeviceID,
 	}, nil
 }
 

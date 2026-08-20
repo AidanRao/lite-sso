@@ -77,6 +77,18 @@
                     </el-input>
                   </el-form-item>
                 </div>
+                <div v-if="passwordCaptchaRequired" class="mb-4">
+                  <label class="block text-sm font-medium text-gray-700 mb-2">图形验证码</label>
+                  <div class="flex items-center gap-3">
+                    <el-input v-model="passwordCaptchaInput" maxlength="4" placeholder="请输入验证码" class="h-12 flex-1" />
+                    <img
+                      :src="passwordCaptchaBase64"
+                      alt="图形验证码"
+                      class="h-12 w-28 cursor-pointer rounded-lg object-contain bg-gray-50"
+                      @click="loadPasswordCaptcha"
+                    />
+                  </div>
+                </div>
                 <div class="pt-4">
                   <button
                     type="submit"
@@ -189,6 +201,7 @@
   <SendCodeModal
     :visible="showSendCodeModal"
     :email="emailForm.email"
+    purpose="LOGIN"
     @close="showSendCodeModal = false"
     @success="handleSendCodeSuccess"
   />
@@ -199,7 +212,7 @@ import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Mail, Lock, Eye, EyeOff, MessageSquare, AlertTriangle } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
-import { authAPI } from '../api/auth'
+import { authAPI, setAccessToken } from '../api/auth'
 import AuthSplashPane from '../components/AuthSplashPane.vue'
 import SendCodeModal from '../components/SendCodeModal.vue'
 import { getLoginRedirect, loadTargetClientName } from '../utils/oauthTarget'
@@ -234,6 +247,7 @@ const loading = ref(false)
 const errorMessage = ref('')
 const passwordLockSeconds = ref(0)
 const countdown = ref(0)
+const emailChallengeId = ref('')
 const showSendCodeModal = ref(false)
 const qrCodeUrl = ref('')
 const qrStatus = ref('请使用 Lite SSO App 扫描二维码')
@@ -242,6 +256,10 @@ const qrCheckInterval = ref(null)
 const qrTimerInterval = ref(null)
 const passwordLockInterval = ref(null)
 const currentQRID = ref('')
+const passwordCaptchaRequired = ref(false)
+const passwordCaptchaInput = ref('')
+const passwordCaptchaID = ref('')
+const passwordCaptchaBase64 = ref('')
 
 const pwdFormRef = ref(null)
 const emailFormRef = ref(null)
@@ -257,7 +275,7 @@ const emailForm = ref({
 })
 
 const passwordEmailValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(passwordForm.value.email.trim()))
-const passwordValueValid = computed(() => passwordForm.value.password.length >= 3)
+const passwordValueValid = computed(() => passwordForm.value.password.length >= 12)
 const passwordFormValid = computed(() => passwordEmailValid.value && passwordValueValid.value)
 const passwordLoginInvalid = computed(() => !passwordFormValid.value && passwordLockSeconds.value <= 0 && !loading.value)
 const passwordLoginDisabled = computed(() => loading.value || passwordLockSeconds.value > 0)
@@ -311,7 +329,7 @@ const passwordRules = {
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 3, message: '密码长度不能小于3位', trigger: 'blur' }
+    { min: 12, message: '密码长度不能小于12位', trigger: 'blur' }
   ]
 }
 
@@ -332,8 +350,21 @@ const loadTargetClient = async () => {
   targetClientName.value = await loadTargetClientName(redirectUrl.value)
 }
 
+const loadPasswordCaptcha = async () => {
+  try {
+    const response = await authAPI.getCaptcha()
+    const data = responseData(response)
+    passwordCaptchaID.value = data.captcha_id || ''
+    passwordCaptchaBase64.value = data.captcha_png_base64 || ''
+    passwordCaptchaInput.value = ''
+  } catch (error) {
+    errorMessage.value = error.message || '获取验证码失败'
+  }
+}
+
 const finishLogin = (response) => {
   const data = responseData(response)
+  setAccessToken(data.access_token)
   window.location.href = data.redirect_url || redirectUrl.value || '/profile'
 }
 
@@ -369,14 +400,24 @@ const handlePasswordLogin = async () => {
     errorMessage.value = ''
     const response = await authAPI.loginWithPassword({
       ...passwordForm.value,
-      redirect: redirectUrl.value
+      redirect: redirectUrl.value,
+      ...(passwordCaptchaRequired.value
+        ? { captcha_id: passwordCaptchaID.value, captcha: passwordCaptchaInput.value }
+        : {})
     })
     ElMessage.success('登录成功，正在跳转...')
     setTimeout(() => {
       finishLogin(response)
     }, 1000)
+    passwordCaptchaRequired.value = false
   } catch (error) {
     if (error.status === 429) {
+      if (error.data?.code === 'CAPTCHA_REQUIRED') {
+        passwordCaptchaRequired.value = true
+        errorMessage.value = '请完成图形验证码后再登录'
+        await loadPasswordCaptcha()
+        return
+      }
       const retryAfterSeconds = Math.max(1, Number(error.data?.retry_after_seconds) || 1)
       ElMessage.error(`密码错误次数过多，请 ${retryAfterSeconds} 秒后再试`)
       startPasswordLockCountdown(retryAfterSeconds)
@@ -397,7 +438,8 @@ const openSendCodeModal = () => {
   showSendCodeModal.value = true
 }
 
-const handleSendCodeSuccess = () => {
+const handleSendCodeSuccess = (data) => {
+  emailChallengeId.value = data.challenge_id || ''
   ElMessage.success('验证码已发送')
   countdown.value = 60
   const timer = setInterval(() => {
@@ -415,8 +457,8 @@ const handleEmailLogin = async () => {
     loading.value = true
     errorMessage.value = ''
     const response = await authAPI.loginWithEmail({
-      email: emailForm.value.email,
-      otp: emailForm.value.code,
+      challenge_id: emailChallengeId.value,
+      code: emailForm.value.code,
       redirect: redirectUrl.value
     })
     ElMessage.success('登录成功，正在跳转...')

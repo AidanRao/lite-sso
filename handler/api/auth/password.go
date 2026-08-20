@@ -10,60 +10,95 @@ import (
 	"sso-server/common"
 	"sso-server/common/ecode"
 	"sso-server/conf"
+	serviceauth "sso-server/service/auth"
 )
 
-// LoginWithPassword handles password-based login
+// LoginWithPassword handles password-based login.
 func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 	var req struct {
-		Email    string `json:"email" binding:"required,email"`
-		Password string `json:"password" binding:"required"`
-		Redirect string `json:"redirect"`
+		Email     string `json:"email" binding:"required,email"`
+		Password  string `json:"password" binding:"required"`
+		Redirect  string `json:"redirect"`
+		CaptchaID string `json:"captcha_id"`
+		Captcha   string `json:"captcha"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
 		return
 	}
 
-	user, err := h.auth.LoginWithPassword(c.Request.Context(), req.Email, req.Password)
-	if err != nil {
-		switch {
-		case errors.Is(err, common.ErrInvalidCredentials):
-			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "邮箱或密码错误", Data: nil})
-		case errors.Is(err, common.ErrAccountLocked):
-			var lockedError common.AccountLockedError
-			retryAfterSeconds := 0
-			if errors.As(err, &lockedError) {
-				retryAfterSeconds = lockedError.RetryAfterSeconds
-			}
-			if retryAfterSeconds > 0 {
-				c.Header("Retry-After", strconv.Itoa(retryAfterSeconds))
-			}
-			c.JSON(http.StatusTooManyRequests, ecode.Response[any]{
-				Code:    ecode.TooManyRequests,
-				Message: "密码错误次数过多，请稍后再试",
-				Data: gin.H{
-					"retry_after_seconds": retryAfterSeconds,
-				},
-			})
-		case errors.Is(err, common.ErrUserInactive):
-			c.JSON(http.StatusForbidden, ecode.Response[any]{Code: ecode.Forbidden, Message: "用户已禁用", Data: nil})
-		default:
-			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "登录失败", Data: nil})
+	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
+	captchaValid := false
+	if req.CaptchaID != "" || req.Captcha != "" {
+		var err error
+		captchaValid, err = h.auth.VerifyCaptcha(c.Request.Context(), req.CaptchaID, req.Captcha)
+		if err != nil || !captchaValid {
+			writeAuthError(c, common.ErrInvalidCaptcha)
+			return
 		}
+	}
+	loginContext := serviceauth.PasswordLoginContext{
+		DeviceID:     deviceID,
+		IP:           serviceauth.RequestIP(c.Request),
+		CaptchaValid: captchaValid,
+	}
+	user, err := h.auth.LoginWithPasswordContext(c.Request.Context(), req.Email, req.Password, loginContext)
+	if errors.Is(err, common.ErrCaptchaRequired) && !captchaValid {
+		c.JSON(http.StatusTooManyRequests, ecode.Response[any]{Code: ecode.TooManyRequests, Message: "请完成验证码后再登录", Data: gin.H{"code": "CAPTCHA_REQUIRED"}})
+		return
+	}
+	if err != nil {
+		writeAuthError(c, err)
 		return
 	}
 
-	result, sessionID, err := h.auth.CompleteLogin(c.Request.Context(), user.ID, req.Redirect)
+	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, req.Redirect, serviceauth.LoginMetadata{
+		DeviceID:  deviceID,
+		IP:        serviceauth.RequestIP(c.Request),
+		UserAgent: c.Request.UserAgent(),
+	}, serviceauth.AuthMethodPassword)
 	if err != nil {
-		switch {
-		case errors.Is(err, common.ErrInvalidRedirect):
-			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "跳转地址无效", Data: nil})
-		default:
-			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "登录失败", Data: nil})
-		}
+		writeAuthError(c, err)
 		return
 	}
-	WriteSessionCookie(c, sessionID, conf.GetEnv() == conf.EnvProd)
-
+	if isNewDevice {
+		WriteDeviceCookie(c, deviceID)
+	}
+	WriteRefreshCookie(c, pair.RefreshToken, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
+}
+
+func writeAuthError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, common.ErrInvalidCredentials):
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "邮箱或密码错误", Data: gin.H{"code": "INVALID_CREDENTIALS"}})
+	case errors.Is(err, common.ErrInvalidOTP):
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码错误", Data: gin.H{"code": "EMAIL_CODE_INVALID"}})
+	case errors.Is(err, common.ErrChallengeInvalid):
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码无效，请重新获取", Data: gin.H{"code": "EMAIL_CODE_INVALID"}})
+	case errors.Is(err, common.ErrOTPExpired):
+		c.JSON(http.StatusGone, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码已过期", Data: gin.H{"code": "EMAIL_CODE_EXPIRED"}})
+	case errors.Is(err, common.ErrOTPAttemptsExceeded):
+		c.JSON(http.StatusTooManyRequests, ecode.Response[any]{Code: ecode.TooManyRequests, Message: "验证码尝试次数过多", Data: gin.H{"code": "EMAIL_CODE_ATTEMPTS_EXCEEDED"}})
+	case errors.Is(err, common.ErrInvalidCaptcha):
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码错误", Data: gin.H{"code": "CAPTCHA_INVALID"}})
+	case errors.Is(err, common.ErrCaptchaRequired):
+		c.Header("Retry-After", "1")
+		c.JSON(http.StatusTooManyRequests, ecode.Response[any]{Code: ecode.TooManyRequests, Message: "需要验证码", Data: gin.H{"code": "CAPTCHA_REQUIRED", "retry_after_seconds": 1}})
+	case errors.Is(err, common.ErrRateLimited):
+		writeRateLimited(c, err, "请求过于频繁")
+	case errors.Is(err, common.ErrUserInactive):
+		c.JSON(http.StatusForbidden, ecode.Response[any]{Code: ecode.Forbidden, Message: "用户已禁用", Data: nil})
+	case errors.Is(err, common.ErrInvalidRedirect):
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "跳转地址无效", Data: nil})
+	default:
+		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "登录失败", Data: nil})
+	}
+}
+
+func writeRetryAfter(c *gin.Context, seconds int) {
+	if seconds < 1 {
+		seconds = 1
+	}
+	c.Header("Retry-After", strconv.Itoa(seconds))
 }

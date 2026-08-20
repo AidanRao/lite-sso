@@ -17,6 +17,9 @@ type Server struct {
 }
 
 func New(cfg *conf.Config) (*Server, error) {
+	if err := cfg.ValidateAuthSecrets(); err != nil {
+		return nil, err
+	}
 	messageCenterClient, err := newMessageCenterClient(cfg)
 	if err != nil {
 		return nil, err

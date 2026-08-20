@@ -71,8 +71,8 @@ func (s *Server) registerRoutes() {
 		DB:     db.DB,
 	})
 
-	authRequired := RequireSessionAuth(kvStore)
-	authRequiredOrRedirect := RequireSessionAuthOrRedirect(kvStore)
+	authRequired := RequireSessionAuth(authHandler.Service())
+	authRequiredOrRedirect := RequireSessionAuthOrRedirect(authHandler.Service())
 	adminRequired := RequireAdmin(s.cfg)
 
 	apiGroup := s.engine.Group("/api")
@@ -86,16 +86,16 @@ func (s *Server) registerRoutes() {
 
 			authGroup.GET("/qr/generate", authHandler.GenerateQRCode)
 			authGroup.GET("/qr/poll", authHandler.PollQRCode)
-			authGroup.POST("/qr/scan", authHandler.ScanQRCode)
-			authGroup.POST("/qr/confirm", authHandler.ConfirmQRCode)
+			authGroup.POST("/qr/scan", authRequired, authHandler.ScanQRCode)
+			authGroup.POST("/qr/confirm", authRequired, authHandler.ConfirmQRCode)
 			authGroup.POST("/qr/complete", authHandler.CompleteQRCode)
 
 			authGroup.GET("/third/:provider", oauthHandler.ThirdPartyLogin)
 			authGroup.GET("/third/:provider/callback", oauthHandler.ThirdPartyCallback)
 
 			authProtected := authGroup.Group("")
-			authProtected.Use(authRequired)
 			authProtected.POST("/logout", authHandler.Logout)
+			authProtected.POST("/token/refresh", authHandler.RefreshToken)
 
 		}
 

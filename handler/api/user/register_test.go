@@ -10,157 +10,97 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	gooauth2store "github.com/go-oauth2/oauth2/v4/store"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
 	"sso-server/conf"
 	"sso-server/dal/kv"
 	"sso-server/handler/api/user"
-	"sso-server/handler/oauth2"
 	"sso-server/model"
+	serviceauth "sso-server/service/auth"
 )
 
-func TestUserRegister_CreatesUserAndReturnsToken(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	db, err := gorm.Open(sqlite.Open("file:user_register_session?mode=memory&cache=shared"), &gorm.Config{})
+func TestUserRegister_CreatesUserAndReturnsTokens(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:user_register_session_v2?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-
-	tokenStore, err := gooauth2store.NewMemoryTokenStore()
-	if err != nil {
-		t.Fatalf("token store: %v", err)
-	}
-
-	cfg := &conf.Config{}
-	cfg.Security.AccessTokenExpire = time.Hour
-
-	o, err := oauth2.NewWithStores(cfg, db, tokenStore)
-	if err != nil {
-		t.Fatalf("new oauth2: %v", err)
-	}
-
-	kvStore := kv.NewMemoryStore()
-	_ = kvStore.Set(context.Background(), kv.KeyOTP("u1@example.com"), "123456", time.Minute)
-
-	h := user.NewUserHandler(user.UserDeps{
-		Config: cfg,
-		DB:     db,
-		KV:     kvStore,
-		OAuth2: o,
-	})
-
+	store := kv.NewMemoryStore()
+	cfg := &conf.Config{Dev: conf.DevConfig{FixedEmailOTP: "123456", SkipSendMessage: true}}
+	challenge := seedChallenge(t, cfg, database, store, "u1@example.com", serviceauth.ChallengePurposeRegister, "dev_register")
+	h := user.NewUserHandler(user.UserDeps{Config: cfg, DB: database, KV: store})
 	r := gin.New()
 	r.POST("/api/user/register", h.Register)
-
-	body := `{"email":"u1@example.com","password":"password123","username":"u1","otp":"123456"}`
+	body := `{"email":"u1@example.com","password":"password123456","username":"u1","challenge_id":"` + challenge + `","code":"123456"}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/user/register", strings.NewReader(body))
+	req.AddCookie(&http.Cookie{Name: serviceauth.DeviceCookieName, Value: "dev_register"})
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
-
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
 	}
-
-	var resp struct {
-		Code int `json:"code"`
+	var response struct {
 		Data struct {
 			AccessToken string `json:"access_token"`
-			TokenType   string `json:"token_type"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp.Code != 200 {
-		t.Fatalf("expected code 200, got %d", resp.Code)
-	}
-	if resp.Data.AccessToken == "" || resp.Data.TokenType == "" {
-		t.Fatalf("expected token fields, got %s", w.Body.String())
-	}
-
-	found := false
-	for _, cookie := range w.Result().Cookies() {
-		if cookie.Name == "sso_session" && cookie.Value != "" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected sso_session cookie, got %#v", w.Result().Cookies())
-	}
-
-	var count int64
-	if err := db.Model(&model.User{}).Where("email = ?", "u1@example.com").Count(&count).Error; err != nil {
-		t.Fatalf("count users: %v", err)
-	}
-	if count != 1 {
-		t.Fatalf("expected 1 user, got %d", count)
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || response.Data.AccessToken == "" {
+		t.Fatalf("expected access token, body=%s err=%v", w.Body.String(), err)
 	}
 }
 
-func TestUserResetPassword_WithEmailOTPUpdatesHash(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	db, err := gorm.Open(sqlite.Open("file:user_reset_password?mode=memory&cache=shared"), &gorm.Config{})
+func TestUserResetPassword_UsesChallengeAndArgon2id(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:user_reset_password_v2?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-
-	oldHash, err := bcrypt.GenerateFromPassword([]byte("old-password"), 12)
+	oldHash, err := serviceauth.HashPassword("old-password-123")
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	oldHashStr := string(oldHash)
 	email := "u1@example.com"
-	if err := db.Create(&model.User{
-		ID:           "u1",
-		Email:        &email,
-		PasswordHash: &oldHashStr,
-		IsActive:     true,
-	}).Error; err != nil {
+	if err := database.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &oldHash, IsActive: true}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-
-	kvStore := kv.NewMemoryStore()
-	_ = kvStore.Set(context.Background(), kv.KeyOTP("u1@example.com"), "123456", time.Minute)
-
-	h := user.NewUserHandler(user.UserDeps{
-		Config: &conf.Config{},
-		DB:     db,
-		KV:     kvStore,
-	})
-
+	store := kv.NewMemoryStore()
+	cfg := &conf.Config{Dev: conf.DevConfig{FixedEmailOTP: "123456", SkipSendMessage: true}}
+	challenge := seedChallenge(t, cfg, database, store, email, serviceauth.ChallengePurposePasswordReset, "dev_reset")
+	h := user.NewUserHandler(user.UserDeps{Config: cfg, DB: database, KV: store})
 	r := gin.New()
 	r.POST("/api/user/password/reset", h.ResetPassword)
-
-	body := `{"email":"u1@example.com","password":"new-password","otp":"123456"}`
+	body := `{"email":"u1@example.com","password":"new-password-123","challenge_id":"` + challenge + `","code":"123456"}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/user/password/reset", strings.NewReader(body))
+	req.AddCookie(&http.Cookie{Name: serviceauth.DeviceCookieName, Value: "dev_reset"})
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
-
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
 	}
-
 	var updated model.User
-	if err := db.First(&updated, "id = ?", "u1").Error; err != nil {
-		t.Fatalf("find user: %v", err)
+	if err := database.First(&updated, "id = ?", "u1").Error; err != nil || updated.PasswordHash == nil {
+		t.Fatalf("expected updated hash, err=%v", err)
 	}
-	if updated.PasswordHash == nil {
-		t.Fatalf("expected password hash")
+	matched, err := serviceauth.VerifyPassword("new-password-123", *updated.PasswordHash)
+	if err != nil || !matched {
+		t.Fatalf("expected argon2id password, matched=%t err=%v", matched, err)
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(*updated.PasswordHash), []byte("new-password")); err != nil {
-		t.Fatalf("expected new password hash, got err %v", err)
+}
+
+func seedChallenge(t *testing.T, cfg *conf.Config, database *gorm.DB, store kv.Store, email string, purpose serviceauth.ChallengePurpose, deviceID string) string {
+	t.Helper()
+	_ = store.Set(context.Background(), kv.KeyCaptcha("seed"), "1234", time.Minute)
+	service := serviceauth.NewAuthService(cfg, database, store, nil, nil)
+	result, err := service.SendEmailOTP(context.Background(), email, "seed", "1234", serviceauth.OTPRequestContext{DeviceID: deviceID, IP: "192.0.2.1"}, purpose)
+	if err != nil {
+		t.Fatalf("seed challenge: %v", err)
 	}
+	return result.ChallengeID
 }

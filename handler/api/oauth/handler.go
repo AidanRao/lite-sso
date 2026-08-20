@@ -89,7 +89,8 @@ func (h *OAuthHandler) ThirdPartyLogin(c *gin.Context) {
 		return
 	}
 
-	redirectURL, err := h.oauthService.HandleThirdPartyLogin(c.Request.Context(), provider, c.Query("redirect"))
+	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
+	redirectURL, err := h.oauthService.HandleThirdPartyLoginWithDevice(c.Request.Context(), provider, c.Query("redirect"), deviceID)
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrInvalidProvider):
@@ -100,6 +101,9 @@ func (h *OAuthHandler) ThirdPartyLogin(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "登录失败", Data: nil})
 		}
 		return
+	}
+	if isNewDevice {
+		apiauth.WriteDeviceCookie(c, deviceID)
 	}
 
 	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
@@ -113,7 +117,8 @@ func (h *OAuthHandler) ThirdPartyBind(c *gin.Context) {
 		return
 	}
 
-	redirectURL, err := h.oauthService.HandleThirdPartyBind(c.Request.Context(), userID, provider, c.Query("redirect"))
+	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
+	redirectURL, err := h.oauthService.HandleThirdPartyBindWithDevice(c.Request.Context(), userID, provider, c.Query("redirect"), deviceID)
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrInvalidProvider):
@@ -126,6 +131,9 @@ func (h *OAuthHandler) ThirdPartyBind(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "绑定失败", Data: nil})
 		}
 		return
+	}
+	if isNewDevice {
+		apiauth.WriteDeviceCookie(c, deviceID)
 	}
 
 	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
@@ -164,6 +172,13 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 		return
 	}
 
+	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
+	if result.DeviceID != "" && result.DeviceID != deviceID {
+		log.Printf("ThirdPartyCallback: device mismatch, provider=%s", provider)
+		c.Redirect(http.StatusTemporaryRedirect, "/oauth/callback?error="+url.QueryEscape("登录设备已变化"))
+		return
+	}
+
 	if result.Action == oauth.ThirdPartyActionBind {
 		redirectURL := result.Redirect
 		if redirectURL == "" {
@@ -173,13 +188,28 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 		return
 	}
 
-	_, sessionID, err := h.authService.CompleteLogin(c.Request.Context(), result.User.ID, result.Redirect)
+	resultData, pair, err := h.authService.CompleteLoginWithContext(c.Request.Context(), result.User.ID, result.Redirect, serviceauth.LoginMetadata{
+		DeviceID:  deviceID,
+		IP:        serviceauth.RequestIP(c.Request),
+		UserAgent: c.Request.UserAgent(),
+	}, providerAuthMethod(provider))
 	if err != nil {
 		log.Printf("ThirdPartyCallback: complete login failed, provider=%s, user_id=%s, err=%v", provider, result.User.ID, err)
 		c.Redirect(http.StatusTemporaryRedirect, "/oauth/callback?error="+url.QueryEscape("登录失败"))
 		return
 	}
 
-	apiauth.WriteSessionCookie(c, sessionID, conf.GetEnv() == conf.EnvProd)
+	if isNewDevice {
+		apiauth.WriteDeviceCookie(c, deviceID)
+	}
+	apiauth.WriteRefreshCookie(c, pair.RefreshToken, conf.GetEnv() == conf.EnvProd, h.authService.RefreshTokenTTL())
+	_ = resultData
 	c.Redirect(http.StatusTemporaryRedirect, result.Redirect)
+}
+
+func providerAuthMethod(provider string) serviceauth.AuthMethod {
+	if provider == "feishu" {
+		return serviceauth.AuthMethodFeishu
+	}
+	return serviceauth.AuthMethodGitHub
 }
