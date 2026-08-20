@@ -35,5 +35,4 @@ ENV ENV=prod GIN_MODE=release
 
 EXPOSE 8080
 
-ENTRYPOINT ["/app/sso-server"]
-CMD ["--migrate-after-listen"]
+CMD ["/app/sso-server", "--migrate-after-listen"]
