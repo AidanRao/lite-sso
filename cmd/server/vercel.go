@@ -81,7 +81,7 @@ func (h *startupHandler) publish(handler http.Handler, failed bool) {
 }
 
 func runVercel(ctx context.Context, cfg *conf.Config, dependencies vercelDependencies) error {
-	listener, err := net.Listen("tcp", ":"+cfg.Server.Port)
+	listener, err := net.Listen("tcp4", net.JoinHostPort("0.0.0.0", cfg.Server.Port))
 	if err != nil {
 		return fmt.Errorf("listen on port %s: %w", cfg.Server.Port, err)
 	}
