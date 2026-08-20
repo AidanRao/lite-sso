@@ -16,6 +16,8 @@ import (
 	"github.com/pressly/goose/v3/lock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"sso-server/dal/db/migration"
 )
 
 const migrationIntegrationDatabaseEnvironment = "MIGRATION_TEST_DATABASE_DSN"
@@ -29,12 +31,12 @@ func Test_MigrationProvider_ConcurrentUp(t *testing.T) {
 	testDatabase := newPostgresTestDatabase(t)
 	const providerCount = 5
 
-	providers := make([]migrationProvider, 0, providerCount)
+	providers := make([]migration.Provider, 0, providerCount)
 	databases := make([]*sql.DB, 0, providerCount)
 	for range providerCount {
 		database := testDatabase.open(t)
 		databases = append(databases, database)
-		provider, err := newMigrationProvider(
+		provider, err := migration.NewProvider(
 			database,
 			os.DirFS("../../migrations"),
 			1,
@@ -54,7 +56,7 @@ func Test_MigrationProvider_ConcurrentUp(t *testing.T) {
 	var waitGroup sync.WaitGroup
 	for _, provider := range providers {
 		waitGroup.Add(1)
-		go func(provider migrationProvider) {
+		go func(provider migration.Provider) {
 			defer waitGroup.Done()
 			<-start
 			_, err := provider.Up(context.Background())
@@ -100,7 +102,7 @@ func Test_MigrationProvider_LockTimeout(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, database.Close())
 	})
-	provider, err := newMigrationProvider(database, os.DirFS("../../migrations"), 1, 1)
+	provider, err := migration.NewProvider(database, os.DirFS("../../migrations"), 1, 1)
 	require.NoError(t, err)
 
 	startedAt := time.Now()
@@ -113,9 +115,9 @@ func Test_MigrationProvider_LockTimeout(t *testing.T) {
 }
 
 func Test_MigrationLock_ProductionTimeout(t *testing.T) {
-	assert.Equal(t, uint64(5), migrationLockPeriod)
-	assert.Equal(t, uint64(60), migrationLockFailureThreshold)
-	assert.Equal(t, uint64(300), migrationLockPeriod*migrationLockFailureThreshold)
+	assert.Equal(t, uint64(5), migration.LockPeriod)
+	assert.Equal(t, uint64(60), migration.LockFailureThreshold)
+	assert.Equal(t, uint64(300), migration.LockPeriod*migration.LockFailureThreshold)
 }
 
 func newPostgresTestDatabase(t *testing.T) *postgresTestDatabase {
@@ -177,7 +179,7 @@ func assertMigrationVersionsRecordedOnce(t *testing.T, database *sql.DB) {
 		versions[version] = count
 	}
 	require.NoError(t, rows.Err())
-	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1}, versions)
+	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1}, versions)
 }
 
 func assertFinalDatabaseStructure(t *testing.T, database *sql.DB) {
@@ -186,10 +188,10 @@ func assertFinalDatabaseStructure(t *testing.T, database *sql.DB) {
 	var tableCount int
 	err := database.QueryRowContext(
 		context.Background(),
-		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('users', 'oauth_clients', 'user_third_party', 'user_oauth_clients')",
+		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('users', 'oauth_clients', 'user_third_party', 'user_oauth_clients', 'user_session')",
 	).Scan(&tableCount)
 	require.NoError(t, err)
-	assert.Equal(t, 4, tableCount)
+	assert.Equal(t, 5, tableCount)
 
 	rows, err := database.QueryContext(
 		context.Background(),

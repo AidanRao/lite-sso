@@ -45,6 +45,11 @@ func (s *Server) Start() error {
 	return httpServer.ListenAndServe()
 }
 
+// ServeHTTP delegates requests to the configured Gin engine.
+func (s *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	s.engine.ServeHTTP(writer, request)
+}
+
 func newMessageCenterClient(cfg *conf.Config) (*messagecenter.Client, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("create message center client: configuration is required")
