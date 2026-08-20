@@ -33,6 +33,6 @@ COPY --from=frontend-builder /app/frontend/dist /app/web
 
 ENV ENV=prod GIN_MODE=release
 
-EXPOSE 8080
+EXPOSE 80
 
 CMD ["/app/sso-server", "--migrate-after-listen"]
