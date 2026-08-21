@@ -25,16 +25,16 @@ import (
 )
 
 type testMessageSender struct {
-	lastRecipient   string
+	lastTarget      string
 	lastTemplateKey string
 	lastVariables   map[string]string
 	sendCount       int
 	err             error
 }
 
-func (m *testMessageSender) Send(ctx context.Context, recipient string, templateKey string, variables map[string]string) error {
+func (m *testMessageSender) Send(ctx context.Context, target string, templateKey string, variables map[string]string) error {
 	m.sendCount++
-	m.lastRecipient = recipient
+	m.lastTarget = target
 	m.lastTemplateKey = templateKey
 	m.lastVariables = variables
 	return m.err

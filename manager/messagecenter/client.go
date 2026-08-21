@@ -20,6 +20,7 @@ const (
 	messagesPath        = "/v1/messages"
 	defaultHTTPTimeout  = 10 * time.Second
 	maximumErrorBodyLen = 4096
+	emailChannel         = "EMAIL"
 )
 
 // Config contains the connection settings required by Message Center.
@@ -40,8 +41,9 @@ type Client struct {
 type sendRequest struct {
 	SenderKey   string            `json:"senderKey"`
 	TemplateKey string            `json:"templateKey"`
-	Recipient   string            `json:"recipient"`
+	Target      string            `json:"target"`
 	Variables   map[string]string `json:"variables"`
+	Channel     string            `json:"channel"`
 }
 
 // NewClient validates the configuration and creates a Message Center client.
@@ -85,12 +87,13 @@ func NewClient(cfg Config) (*Client, error) {
 }
 
 // Send submits one templated message for asynchronous delivery.
-func (c *Client) Send(ctx context.Context, recipient string, templateKey string, variables map[string]string) error {
+func (c *Client) Send(ctx context.Context, target string, templateKey string, variables map[string]string) error {
 	payload, err := json.Marshal(sendRequest{
 		SenderKey:   c.senderKey,
 		TemplateKey: templateKey,
-		Recipient:   recipient,
+		Target:      target,
 		Variables:   variables,
+		Channel:     emailChannel,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal message center request: %w", err)

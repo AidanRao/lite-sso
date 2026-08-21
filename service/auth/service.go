@@ -18,9 +18,9 @@ import (
 
 const verifyCodeEmailTemplateKey = "sso-verify-code-email"
 
-// MessageSender sends a templated message to one recipient.
+// MessageSender sends a templated message to one target.
 type MessageSender interface {
-	Send(ctx context.Context, recipient string, templateKey string, variables map[string]string) error
+	Send(ctx context.Context, target string, templateKey string, variables map[string]string) error
 }
 
 // AuthService coordinates authentication flows and their shared security controls.

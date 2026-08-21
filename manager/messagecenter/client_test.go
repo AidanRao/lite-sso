@@ -30,7 +30,10 @@ func TestClient_Send_Accepted(t *testing.T) {
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		_, err := uuid.Parse(r.Header.Get("Idempotency-Key"))
 		assert.NoError(t, err)
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&received))
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		require.NoError(t, json.Unmarshal(body, &received))
+		assert.JSONEq(t, `{"senderKey":"noreply","templateKey":"sso-verify-code-email","target":"user@example.com","variables":{"code":"123456"},"channel":"EMAIL"}`, string(body))
 		return &http.Response{
 			StatusCode: http.StatusAccepted,
 			Body:       io.NopCloser(strings.NewReader(`{"success":true}`)),
@@ -43,8 +46,9 @@ func TestClient_Send_Accepted(t *testing.T) {
 	assert.Equal(t, sendRequest{
 		SenderKey:   "noreply",
 		TemplateKey: "sso-verify-code-email",
-		Recipient:   "user@example.com",
+		Target:      "user@example.com",
 		Variables:   map[string]string{"code": "123456"},
+		Channel:     emailChannel,
 	}, received)
 }
 
