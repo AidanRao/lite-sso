@@ -26,14 +26,17 @@ type UserDeps struct {
 }
 
 type UserHandler struct {
-	user *serviceuser.UserService
-	auth *serviceauth.AuthService
+	user              *serviceuser.UserService
+	auth              *serviceauth.AuthService
+	trustProxyHeaders bool
 }
 
 func NewUserHandler(deps UserDeps) *UserHandler {
+	trustProxyHeaders := deps.Config != nil && deps.Config.Server.TrustProxyHeaders
 	return &UserHandler{
-		user: serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2),
-		auth: serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
+		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2),
+		auth:              serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
+		trustProxyHeaders: trustProxyHeaders,
 	}
 }
 
@@ -72,7 +75,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, "", serviceauth.LoginMetadata{
 		DeviceID:  deviceID,
-		IP:        serviceauth.RequestIP(c.Request),
+		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
 		UserAgent: c.Request.UserAgent(),
 	}, serviceauth.AuthMethodPassword)
 	if err != nil {
@@ -136,6 +139,55 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, ecode.OKResponse(profile))
+}
+
+// GetLoginDevices lists the current user's active browser devices.
+func (h *UserHandler) GetLoginDevices(c *gin.Context) {
+	userID := c.GetString("user_id")
+	sessionID := c.GetString("session_id")
+	if userID == "" || sessionID == "" {
+		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		return
+	}
+
+	devices, err := h.auth.ListLoginDevices(c.Request.Context(), userID, sessionID)
+	if err != nil {
+		if errors.Is(err, common.ErrSessionRevoked) {
+			c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "获取登录设备失败", Data: nil})
+		return
+	}
+
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"devices": devices}))
+}
+
+// RevokeLoginDevice revokes all active sessions for another browser device.
+func (h *UserHandler) RevokeLoginDevice(c *gin.Context) {
+	userID := c.GetString("user_id")
+	sessionID := c.GetString("session_id")
+	if userID == "" || sessionID == "" {
+		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		return
+	}
+
+	err := h.auth.RevokeLoginDevice(c.Request.Context(), userID, sessionID, c.Param("device_id"))
+	if err != nil {
+		switch {
+		case errors.Is(err, common.ErrCurrentDevice):
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "当前设备请使用退出登录", Data: nil})
+		case errors.Is(err, common.ErrDeviceNotFound):
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "登录设备不存在", Data: nil})
+		case errors.Is(err, common.ErrSessionRevoked):
+			c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		default:
+			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "踢出设备失败", Data: nil})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"revoked": true}))
 }
 
 // UpdateProfile updates user profile

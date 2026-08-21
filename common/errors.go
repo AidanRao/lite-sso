@@ -21,6 +21,8 @@ var (
 	ErrRateLimited         = errors.New("rate limited")
 	ErrCaptchaRequired     = errors.New("captcha required")
 	ErrSessionRevoked      = errors.New("session revoked")
+	ErrDeviceNotFound      = errors.New("login device not found")
+	ErrCurrentDevice       = errors.New("current device cannot be revoked")
 	ErrRefreshTokenInvalid = errors.New("invalid refresh token")
 	ErrAccountLocked       = errors.New("account locked")
 	ErrMessageNotSent      = errors.New("message not sent")

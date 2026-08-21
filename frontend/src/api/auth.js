@@ -117,6 +117,14 @@ export const userAPI = {
     return api.put('/user/profile', data)
   },
 
+  getDevices: () => {
+    return api.get('/user/devices')
+  },
+
+  revokeDevice: (deviceID) => {
+    return api.delete(`/user/devices/${encodeURIComponent(deviceID)}`)
+  },
+
   unbindThirdParty: (provider) => {
     return api.delete(`/user/third/${provider}`)
   }

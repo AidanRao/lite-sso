@@ -85,7 +85,8 @@ type FeishuOAuthConfig struct {
 }
 
 type ServerConfig struct {
-	Port string `mapstructure:"port"`
+	Port              string `mapstructure:"port"`
+	TrustProxyHeaders bool   `mapstructure:"trust_proxy_headers"`
 }
 
 type DatabaseConfig struct {
@@ -213,6 +214,7 @@ func bindEnvs(v *viper.Viper) {
 		"oauth.feishu.client_secret",
 		"oauth.feishu.redirect_uri",
 		"admin.user_ids",
+		"server.trust_proxy_headers",
 	}
 
 	for _, key := range envKeys {
@@ -239,6 +241,7 @@ func setDefaults(v *viper.Viper, env Environment) {
 
 	defaults := map[string]any{
 		"server.port":                       "8080",
+		"server.trust_proxy_headers":        false,
 		"security.access_token_expire":      "12h",
 		"auth.otp_expire":                   "5m",
 		"auth.otp_max_attempts":             5,

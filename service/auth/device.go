@@ -67,19 +67,47 @@ func WriteDeviceCookie(w http.ResponseWriter, deviceID string, secure bool) {
 }
 
 func requestIP(request *http.Request) string {
+	return requestIPWithProxyHeaders(request, false)
+}
+
+func requestIPWithProxyHeaders(request *http.Request, trustProxyHeaders bool) string {
 	if request == nil {
 		return ""
+	}
+	if trustProxyHeaders {
+		for _, header := range []string{"X-Vercel-Forwarded-For", "X-Forwarded-For"} {
+			if ip := firstValidForwardedIP(request.Header.Get(header)); ip != "" {
+				return ip
+			}
+		}
 	}
 	host := request.RemoteAddr
 	if strings.Contains(host, ":") {
 		if parsedHost, _, err := net.SplitHostPort(host); err == nil {
-			return parsedHost
+			if parsedIP := net.ParseIP(parsedHost); parsedIP != nil {
+				return parsedIP.String()
+			}
+			return strings.TrimSpace(parsedHost)
 		}
 	}
-	return strings.TrimSpace(host)
+	host = strings.TrimSpace(host)
+	if parsedIP := net.ParseIP(host); parsedIP != nil {
+		return parsedIP.String()
+	}
+	return host
 }
 
-// RequestIP returns the request source address without trusting forwarded headers.
-func RequestIP(request *http.Request) string {
-	return requestIP(request)
+func firstValidForwardedIP(value string) string {
+	for _, candidate := range strings.Split(value, ",") {
+		parsedIP := net.ParseIP(strings.TrimSpace(candidate))
+		if parsedIP != nil {
+			return parsedIP.String()
+		}
+	}
+	return ""
+}
+
+// RequestIP returns the request source address, optionally trusting proxy headers.
+func RequestIP(request *http.Request, trustProxyHeaders bool) string {
+	return requestIPWithProxyHeaders(request, trustProxyHeaders)
 }

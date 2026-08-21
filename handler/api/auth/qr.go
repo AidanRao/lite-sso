@@ -145,7 +145,7 @@ func (h *AuthHandler) CompleteQRCode(c *gin.Context) {
 	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
 	result, pair, err := h.auth.CompleteQRCodeLoginWithMetadata(c.Request.Context(), req.Code, req.LoginTicket, serviceauth.LoginMetadata{
 		DeviceID:  deviceID,
-		IP:        serviceauth.RequestIP(c.Request),
+		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
 		UserAgent: c.Request.UserAgent(),
 	})
 	if err != nil {

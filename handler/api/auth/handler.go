@@ -27,10 +27,11 @@ type AuthDeps struct {
 }
 
 type AuthHandler struct {
-	captcha *captcha.Service
-	auth    *auth.AuthService
-	db      *gorm.DB
-	kv      kv.Store
+	captcha           *captcha.Service
+	auth              *auth.AuthService
+	db                *gorm.DB
+	kv                kv.Store
+	trustProxyHeaders bool
 }
 
 func NewAuthHandler(deps AuthDeps) *AuthHandler {
@@ -41,11 +42,13 @@ func NewAuthHandler(deps AuthDeps) *AuthHandler {
 	}
 
 	captchaStore := captcha.NewStore(kvStore, 5*time.Minute)
+	trustProxyHeaders := cfg != nil && cfg.Server.TrustProxyHeaders
 	return &AuthHandler{
-		captcha: captcha.NewService(captchaStore),
-		auth:    auth.NewAuthService(cfg, deps.DB, kvStore, deps.MessageSender, deps.OAuth2),
-		db:      deps.DB,
-		kv:      kvStore,
+		captcha:           captcha.NewService(captchaStore),
+		auth:              auth.NewAuthService(cfg, deps.DB, kvStore, deps.MessageSender, deps.OAuth2),
+		db:                deps.DB,
+		kv:                kvStore,
+		trustProxyHeaders: trustProxyHeaders,
 	}
 }
 
@@ -90,7 +93,7 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 	}
 	challenge, err := h.auth.SendEmailOTP(c.Request.Context(), req.Email, req.CaptchaID, req.Captcha, auth.OTPRequestContext{
 		DeviceID: deviceID,
-		IP:       auth.RequestIP(c.Request),
+		IP:       auth.RequestIP(c.Request, h.trustProxyHeaders),
 	}, purpose)
 	if err != nil {
 		switch {

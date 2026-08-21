@@ -32,20 +32,20 @@ func (h *AuthHandler) LoginWithEmailOTP(c *gin.Context) {
 	}
 	user, err := h.auth.LoginWithEmailOTP(c.Request.Context(), req.ChallengeID, req.OTP, serviceauth.EmailOTPLoginContext{
 		DeviceID: deviceID,
-		IP:       serviceauth.RequestIP(c.Request),
+		IP:       serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
 	})
 	if err != nil {
-		log.Printf("auth email login failed: stage=challenge_verify challenge_id_hash=%s ip=%s error=%v", hashIdentifier(req.ChallengeID), serviceauth.RequestIP(c.Request), err)
+		log.Printf("auth email login failed: stage=challenge_verify challenge_id_hash=%s ip=%s error=%v", hashIdentifier(req.ChallengeID), serviceauth.RequestIP(c.Request, h.trustProxyHeaders), err)
 		writeAuthError(c, err)
 		return
 	}
 	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, req.Redirect, serviceauth.LoginMetadata{
 		DeviceID:  deviceID,
-		IP:        serviceauth.RequestIP(c.Request),
+		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
 		UserAgent: c.Request.UserAgent(),
 	}, serviceauth.AuthMethodEmailOTP)
 	if err != nil {
-		log.Printf("auth email login failed: stage=session_create user_id=%s ip=%s error=%v", user.ID, serviceauth.RequestIP(c.Request), err)
+		log.Printf("auth email login failed: stage=session_create user_id=%s ip=%s error=%v", user.ID, serviceauth.RequestIP(c.Request, h.trustProxyHeaders), err)
 		writeAuthError(c, err)
 		return
 	}

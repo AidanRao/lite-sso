@@ -1,5 +1,6 @@
 server:
   port: "8080"
+  trust_proxy_headers: false
 
 database:
   host: "localhost"

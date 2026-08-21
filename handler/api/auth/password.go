@@ -39,7 +39,7 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 	}
 	loginContext := serviceauth.PasswordLoginContext{
 		DeviceID:     deviceID,
-		IP:           serviceauth.RequestIP(c.Request),
+		IP:           serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
 		CaptchaValid: captchaValid,
 	}
 	user, err := h.auth.LoginWithPasswordContext(c.Request.Context(), req.Email, req.Password, loginContext)
@@ -54,7 +54,7 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 
 	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, req.Redirect, serviceauth.LoginMetadata{
 		DeviceID:  deviceID,
-		IP:        serviceauth.RequestIP(c.Request),
+		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
 		UserAgent: c.Request.UserAgent(),
 	}, serviceauth.AuthMethodPassword)
 	if err != nil {

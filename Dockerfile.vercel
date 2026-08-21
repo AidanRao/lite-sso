@@ -31,7 +31,7 @@ COPY --from=builder /sso-migrate /app/
 COPY --from=builder /app/migrations /app/migrations
 COPY --from=frontend-builder /app/frontend/dist /app/web
 
-ENV ENV=prod GIN_MODE=release
+ENV ENV=prod GIN_MODE=release SERVER_TRUST_PROXY_HEADERS=true
 
 EXPOSE 80
 

@@ -28,19 +28,22 @@ type OAuthDeps struct {
 }
 
 type OAuthHandler struct {
-	oauthService *oauth.OAuthService
-	authService  *serviceauth.AuthService
-	oauth2       *oauth2.OAuth2
-	db           *gorm.DB
+	oauthService      *oauth.OAuthService
+	authService       *serviceauth.AuthService
+	oauth2            *oauth2.OAuth2
+	db                *gorm.DB
+	trustProxyHeaders bool
 }
 
 func NewOAuthHandler(deps OAuthDeps) *OAuthHandler {
 	userRepo := db.NewUserRepository(deps.DB)
+	trustProxyHeaders := deps.Config != nil && deps.Config.Server.TrustProxyHeaders
 	return &OAuthHandler{
-		oauthService: oauth.NewOAuthService(deps.Config, deps.DB, deps.KV, userRepo),
-		authService:  serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
-		oauth2:       deps.OAuth2,
-		db:           deps.DB,
+		oauthService:      oauth.NewOAuthService(deps.Config, deps.DB, deps.KV, userRepo),
+		authService:       serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
+		oauth2:            deps.OAuth2,
+		db:                deps.DB,
+		trustProxyHeaders: trustProxyHeaders,
 	}
 }
 
@@ -190,7 +193,7 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 
 	resultData, pair, err := h.authService.CompleteLoginWithContext(c.Request.Context(), result.User.ID, result.Redirect, serviceauth.LoginMetadata{
 		DeviceID:  deviceID,
-		IP:        serviceauth.RequestIP(c.Request),
+		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
 		UserAgent: c.Request.UserAgent(),
 	}, providerAuthMethod(provider))
 	if err != nil {

@@ -113,6 +113,8 @@ func (s *Server) registerRoutes() {
 			userProtected.Use(authRequired)
 			userProtected.GET("/profile", userHandler.GetProfile)
 			userProtected.PUT("/profile", userHandler.UpdateProfile)
+			userProtected.GET("/devices", userHandler.GetLoginDevices)
+			userProtected.DELETE("/devices/:device_id", userHandler.RevokeLoginDevice)
 			userProtected.GET("/third/:provider/bind", oauthHandler.ThirdPartyBind)
 			userProtected.DELETE("/third/:provider", userHandler.UnbindThirdParty)
 		}

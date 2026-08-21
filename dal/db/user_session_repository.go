@@ -49,6 +49,16 @@ func (r *UserSessionRepository) FindByRefreshHash(ctx context.Context, tokenHash
 	return &session, nil
 }
 
+// ListActiveByUserID returns all active sessions ordered by recent activity.
+func (r *UserSessionRepository) ListActiveByUserID(ctx context.Context, userID string, now time.Time) ([]model.UserSession, error) {
+	var sessions []model.UserSession
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND revoked_at IS NULL AND expires_at > ?", userID, now).
+		Order("last_seen_at DESC, created_at DESC").
+		Find(&sessions).Error
+	return sessions, err
+}
+
 func (r *UserSessionRepository) Rotate(ctx context.Context, sessionID string, oldHash string, newHash string, now time.Time) error {
 	result := r.db.WithContext(ctx).Model(&model.UserSession{}).
 		Where("id = ? AND refresh_token_hash = ? AND revoked_at IS NULL AND expires_at > ?", sessionID, oldHash, now).
@@ -67,6 +77,14 @@ func (r *UserSessionRepository) Revoke(ctx context.Context, sessionID string, re
 		Where("id = ? AND revoked_at IS NULL", sessionID).
 		Updates(map[string]any{"revoked_at": now, "revoke_reason": reason})
 	return result.Error
+}
+
+// RevokeDevice revokes every active session belonging to one user device.
+func (r *UserSessionRepository) RevokeDevice(ctx context.Context, userID string, deviceID string, reason string, now time.Time) (int64, error) {
+	result := r.db.WithContext(ctx).Model(&model.UserSession{}).
+		Where("user_id = ? AND device_id = ? AND revoked_at IS NULL AND expires_at > ?", userID, deviceID, now).
+		Updates(map[string]any{"revoked_at": now, "revoke_reason": reason})
+	return result.RowsAffected, result.Error
 }
 
 func (r *UserSessionRepository) RevokeOthers(ctx context.Context, userID string, keepSessionID string, reason string, now time.Time) error {

@@ -84,6 +84,61 @@
         </div>
       </article>
 
+      <article class="panel devices-panel">
+        <header class="panel-header">
+          <h2>登录设备</h2>
+          <span>{{ devices.length }} 台</span>
+        </header>
+
+        <div v-if="devicesLoading" class="empty-state">
+          正在加载登录设备
+        </div>
+
+        <div v-else-if="devicesError" class="empty-state device-error-state">
+          <span>{{ devicesError }}</span>
+          <button class="retry-button" type="button" @click="loadDevices">重新加载</button>
+        </div>
+
+        <div v-else-if="deviceCards.length" class="device-list">
+          <div v-for="device in deviceCards" :key="device.device_id" class="device-row">
+            <div class="device-icon" aria-hidden="true">
+              <Smartphone v-if="device.mobile" :size="20" />
+              <Monitor v-else :size="20" />
+            </div>
+
+            <div class="device-content">
+              <div class="device-title">
+                <strong>{{ device.name }}</strong>
+                <span v-if="device.current" class="current-device-badge">当前设备</span>
+              </div>
+              <span class="device-agent" :title="device.user_agent || '未知 User-Agent'">
+                {{ device.user_agent || '未知 User-Agent' }}
+              </span>
+              <div class="device-meta">
+                <span>IP {{ device.ip || '-' }}</span>
+                <span>{{ authMethodLabel(device.auth_method) }}</span>
+                <span>登录于 {{ formatDate(device.created_at) }}</span>
+                <span>最近活动 {{ formatDate(device.last_seen_at) }}</span>
+              </div>
+            </div>
+
+            <button
+              v-if="!device.current"
+              class="device-revoke-button"
+              type="button"
+              :disabled="Boolean(revokingDevice)"
+              @click="revokeDevice(device)"
+            >
+              {{ revokingDevice === device.device_id ? '踢出中' : '踢出设备' }}
+            </button>
+          </div>
+        </div>
+
+        <div v-else class="empty-state">
+          暂无登录设备
+        </div>
+      </article>
+
       <article class="panel apps-panel">
         <header class="panel-header">
           <h2>登录应用</h2>
@@ -147,7 +202,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Copy, Pencil, X } from 'lucide-vue-next'
+import { Check, Copy, Monitor, Pencil, Smartphone, X } from 'lucide-vue-next'
 import { userAPI } from '../api/auth'
 import { submitGlobalLogout } from '../utils/logout'
 
@@ -156,6 +211,9 @@ const route = useRoute()
 const user = ref(null)
 const applications = ref([])
 const thirdPartyProviders = ref([])
+const devices = ref([])
+const devicesLoading = ref(true)
+const devicesError = ref('')
 const isAdmin = ref(false)
 const usernameDraft = ref('')
 const usernameSaving = ref(false)
@@ -163,6 +221,7 @@ const usernameDialogOpen = ref(false)
 const usernameInput = ref(null)
 const idCopied = ref(false)
 const unbindingProvider = ref('')
+const revokingDevice = ref('')
 let copyTimer = null
 
 const providerMeta = [
@@ -183,6 +242,11 @@ const providerCards = computed(() => {
   }))
 })
 
+const deviceCards = computed(() => devices.value.map((device) => ({
+  ...device,
+  ...describeUserAgent(device.user_agent)
+})))
+
 const loadProfile = async () => {
   try {
     const result = await userAPI.getProfile()
@@ -198,6 +262,26 @@ const loadProfile = async () => {
       return
     }
     ElMessage.error(error.message || '获取资料失败')
+  }
+}
+
+const loadDevices = async () => {
+  devicesLoading.value = true
+  devicesError.value = ''
+  try {
+    const result = await userAPI.getDevices()
+    const data = result?.data || {}
+    devices.value = Array.isArray(data.devices) ? data.devices : []
+  } catch (error) {
+    if (error.status === 401) {
+      router.push('/login?redirect=/profile')
+      return
+    }
+    devices.value = []
+    devicesError.value = error.message || '登录设备加载失败'
+    ElMessage.error(devicesError.value)
+  } finally {
+    devicesLoading.value = false
   }
 }
 
@@ -305,6 +389,84 @@ const unbindProvider = async (provider) => {
   }
 }
 
+const revokeDevice = async (device) => {
+  if (device.current || revokingDevice.value) {
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `踢出后，${device.name} 上的所有登录将立即失效，确定继续吗？`,
+      '踢出登录设备',
+      {
+        confirmButtonText: '踢出设备',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
+    return
+  }
+
+  revokingDevice.value = device.device_id
+  try {
+    await userAPI.revokeDevice(device.device_id)
+    devices.value = devices.value.filter((item) => item.device_id !== device.device_id)
+    ElMessage.success('设备已踢出')
+  } catch (error) {
+    if (error.status === 401) {
+      router.push('/login?redirect=/profile')
+      return
+    }
+    if (error.status === 404) {
+      await loadDevices()
+    }
+    ElMessage.error(error.message || '踢出设备失败')
+  } finally {
+    revokingDevice.value = ''
+  }
+}
+
+const describeUserAgent = (userAgent = '') => {
+  let browser = ''
+  if (/Edg\//.test(userAgent)) {
+    browser = 'Edge'
+  } else if (/Firefox\/|FxiOS\//.test(userAgent)) {
+    browser = 'Firefox'
+  } else if (/Chrome\/|CriOS\//.test(userAgent)) {
+    browser = 'Chrome'
+  } else if (/Safari\//.test(userAgent)) {
+    browser = 'Safari'
+  }
+
+  let system = ''
+  if (/Android/.test(userAgent)) {
+    system = 'Android'
+  } else if (/iPhone|iPad|iPod/.test(userAgent)) {
+    system = 'iOS'
+  } else if (/Windows/.test(userAgent)) {
+    system = 'Windows'
+  } else if (/Macintosh|Mac OS X/.test(userAgent)) {
+    system = 'macOS'
+  } else if (/Linux/.test(userAgent)) {
+    system = 'Linux'
+  }
+
+  const name = [browser, system].filter(Boolean).join(' · ') || '未知设备'
+  return {
+    name,
+    mobile: /Mobile|Android|iPhone|iPad|iPod/.test(userAgent)
+  }
+}
+
+const authMethodLabel = (method) => ({
+  PASSWORD: '密码登录',
+  EMAIL_OTP: '邮箱验证码',
+  QR: '扫码登录',
+  GITHUB: 'GitHub 登录',
+  FEISHU: '飞书登录'
+})[method] || '其他登录方式'
+
 const formatDate = (value) => {
   if (!value) {
     return '-'
@@ -326,6 +488,7 @@ onMounted(() => {
     router.replace('/profile')
   }
   loadProfile()
+  loadDevices()
 })
 
 onBeforeUnmount(() => {
@@ -424,6 +587,8 @@ button {
 .admin-button,
 .bind-button,
 .unbind-button,
+.device-revoke-button,
+.retry-button,
 .text-button,
 .icon-button {
   border-radius: 8px;
@@ -496,6 +661,7 @@ button {
   padding: 22px;
 }
 
+.devices-panel,
 .apps-panel {
   grid-column: 1 / -1;
 }
@@ -523,6 +689,112 @@ button {
 .app-row > span {
   color: #64748b;
   font-size: 14px;
+}
+
+.device-list {
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.device-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.device-row:first-child {
+  border-top: 0;
+}
+
+.device-icon {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: #ecfeff;
+  color: #0e7490;
+}
+
+.device-content {
+  min-width: 0;
+}
+
+.device-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.device-title strong {
+  color: #111827;
+  font-weight: 750;
+}
+
+.current-device-badge {
+  border-radius: 999px;
+  background: #ccfbf1;
+  color: #0f766e;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.device-agent {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 8px;
+}
+
+.device-meta span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.device-revoke-button,
+.retry-button {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid #fca5a5;
+  background: #ffffff;
+  color: #dc2626;
+  font-size: 14px;
+}
+
+.device-revoke-button:hover:not(:disabled),
+.retry-button:hover:not(:disabled) {
+  border-color: #ef4444;
+  background: #fef2f2;
+  transform: translateY(-1px);
+}
+
+.device-revoke-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.device-error-state {
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .field-list,
@@ -825,6 +1097,21 @@ button {
   .app-row {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .device-row {
+    grid-template-columns: 42px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .device-revoke-button {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .device-error-state {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .id-value,
