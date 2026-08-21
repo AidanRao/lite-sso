@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -102,6 +103,7 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 		case errors.Is(err, common.ErrRateLimited):
 			writeRateLimited(c, err, "请求过于频繁")
 		default:
+			log.Printf("auth email OTP send failed: stage=send_otp purpose=%s ip=%s error=%v", purpose, auth.RequestIP(c.Request, h.trustProxyHeaders), err)
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "发送失败", Data: nil})
 		}
 		return

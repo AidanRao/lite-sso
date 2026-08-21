@@ -1,8 +1,11 @@
 package auth_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,6 +29,7 @@ type testMessageSender struct {
 	lastTemplateKey string
 	lastVariables   map[string]string
 	sendCount       int
+	err             error
 }
 
 func (m *testMessageSender) Send(ctx context.Context, recipient string, templateKey string, variables map[string]string) error {
@@ -33,7 +37,7 @@ func (m *testMessageSender) Send(ctx context.Context, recipient string, template
 	m.lastRecipient = recipient
 	m.lastTemplateKey = templateKey
 	m.lastVariables = variables
-	return nil
+	return m.err
 }
 
 func TestAuthEmailSend_CreatesHMACChallenge(t *testing.T) {
@@ -118,6 +122,44 @@ func TestAuthEmailSend_RateLimited(t *testing.T) {
 		if i == 1 && w.Code != http.StatusTooManyRequests {
 			t.Fatalf("second send expected 429, got %d, body=%s", w.Code, w.Body.String())
 		}
+	}
+}
+
+func TestAuthEmailSend_MessageSenderFailure_LogsSanitizedError(t *testing.T) {
+	t.Setenv("ENV", "local")
+	gin.SetMode(gin.TestMode)
+	store := kv.NewMemoryStore()
+	_ = store.Set(context.Background(), kv.KeyCaptcha("cid"), "1234", time.Minute)
+	sender := &testMessageSender{err: errors.New("message center returned status 502")}
+	cfg := &conf.Config{Dev: conf.DevConfig{FixedEmailOTP: "123456"}}
+	h := apiauth.NewAuthHandler(apiauth.AuthDeps{Config: cfg, KV: store, MessageSender: sender})
+	r := gin.New()
+	r.POST("/api/auth/email/send", h.SendEmailOTP)
+
+	var logs bytes.Buffer
+	originalOutput := log.Writer()
+	originalFlags := log.Flags()
+	log.SetOutput(&logs)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(originalOutput)
+		log.SetFlags(originalFlags)
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/email/send", strings.NewReader(`{"email":"u1@example.com","captcha_id":"cid","captcha":"1234","purpose":"LOGIN"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d, body=%s", w.Code, w.Body.String())
+	}
+	output := logs.String()
+	if !strings.Contains(output, "auth email OTP send failed: stage=send_otp purpose=LOGIN ip=192.0.2.1 error=message center returned status 502") {
+		t.Fatalf("expected diagnostic log, got %q", output)
+	}
+	if strings.Contains(output, "u1@example.com") || strings.Contains(output, "123456") {
+		t.Fatalf("expected log without email or OTP, got %q", output)
 	}
 }
 
