@@ -21,6 +21,7 @@ import (
 	"sso-server/handler/oauth2"
 	serverhandler "sso-server/handler/server"
 	"sso-server/model"
+	serviceauth "sso-server/service/auth"
 )
 
 func TestOAuth2_Authorize_RequiresSession(t *testing.T) {
@@ -31,7 +32,7 @@ func TestOAuth2_Authorize_RequiresSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -77,7 +78,7 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -87,7 +88,7 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 
-	redirectURI := "http://localhost/cb"
+	redirectURI := "http://localhost:8000/auth/sso/callback"
 	clientID := "c1"
 	clientSecret := "s1"
 	if err := db.Create(&model.OAuthClient{
@@ -113,26 +114,31 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 		t.Fatalf("new oauth2: %v", err)
 	}
 
-	// Create OAuth handler
 	kvStore := kv.NewMemoryStore()
-	if err := kvStore.Set(context.Background(), kv.KeySession("sid-1"), userID, time.Hour); err != nil {
-		t.Fatalf("seed session: %v", err)
-	}
 	oauthHandler := oauth.NewOAuthHandler(oauth.OAuthDeps{
 		Config: cfg,
 		DB:     db,
 		KV:     kvStore,
 		OAuth2: o,
 	})
+	authService := serviceauth.NewAuthService(cfg, db, kvStore, nil, o)
+	_, pair, err := authService.CompleteLoginWithContext(context.Background(), userID, "", serviceauth.LoginMetadata{
+		DeviceID:  "dev-1",
+		IP:        "192.0.2.1",
+		UserAgent: "oauth-flow-test",
+	}, serviceauth.AuthMethodPassword)
+	if err != nil {
+		t.Fatalf("create persistent session: %v", err)
+	}
 
 	r := gin.New()
-	r.GET("/oauth/authorize", serverhandler.RequireSessionAuth(kvStore), o.HandleAuthorize)
+	r.GET("/oauth/authorize", serverhandler.RequireSessionAuthOrRedirect(authService), o.HandleAuthorize)
 	r.POST("/oauth/token", o.HandleToken)
 	r.GET("/oauth/userinfo", oauthHandler.HandleUserinfo)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?response_type=code&client_id="+url.QueryEscape(clientID)+"&redirect_uri="+url.QueryEscape(redirectURI)+"&state=xyz", nil)
-	req.AddCookie(&http.Cookie{Name: "sso_session", Value: "sid-1"})
+	req.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusFound {
 		t.Fatalf("expected 302, got %d, body=%s", w.Code, w.Body.String())

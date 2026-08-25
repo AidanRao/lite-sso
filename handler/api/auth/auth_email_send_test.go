@@ -91,7 +91,11 @@ func TestAuthEmailSend_LocalFixedOTP_VerifiesChallenge(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
 	}
-	var response struct{ Data struct{ ChallengeID string `json:"challenge_id"` } `json:"data"` }
+	var response struct {
+		Data struct {
+			ChallengeID string `json:"challenge_id"`
+		} `json:"data"`
+	}
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -191,18 +195,26 @@ func TestAuthPasswordLogin_ReturnsAccessAndRefreshTokens(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
 	}
-	var response struct{ Data struct{ AccessToken string `json:"access_token"` } `json:"data"` }
+	var response struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || response.Data.AccessToken == "" {
 		t.Fatalf("expected access token, body=%s err=%v", w.Body.String(), err)
 	}
 	foundRefresh := false
+	foundSession := false
 	for _, cookie := range w.Result().Cookies() {
 		if cookie.Name == serviceauth.RefreshTokenCookieName && cookie.Value != "" && cookie.HttpOnly {
 			foundRefresh = true
 		}
+		if cookie.Name == serviceauth.SessionCookieName && cookie.Value != "" && cookie.Path == "/" && cookie.HttpOnly && cookie.MaxAge == int(serviceauth.SessionTTL.Seconds()) {
+			foundSession = true
+		}
 	}
-	if !foundRefresh {
-		t.Fatalf("expected refresh cookie, cookies=%#v", w.Result().Cookies())
+	if !foundRefresh || !foundSession {
+		t.Fatalf("expected refresh and session cookies, cookies=%#v", w.Result().Cookies())
 	}
 }
 
@@ -236,6 +248,15 @@ func TestAuthEmailLogin_ConsumesChallengeAndCreatesSession(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+	foundRefresh := false
+	foundSession := false
+	for _, cookie := range w.Result().Cookies() {
+		foundRefresh = foundRefresh || cookie.Name == serviceauth.RefreshTokenCookieName && cookie.Value != ""
+		foundSession = foundSession || cookie.Name == serviceauth.SessionCookieName && cookie.Value != "" && cookie.Path == "/"
+	}
+	if !foundRefresh || !foundSession {
+		t.Fatalf("expected refresh and session cookies, cookies=%#v", w.Result().Cookies())
 	}
 }
 

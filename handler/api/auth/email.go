@@ -49,7 +49,7 @@ func (h *AuthHandler) LoginWithEmailOTP(c *gin.Context) {
 		writeAuthError(c, err)
 		return
 	}
-	WriteRefreshCookie(c, pair.RefreshToken, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
+	WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }
 

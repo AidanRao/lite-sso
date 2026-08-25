@@ -22,7 +22,67 @@ import (
 	apiuser "sso-server/handler/api/user"
 	serverhandler "sso-server/handler/server"
 	"sso-server/model"
+	serviceauth "sso-server/service/auth"
 )
+
+func TestAuthLogout_PersistentSessionCookieRevokesSessionAndClearsLoginCookies(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	database, err := gorm.Open(sqlite.Open("file:auth_logout_persistent_session?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := database.AutoMigrate(&model.User{}, &model.UserSession{}, &model.OAuthClient{}, &model.UserOAuthClient{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	email := "u1@example.com"
+	if err := database.Create(&model.User{ID: "u1", Email: &email, IsActive: true}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	authService := serviceauth.NewAuthService(&conf.Config{}, database, nil, nil, nil)
+	_, pair, err := authService.CompleteLoginWithContext(context.Background(), "u1", "", serviceauth.LoginMetadata{
+		DeviceID:  "dev-logout",
+		IP:        "192.0.2.1",
+		UserAgent: "logout-test",
+	}, serviceauth.AuthMethodPassword)
+	if err != nil {
+		t.Fatalf("create login: %v", err)
+	}
+
+	handler := apiauth.NewAuthHandler(apiauth.AuthDeps{Config: &conf.Config{}, DB: database})
+	router := gin.New()
+	router.POST("/api/auth/logout", handler.Logout)
+	router.GET("/oauth/authorize", serverhandler.RequireSessionAuthOrRedirect(authService), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	request.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", recorder.Code, recorder.Body.String())
+	}
+	if _, err := authService.ResolveSessionUserID(context.Background(), pair.SessionID); err == nil {
+		t.Fatalf("expected persistent session to be revoked")
+	}
+	clearedCookies := map[string]bool{}
+	for _, cookie := range recorder.Result().Cookies() {
+		if cookie.Value == "" && cookie.MaxAge < 0 {
+			clearedCookies[cookie.Name] = true
+		}
+	}
+	if !clearedCookies[serviceauth.SessionCookieName] || !clearedCookies[serviceauth.RefreshTokenCookieName] {
+		t.Fatalf("expected both login cookies cleared, cookies=%#v", recorder.Result().Cookies())
+	}
+
+	authorizeRecorder := httptest.NewRecorder()
+	authorizeRequest := httptest.NewRequest(http.MethodGet, "/oauth/authorize?client_id=c1", nil)
+	authorizeRequest.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
+	router.ServeHTTP(authorizeRecorder, authorizeRequest)
+	if authorizeRecorder.Code != http.StatusFound || !strings.HasPrefix(authorizeRecorder.Header().Get("Location"), "/login?redirect=") {
+		t.Fatalf("expected revoked session to redirect to login, status=%d location=%q", authorizeRecorder.Code, authorizeRecorder.Header().Get("Location"))
+	}
+}
 
 func TestAuthLogout_InvalidatesSessionAndClearsCookie(t *testing.T) {
 	gin.SetMode(gin.TestMode)

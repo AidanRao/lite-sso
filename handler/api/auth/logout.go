@@ -36,6 +36,8 @@ func getLogoutTemplate() *template.Template {
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
+	ClearLoginCookies(c, conf.GetEnv() == conf.EnvProd)
+
 	sessionID := c.GetString("session_id")
 	refreshTokenRevoked := false
 	if sessionID == "" {
@@ -74,21 +76,25 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		}
 	}
 	if sessionID == "" {
-		ClearRefreshCookie(c, conf.GetEnv() == conf.EnvProd)
+		if sessionCookie, err := c.Cookie(serviceauth.SessionCookieName); err == nil && sessionCookie != "" {
+			if userID, resolveErr := h.auth.ResolveSessionUserID(c.Request.Context(), sessionCookie); resolveErr == nil {
+				sessionID = sessionCookie
+				c.Set("user_id", userID)
+			}
+		}
+	}
+	if sessionID == "" {
 		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
 		return
 	}
 	if c.GetBool("fixture_session") {
 		_ = h.kv.Del(c.Request.Context(), kv.KeySession(sessionID))
-		ClearSessionCookie(c, conf.GetEnv() == conf.EnvProd)
 	} else if !refreshTokenRevoked {
 		if err := h.auth.InvalidateSession(c.Request.Context(), sessionID); err != nil {
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "退出失败", Data: nil})
 			return
 		}
 	}
-
-	ClearRefreshCookie(c, conf.GetEnv() == conf.EnvProd)
 
 	clients := h.getLogoutClients(c)
 	logoutURIs := getLogoutURIs(clients)

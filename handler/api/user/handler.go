@@ -85,7 +85,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 	if isNewDevice {
 		apiauth.WriteDeviceCookie(c, deviceID)
 	}
-	apiauth.WriteRefreshCookie(c, pair.RefreshToken, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
+	apiauth.WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }
 

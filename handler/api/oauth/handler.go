@@ -191,7 +191,7 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 		return
 	}
 
-	resultData, pair, err := h.authService.CompleteLoginWithContext(c.Request.Context(), result.User.ID, result.Redirect, serviceauth.LoginMetadata{
+	_, pair, err := h.authService.CompleteLoginWithContext(c.Request.Context(), result.User.ID, result.Redirect, serviceauth.LoginMetadata{
 		DeviceID:  deviceID,
 		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
 		UserAgent: c.Request.UserAgent(),
@@ -205,8 +205,7 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 	if isNewDevice {
 		apiauth.WriteDeviceCookie(c, deviceID)
 	}
-	apiauth.WriteRefreshCookie(c, pair.RefreshToken, conf.GetEnv() == conf.EnvProd, h.authService.RefreshTokenTTL())
-	_ = resultData
+	apiauth.WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.authService.RefreshTokenTTL())
 	c.Redirect(http.StatusTemporaryRedirect, result.Redirect)
 }
 

@@ -45,6 +45,7 @@ type LoginMetadata struct {
 }
 
 type TokenPair struct {
+	SessionID    string `json:"-"`
 	AccessToken  string
 	RefreshToken string
 	ExpiresIn    int
@@ -184,20 +185,16 @@ func (s *AuthService) CompleteLoginWithContext(ctx context.Context, userID strin
 		AccessToken: accessToken,
 		TokenType:   "Bearer",
 		ExpiresIn:   expiresIn,
-	}, &TokenPair{AccessToken: accessToken, RefreshToken: refreshToken, ExpiresIn: expiresIn}, nil
+	}, &TokenPair{SessionID: sessionID, AccessToken: accessToken, RefreshToken: refreshToken, ExpiresIn: expiresIn}, nil
 }
 
 // CompleteLogin is retained as a small internal adapter for non-HTTP callers.
 func (s *AuthService) CompleteLogin(ctx context.Context, userID string, redirect string) (*LoginResult, string, error) {
-	result, _, err := s.CompleteLoginWithContext(ctx, userID, redirect, LoginMetadata{}, AuthMethodPassword)
+	result, pair, err := s.CompleteLoginWithContext(ctx, userID, redirect, LoginMetadata{}, AuthMethodPassword)
 	if err != nil {
 		return nil, "", err
 	}
-	claims, err := s.ParseAccessToken(result.AccessToken)
-	if err != nil {
-		return nil, "", err
-	}
-	return result, claims.SessionID, nil
+	return result, pair.SessionID, nil
 }
 
 // CreateSession creates a new persistent session for legacy internal callers;
@@ -236,7 +233,7 @@ func (s *AuthService) RefreshTokens(ctx context.Context, refreshToken string) (*
 	if err != nil {
 		return nil, err
 	}
-	return &TokenPair{AccessToken: access, RefreshToken: newRefresh, ExpiresIn: expiresIn}, nil
+	return &TokenPair{SessionID: session.ID, AccessToken: access, RefreshToken: newRefresh, ExpiresIn: expiresIn}, nil
 }
 
 func (s *AuthService) ResolveSessionUserID(ctx context.Context, sessionID string) (string, error) {

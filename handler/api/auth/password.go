@@ -64,7 +64,7 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 	if isNewDevice {
 		WriteDeviceCookie(c, deviceID)
 	}
-	WriteRefreshCookie(c, pair.RefreshToken, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
+	WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }
 

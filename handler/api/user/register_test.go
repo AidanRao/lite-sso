@@ -51,6 +51,15 @@ func TestUserRegister_CreatesUserAndReturnsTokens(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || response.Data.AccessToken == "" {
 		t.Fatalf("expected access token, body=%s err=%v", w.Body.String(), err)
 	}
+	foundRefresh := false
+	foundSession := false
+	for _, cookie := range w.Result().Cookies() {
+		foundRefresh = foundRefresh || cookie.Name == serviceauth.RefreshTokenCookieName && cookie.Value != ""
+		foundSession = foundSession || cookie.Name == serviceauth.SessionCookieName && cookie.Value != "" && cookie.Path == "/"
+	}
+	if !foundRefresh || !foundSession {
+		t.Fatalf("expected refresh and session cookies, cookies=%#v", w.Result().Cookies())
+	}
 }
 
 func TestUserResetPassword_UsesChallengeAndArgon2id(t *testing.T) {

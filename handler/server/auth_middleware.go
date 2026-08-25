@@ -57,12 +57,7 @@ func requireBearerSession(c *gin.Context, authService *serviceauth.AuthService) 
 		writeUnauthorized(c)
 		return
 	}
-	ctx := context.WithValue(c.Request.Context(), userIDContextKey, userID)
-	ctx = context.WithValue(ctx, "user_id", userID)
-	ctx = context.WithValue(ctx, sessionIDContextKey, claims.SessionID)
-	c.Request = c.Request.WithContext(ctx)
-	c.Set("user_id", userID)
-	c.Set("session_id", claims.SessionID)
+	setSessionContext(c, userID, claims.SessionID)
 	c.Next()
 }
 
@@ -77,27 +72,31 @@ func requireFixtureSession(c *gin.Context, kvStore kv.Store) {
 		writeUnauthorized(c)
 		return
 	}
-	ctx := context.WithValue(c.Request.Context(), userIDContextKey, userID)
-	ctx = context.WithValue(ctx, "user_id", userID)
-	c.Request = c.Request.WithContext(ctx)
-	c.Set("user_id", userID)
-	c.Set("session_id", sessionID)
+	setSessionContext(c, userID, sessionID)
 	c.Set("fixture_session", true)
 	c.Next()
 }
 
 func RequireSessionAuthOrRedirect(dependency interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		header := strings.TrimSpace(c.GetHeader("Authorization"))
-		if authService, ok := dependency.(*serviceauth.AuthService); ok && strings.HasPrefix(strings.ToLower(header), "bearer ") {
-			requireBearerSession(c, authService)
+		if authService, ok := dependency.(*serviceauth.AuthService); ok {
+			sessionID, err := c.Cookie(serviceauth.SessionCookieName)
+			if err == nil && sessionID != "" {
+				if userID, resolveErr := authService.ResolveSessionUserID(c.Request.Context(), sessionID); resolveErr == nil && userID != "" {
+					setSessionContext(c, userID, sessionID)
+					c.Next()
+					return
+				}
+			}
+			redirectToLogin(c)
+			c.Abort()
 			return
 		}
 		if kvStore, ok := dependency.(kv.Store); ok {
 			sessionID, err := c.Cookie(serviceauth.SessionCookieName)
 			if err == nil && sessionID != "" {
 				if userID, getErr := kvStore.Get(c.Request.Context(), kv.KeySession(sessionID)); getErr == nil && userID != "" {
-					c.Set("user_id", userID)
+					setSessionContext(c, userID, sessionID)
 					c.Next()
 					return
 				}
@@ -106,6 +105,15 @@ func RequireSessionAuthOrRedirect(dependency interface{}) gin.HandlerFunc {
 		redirectToLogin(c)
 		c.Abort()
 	}
+}
+
+func setSessionContext(c *gin.Context, userID string, sessionID string) {
+	ctx := context.WithValue(c.Request.Context(), userIDContextKey, userID)
+	ctx = context.WithValue(ctx, "user_id", userID)
+	ctx = context.WithValue(ctx, sessionIDContextKey, sessionID)
+	c.Request = c.Request.WithContext(ctx)
+	c.Set("user_id", userID)
+	c.Set("session_id", sessionID)
 }
 
 func RequireAdmin(cfg *conf.Config) gin.HandlerFunc {
