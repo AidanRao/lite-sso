@@ -19,5 +19,5 @@ auth:
   password_ip_fail_window: "1h"
 
 message_center:
-  url: "https://message-api-staging.aidanrao.top"
+  url: "https://message-api.aidanrao.top"
   sender_key: "sso"
