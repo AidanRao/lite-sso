@@ -2,7 +2,9 @@ package auth
 
 import (
 	"errors"
+	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,21 +17,22 @@ import (
 	"sso-server/handler/oauth2"
 	"sso-server/service/auth"
 	"sso-server/util/captcha"
-	"sso-server/util/mailer"
 )
 
 type AuthDeps struct {
-	Config *conf.Config
-	DB     *gorm.DB
-	KV     kv.Store
-	Mailer mailer.Mailer
-	OAuth2 *oauth2.OAuth2
+	Config        *conf.Config
+	DB            *gorm.DB
+	KV            kv.Store
+	MessageSender auth.MessageSender
+	OAuth2        *oauth2.OAuth2
 }
 
 type AuthHandler struct {
-	captcha *captcha.Service
-	auth    *auth.AuthService
-	db      *gorm.DB
+	captcha           *captcha.Service
+	auth              *auth.AuthService
+	db                *gorm.DB
+	kv                kv.Store
+	trustProxyHeaders bool
 }
 
 func NewAuthHandler(deps AuthDeps) *AuthHandler {
@@ -39,23 +42,20 @@ func NewAuthHandler(deps AuthDeps) *AuthHandler {
 		kvStore = kv.NewMemoryStore()
 	}
 
-	mailerImpl := deps.Mailer
-	if mailerImpl == nil && cfg != nil {
-		mailerImpl = mailer.NewSMTPMailer(mailer.SMTPConfig{
-			Host: cfg.Email.SMTPHost,
-			Port: cfg.Email.SMTPPort,
-			User: cfg.Email.SMTPUser,
-			Pass: cfg.Email.SMTPPass,
-			From: cfg.Email.SMTPFrom,
-		})
-	}
-
 	captchaStore := captcha.NewStore(kvStore, 5*time.Minute)
+	trustProxyHeaders := cfg != nil && cfg.Server.TrustProxyHeaders
 	return &AuthHandler{
-		captcha: captcha.NewService(captchaStore),
-		auth:    auth.NewAuthService(cfg, deps.DB, kvStore, mailerImpl, deps.OAuth2),
-		db:      deps.DB,
+		captcha:           captcha.NewService(captchaStore),
+		auth:              auth.NewAuthService(cfg, deps.DB, kvStore, deps.MessageSender, deps.OAuth2),
+		db:                deps.DB,
+		kv:                kvStore,
+		trustProxyHeaders: trustProxyHeaders,
 	}
+}
+
+// Service exposes the shared authentication service to middleware wiring.
+func (h *AuthHandler) Service() *auth.AuthService {
+	return h.auth
 }
 
 func (h *AuthHandler) GenerateCaptcha(c *gin.Context) {
@@ -76,27 +76,58 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 		Email     string `json:"email" binding:"required,email"`
 		CaptchaID string `json:"captcha_id" binding:"required"`
 		Captcha   string `json:"captcha" binding:"required"`
+		Purpose   string `json:"purpose" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
 		return
 	}
 
-	_, err := h.auth.SendEmailOTP(c.Request.Context(), req.Email, req.CaptchaID, req.Captcha)
+	deviceID, isNewDevice := auth.EnsureDeviceID(c.Request)
+	if isNewDevice {
+		WriteDeviceCookie(c, deviceID)
+	}
+	purpose := auth.ChallengePurpose(req.Purpose)
+	if purpose != auth.ChallengePurposeLogin && purpose != auth.ChallengePurposeRegister && purpose != auth.ChallengePurposePasswordReset {
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "用途无效", Data: nil})
+		return
+	}
+	challenge, err := h.auth.SendEmailOTP(c.Request.Context(), req.Email, req.CaptchaID, req.Captcha, auth.OTPRequestContext{
+		DeviceID: deviceID,
+		IP:       auth.RequestIP(c.Request, h.trustProxyHeaders),
+	}, purpose)
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrInvalidCaptcha):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码错误", Data: nil})
 		case errors.Is(err, common.ErrRateLimited):
-			c.JSON(http.StatusTooManyRequests, ecode.Response[any]{Code: ecode.TooManyRequests, Message: "请求过于频繁", Data: nil})
-		case errors.Is(err, mailer.ErrNotConfigured):
-			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "邮件服务未配置", Data: nil})
+			writeRateLimited(c, err, "请求过于频繁")
 		default:
+			log.Printf("auth email OTP send failed: stage=send_otp purpose=%s ip=%s error=%v", purpose, auth.RequestIP(c.Request, h.trustProxyHeaders), err)
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "发送失败", Data: nil})
 		}
 		return
 	}
 
-	data := gin.H{"sent": true}
+	data := gin.H{
+		"sent":         true,
+		"challenge_id": challenge.ChallengeID,
+		"expires_in":   challenge.ExpiresIn,
+		"resend_after": challenge.ResendAfter,
+	}
 	c.JSON(http.StatusOK, ecode.OKResponse(data))
+}
+
+func WriteDeviceCookie(c *gin.Context, deviceID string) {
+	auth.WriteDeviceCookie(c.Writer, deviceID, conf.GetEnv() == conf.EnvProd)
+}
+
+func writeRateLimited(c *gin.Context, err error, message string) {
+	retryAfter := 1
+	var rateError common.RateLimitedError
+	if errors.As(err, &rateError) && rateError.RetryAfterSeconds > 0 {
+		retryAfter = rateError.RetryAfterSeconds
+	}
+	c.Header("Retry-After", strconv.Itoa(retryAfter))
+	c.JSON(http.StatusTooManyRequests, ecode.Response[any]{Code: ecode.TooManyRequests, Message: message, Data: gin.H{"retry_after_seconds": retryAfter}})
 }

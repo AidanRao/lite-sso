@@ -2,138 +2,97 @@ package auth
 
 import (
 	"context"
-	"fmt"
-	"log"
-
-	"os"
-	"path/filepath"
+	"encoding/json"
+	"net/http"
 	"strings"
-	"text/template"
-	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"sso-server/common"
 	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
-	"sso-server/handler/oauth2"
 	"sso-server/model"
-	"sso-server/util/mailer"
 )
 
+const verifyCodeEmailTemplateKey = "sso-verify-code-email"
+
+// MessageSender sends a templated message to one target.
+type MessageSender interface {
+	Send(ctx context.Context, target string, templateKey string, variables map[string]string) error
+}
+
+// AuthService coordinates authentication flows and their shared security controls.
 type AuthService struct {
-	cfg    *conf.Config
-	db     *gorm.DB
-	kv     kv.Store
-	mailer mailer.Mailer
-	oauth2 *oauth2.OAuth2
+	cfg           *conf.Config
+	db            *gorm.DB
+	kv            kv.Store
+	security      kv.SecurityStore
+	messageSender MessageSender
+	oauth2        OAuthTokenIssuer
+	guard         *loginGuard
 }
 
-func NewAuthService(cfg *conf.Config, db *gorm.DB, kvStore kv.Store, mailerImpl mailer.Mailer, oauth2Impl *oauth2.OAuth2) *AuthService {
-	return &AuthService{
-		cfg:    cfg,
-		db:     db,
-		kv:     kvStore,
-		mailer: mailerImpl,
-		oauth2: oauth2Impl,
+// OAuthTokenIssuer is retained for the external OAuth2 protocol boundary.
+type OAuthTokenIssuer interface {
+	IssueTokenForUser(ctx context.Context, request *http.Request, userID string) (map[string]interface{}, error)
+}
+
+func NewAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, messageSender MessageSender, oauth2Impl OAuthTokenIssuer) *AuthService {
+	if kvStore == nil {
+		kvStore = kv.NewMemoryStore()
 	}
+	service := &AuthService{
+		cfg:           cfg,
+		db:            database,
+		kv:            kvStore,
+		security:      kv.NewSecurityStore(kvStore),
+		messageSender: messageSender,
+		oauth2:        oauth2Impl,
+	}
+	service.guard = newLoginGuard(service.security, service)
+	return service
 }
 
-func (s *AuthService) SendEmailOTP(ctx context.Context, email string, captchaID string, captchaAnswer string) (string, error) {
-	log.Printf("SendEmailOTP: email=%s, captchaID=%s", email, captchaID)
+type OTPRequestContext struct {
+	DeviceID string
+	IP       string
+}
 
+// SendEmailOTP creates an independent login challenge and sends its code.
+func (s *AuthService) SendEmailOTP(ctx context.Context, email string, captchaID string, captchaAnswer string, requestContext OTPRequestContext, purpose ChallengePurpose) (*ChallengeResult, error) {
+	email = normalizeEmail(email)
 	if ok, err := s.verifyCaptcha(ctx, captchaID, captchaAnswer); err != nil || !ok {
-		log.Printf("SendEmailOTP: invalid captcha, err=%v, ok=%v", err, ok)
-		return "", common.ErrInvalidCaptcha
+		return nil, common.ErrInvalidCaptcha
+	}
+	if err := s.guard.allowOTPSend(ctx, email, requestContext.DeviceID, requestContext.IP); err != nil {
+		return nil, err
 	}
 
-	ok, err := s.kv.SetNX(ctx, kv.KeyRateLimitEmail(email), "1", time.Minute)
+	code, err := s.emailOTP()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if !ok {
-		log.Printf("SendEmailOTP: rate limited for email=%s", email)
-		return "", common.ErrRateLimited
-	}
-
-	otp, err := s.emailOTP()
+	challenge, err := s.createChallengeWithCode(ctx, email, requestContext.DeviceID, purpose, code)
 	if err != nil {
-		log.Printf("SendEmailOTP: failed to generate OTP, err=%v", err)
-		return "", err
-	}
-	if err := s.kv.Set(ctx, kv.KeyOTP(email), otp, 5*time.Minute); err != nil {
-		log.Printf("SendEmailOTP: failed to set OTP, err=%v", err)
-		return "", err
+		return nil, err
 	}
 
-	if s.cfg != nil && s.cfg.Dev.SkipSendEmail {
-		log.Printf("SendEmailOTP: skipping email send in dev mode")
-		return "", nil
+	if s.skipMessageSend() {
+		return challenge, nil
 	}
+	if s.messageSender == nil {
+		return nil, common.ErrMessageNotSent
+	}
+	if err := s.messageSender.Send(ctx, email, verifyCodeEmailTemplateKey, map[string]string{"code": code}); err != nil {
+		return nil, err
+	}
+	return challenge, nil
+}
 
-	if s.mailer == nil {
-		return "", mailer.ErrNotConfigured
-	}
-
-	// Load email templates
-	templatePath := "templates/mail"
-	txtPath := filepath.Join(templatePath, "otp.txt")
-	htmlPath := filepath.Join(templatePath, "otp.html")
-
-	// Load text template
-	txtContent, err := os.ReadFile(txtPath)
-	if err != nil {
-		log.Printf("SendEmailOTP: failed to load text template, path=%s, err=%v", txtPath, err)
-		return "", fmt.Errorf("failed to load text template: %w", err)
-	}
-	txtTemplate, err := template.New("otp").Parse(string(txtContent))
-	if err != nil {
-		log.Printf("SendEmailOTP: failed to parse text template, err=%v", err)
-		return "", fmt.Errorf("failed to parse text template: %w", err)
-	}
-
-	// Load HTML template
-	htmlContent, err := os.ReadFile(htmlPath)
-	if err != nil {
-		log.Printf("SendEmailOTP: failed to load HTML template, path=%s, err=%v", htmlPath, err)
-		return "", fmt.Errorf("failed to load HTML template: %w", err)
-	}
-	htmlTemplate, err := template.New("otp").Parse(string(htmlContent))
-	if err != nil {
-		log.Printf("SendEmailOTP: failed to parse HTML template, err=%v", err)
-		return "", fmt.Errorf("failed to parse HTML template: %w", err)
-	}
-
-	// Template data
-	data := struct {
-		OTP string
-	}{
-		OTP: otp,
-	}
-
-	// Execute text template
-	var textBody strings.Builder
-	if err := txtTemplate.Execute(&textBody, data); err != nil {
-		log.Printf("SendEmailOTP: failed to execute text template, err=%v", err)
-		return "", fmt.Errorf("failed to execute text template: %w", err)
-	}
-
-	// Execute HTML template
-	var htmlBody strings.Builder
-	if err := htmlTemplate.Execute(&htmlBody, data); err != nil {
-		log.Printf("SendEmailOTP: failed to execute HTML template, err=%v", err)
-		return "", fmt.Errorf("failed to execute HTML template: %w", err)
-	}
-
-	// Send email
-	if err := s.mailer.SendEmail(ctx, email, "Your verification code", textBody.String(), htmlBody.String()); err != nil {
-		log.Printf("SendEmailOTP: failed to send email, err=%v", err)
-		return "", err
-	}
-
-	log.Printf("SendEmailOTP: email sent successfully to %s", email)
-	return "", nil
+func (s *AuthService) skipMessageSend() bool {
+	return s.cfg != nil && conf.GetEnvironmentName() == string(conf.EnvLocal) && s.cfg.Dev.SkipSendMessage
 }
 
 func (s *AuthService) emailOTP() (string, error) {
@@ -144,7 +103,7 @@ func (s *AuthService) emailOTP() (string, error) {
 }
 
 func (s *AuthService) useFixedEmailOTP() bool {
-	return s.cfg != nil && conf.GetEnv() == conf.EnvLocal && strings.TrimSpace(s.cfg.Dev.FixedEmailOTP) != ""
+	return s.cfg != nil && conf.GetEnvironmentName() == string(conf.EnvLocal) && strings.TrimSpace(s.cfg.Dev.FixedEmailOTP) != ""
 }
 
 func (s *AuthService) verifyCaptcha(ctx context.Context, captchaID string, captchaAnswer string) (bool, error) {
@@ -155,39 +114,130 @@ func (s *AuthService) verifyCaptcha(ctx context.Context, captchaID string, captc
 	if !strings.EqualFold(strings.TrimSpace(val), strings.TrimSpace(captchaAnswer)) {
 		return false, nil
 	}
-	_ = s.kv.Del(ctx, kv.KeyCaptcha(captchaID))
-	return true, nil
+	return true, s.kv.Del(ctx, kv.KeyCaptcha(captchaID))
 }
 
-func (s *AuthService) verifyOTP(ctx context.Context, email string, otp string) (bool, error) {
-	val, err := s.kv.Get(ctx, kv.KeyOTP(email))
+// VerifyCaptcha consumes one image CAPTCHA when the caller has supplied it.
+func (s *AuthService) VerifyCaptcha(ctx context.Context, captchaID string, captchaAnswer string) (bool, error) {
+	return s.verifyCaptcha(ctx, captchaID, captchaAnswer)
+}
+
+// VerifyChallengeForPurpose verifies a challenge and returns the bound email.
+func (s *AuthService) VerifyChallengeForPurpose(ctx context.Context, challengeID string, code string, deviceID string, purpose ChallengePurpose) (string, error) {
+	return s.verifyChallenge(ctx, challengeID, code, deviceID, purpose)
+}
+
+// EmailOTPLoginContext carries the device and network context for OTP login.
+type EmailOTPLoginContext struct {
+	DeviceID     string
+	IP           string
+	CaptchaValid bool
+}
+
+// LoginWithEmailOTP authenticates a login challenge without accepting an email
+// from the client, preventing a challenge/email mix-up.
+func (s *AuthService) LoginWithEmailOTP(ctx context.Context, challengeID string, otp string, loginContext EmailOTPLoginContext) (*model.User, error) {
+	challengeKey, err := s.challengeEmail(ctx, challengeID)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	if strings.TrimSpace(val) != strings.TrimSpace(otp) {
-		return false, nil
+	if err := s.guard.allowOTPVerify(ctx, challengeKey, loginContext.DeviceID, loginContext.IP); err != nil {
+		return nil, err
 	}
-	_ = s.kv.Del(ctx, kv.KeyOTP(email))
-	return true, nil
-}
-
-// LoginWithEmailOTP authenticates a user with email and OTP
-func (s *AuthService) LoginWithEmailOTP(ctx context.Context, email, otp string) (*model.User, error) {
-	// Verify OTP
-	if ok, err := s.verifyOTP(ctx, email, otp); err != nil || !ok {
-		return nil, common.ErrInvalidOTP
+	email, err := s.verifyChallenge(ctx, challengeID, otp, loginContext.DeviceID, ChallengePurposeLogin)
+	if err != nil {
+		if recordErr := s.guard.recordOTPFailure(ctx, challengeKey, loginContext.DeviceID, loginContext.IP); recordErr != nil {
+			return nil, recordErr
+		}
+		return nil, err
 	}
 
-	// Find user by email
-	userRepo := db.NewUserRepository(s.db)
-	user, err := userRepo.FindByEmail(ctx, email)
+	user, err := db.NewUserRepository(s.db).FindByEmail(ctx, email)
 	if err != nil {
 		return nil, common.ErrInvalidCredentials
 	}
-
 	if !user.IsActive {
 		return nil, common.ErrUserInactive
 	}
-
 	return user, nil
+}
+
+func (s *AuthService) challengeEmail(ctx context.Context, challengeID string) (string, error) {
+	data, err := s.security.Get(ctx, kv.KeyChallenge(challengeID))
+	if err != nil {
+		return "", common.ErrChallengeInvalid
+	}
+	var challenge loginChallenge
+	if err := json.Unmarshal([]byte(data), &challenge); err != nil {
+		return "", common.ErrChallengeInvalid
+	}
+	if challenge.Status != "ACTIVE" {
+		return "", common.ErrChallengeInvalid
+	}
+	return challenge.Email, nil
+}
+
+func (s *AuthService) registerUser(ctx context.Context, email string, password string, username *string, challengeID string, code string, deviceID string) (*model.User, error) {
+	if err := s.validatePassword(password); err != nil {
+		return nil, err
+	}
+	challengeEmail, err := s.verifyChallenge(ctx, challengeID, code, deviceID, ChallengePurposeRegister)
+	if err != nil || challengeEmail != normalizeEmail(email) {
+		return nil, common.ErrInvalidOTP
+	}
+	userRepo := db.NewUserRepository(s.db)
+	if exists, err := userRepo.ExistsEmail(ctx, normalizeEmail(email)); err != nil {
+		return nil, err
+	} else if exists {
+		return nil, common.ErrEmailExists
+	}
+	hash, err := HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+	userEmail := normalizeEmail(email)
+	user := &model.User{ID: "u_" + strings.ReplaceAll(uuid.NewString(), "-", ""), Email: &userEmail, PasswordHash: &hash, IsActive: true}
+	if username != nil && strings.TrimSpace(*username) != "" {
+		value := strings.TrimSpace(*username)
+		if exists, err := userRepo.ExistsUsername(ctx, value); err != nil {
+			return nil, err
+		} else if exists {
+			return nil, common.ErrUsernameExists
+		}
+		user.Username = &value
+	}
+	if err := userRepo.Create(ctx, user); err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+// RegisterWithEmailChallenge creates a password user after verifying a
+// purpose-bound registration challenge.
+func (s *AuthService) RegisterWithEmailChallenge(ctx context.Context, email string, password string, username *string, challengeID string, code string, deviceID string) (*model.User, error) {
+	return s.registerUser(ctx, email, password, username, challengeID, code, deviceID)
+}
+
+// ResetPasswordWithEmailChallenge changes a password and revokes all sessions.
+func (s *AuthService) ResetPasswordWithEmailChallenge(ctx context.Context, email string, password string, challengeID string, code string, deviceID string) error {
+	if err := s.validatePassword(password); err != nil {
+		return err
+	}
+	challengeEmail, err := s.verifyChallenge(ctx, challengeID, code, deviceID, ChallengePurposePasswordReset)
+	if err != nil || challengeEmail != normalizeEmail(email) {
+		return common.ErrInvalidOTP
+	}
+	user, err := db.NewUserRepository(s.db).FindByEmail(ctx, normalizeEmail(email))
+	if err != nil {
+		return common.ErrUserNotFound
+	}
+	hash, err := HashPassword(password)
+	if err != nil {
+		return err
+	}
+	user.PasswordHash = &hash
+	if err := db.NewUserRepository(s.db).Update(ctx, user); err != nil {
+		return err
+	}
+	return s.InvalidateAllSessions(ctx, user.ID, "password_reset")
 }

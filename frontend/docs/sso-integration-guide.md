@@ -55,6 +55,8 @@ https://sso.aidanrao.top/oauth/authorize
 
 如果用户未登录，SSO 会先展示登录页面；登录完成后继续回调接入系统。
 
+SSO 登录成功后会写入仅供浏览器授权流程使用的 `sso_session` Cookie。该 Cookie 为 `HttpOnly`、`SameSite=Lax`，路径为 `/`；普通 `/api` 接口仍要求 `Authorization: Bearer <access-token>`，不会接受该 Cookie 代替 Access Token。
+
 ### 3.2 处理登录回调
 
 SSO 登录成功后跳转到接入系统的回调地址：

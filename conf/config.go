@@ -13,26 +13,41 @@ type Environment string
 
 const (
 	EnvLocal Environment = "local"
+	EnvTest  Environment = "test"
 	EnvProd  Environment = "prod"
 )
 
 func GetEnv() Environment {
-	env := os.Getenv("ENV")
-	if env == "prod" {
+	name := GetEnvironmentName()
+	switch name {
+	case string(EnvProd):
 		return EnvProd
+	case string(EnvTest):
+		return EnvTest
+	default:
+		return EnvLocal
 	}
-	return EnvLocal
+}
+
+// GetEnvironmentName returns the normalized environment name used for Redis key isolation.
+func GetEnvironmentName() string {
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("ENV")))
+	if env == "" {
+		return string(EnvLocal)
+	}
+	return env
 }
 
 type Config struct {
-	Server   ServerConfig          `mapstructure:"server"`
-	Database DatabaseConfig        `mapstructure:"database"`
-	Cache    CacheConfig           `mapstructure:"cache"`
-	Security SecurityConfig        `mapstructure:"security"`
-	Email    EmailConfig           `mapstructure:"email"`
-	Dev      DevConfig             `mapstructure:"dev"`
-	OAuth    ThirdPartyOAuthConfig `mapstructure:"oauth"`
-	Admin    AdminConfig           `mapstructure:"admin"`
+	Server        ServerConfig          `mapstructure:"server"`
+	Database      DatabaseConfig        `mapstructure:"database"`
+	Cache         CacheConfig           `mapstructure:"cache"`
+	Security      SecurityConfig        `mapstructure:"security"`
+	Auth          AuthConfig            `mapstructure:"auth"`
+	MessageCenter MessageCenterConfig   `mapstructure:"message_center"`
+	Dev           DevConfig             `mapstructure:"dev"`
+	OAuth         ThirdPartyOAuthConfig `mapstructure:"oauth"`
+	Admin         AdminConfig           `mapstructure:"admin"`
 }
 
 func (c *Config) IsAdminUser(userID string) bool {
@@ -70,7 +85,8 @@ type FeishuOAuthConfig struct {
 }
 
 type ServerConfig struct {
-	Port string `mapstructure:"port"`
+	Port              string `mapstructure:"port"`
+	TrustProxyHeaders bool   `mapstructure:"trust_proxy_headers"`
 }
 
 type DatabaseConfig struct {
@@ -88,21 +104,49 @@ type CacheConfig struct {
 
 type SecurityConfig struct {
 	AccessTokenExpire time.Duration `mapstructure:"access_token_expire"`
-	MaxLoginAttempts  int           `mapstructure:"max_login_attempts"`
-	LockoutDuration   time.Duration `mapstructure:"lockout_duration"`
 }
 
-type EmailConfig struct {
-	SMTPHost string `mapstructure:"smtp_host"`
-	SMTPPort int    `mapstructure:"smtp_port"`
-	SMTPUser string `mapstructure:"smtp_user"`
-	SMTPPass string `mapstructure:"smtp_pass"`
-	SMTPFrom string `mapstructure:"smtp_from"`
+type AuthConfig struct {
+	OTPSecret                 string        `mapstructure:"otp_secret"`
+	JWTSecret                 string        `mapstructure:"jwt_secret"`
+	OTPExpire                 time.Duration `mapstructure:"otp_expire"`
+	OTPMaxAttempts            int           `mapstructure:"otp_max_attempts"`
+	AccessTokenTTL            time.Duration `mapstructure:"access_token_ttl"`
+	RefreshTokenTTL           time.Duration `mapstructure:"refresh_token_ttl"`
+	PasswordMinLength         int           `mapstructure:"password_min_length"`
+	PasswordAccountFailLimit  int           `mapstructure:"password_account_fail_limit"`
+	PasswordDeviceFailLimit   int           `mapstructure:"password_device_fail_limit"`
+	PasswordIPFailLimit       int           `mapstructure:"password_ip_fail_limit"`
+	PasswordAccountFailWindow time.Duration `mapstructure:"password_account_fail_window"`
+	PasswordDeviceFailWindow  time.Duration `mapstructure:"password_device_fail_window"`
+	PasswordIPFailWindow      time.Duration `mapstructure:"password_ip_fail_window"`
+}
+
+func (c *Config) ValidateAuthSecrets() error {
+	if c == nil {
+		return errors.New("configuration is required")
+	}
+	if GetEnv() != EnvProd {
+		return nil
+	}
+	if len(strings.TrimSpace(c.Auth.OTPSecret)) < 32 {
+		return errors.New("auth.otp_secret must contain at least 32 characters")
+	}
+	if len(strings.TrimSpace(c.Auth.JWTSecret)) < 32 {
+		return errors.New("auth.jwt_secret must contain at least 32 characters")
+	}
+	return nil
+}
+
+type MessageCenterConfig struct {
+	URL       string `mapstructure:"url"`
+	APIKey    string `mapstructure:"api_key"`
+	SenderKey string `mapstructure:"sender_key"`
 }
 
 type DevConfig struct {
-	FixedEmailOTP string `mapstructure:"fixed_email_otp"`
-	SkipSendEmail bool   `mapstructure:"skip_send_email"`
+	FixedEmailOTP   string `mapstructure:"fixed_email_otp"`
+	SkipSendMessage bool   `mapstructure:"skip_send_message"`
 }
 
 func Load() (*Config, error) {
@@ -145,15 +189,24 @@ func bindEnvs(v *viper.Viper) {
 		"database.password",
 		"database.name",
 		"security.access_token_expire",
-		"security.max_login_attempts",
-		"security.lockout_duration",
-		"email.smtp_host",
-		"email.smtp_port",
-		"email.smtp_user",
-		"email.smtp_pass",
-		"email.smtp_from",
+		"auth.otp_secret",
+		"auth.jwt_secret",
+		"auth.otp_expire",
+		"auth.otp_max_attempts",
+		"auth.access_token_ttl",
+		"auth.refresh_token_ttl",
+		"auth.password_min_length",
+		"auth.password_account_fail_limit",
+		"auth.password_device_fail_limit",
+		"auth.password_ip_fail_limit",
+		"auth.password_account_fail_window",
+		"auth.password_device_fail_window",
+		"auth.password_ip_fail_window",
+		"message_center.url",
+		"message_center.api_key",
+		"message_center.sender_key",
 		"dev.fixed_email_otp",
-		"dev.skip_send_email",
+		"dev.skip_send_message",
 		"oauth.github.client_id",
 		"oauth.github.client_secret",
 		"oauth.github.redirect_uri",
@@ -161,6 +214,7 @@ func bindEnvs(v *viper.Viper) {
 		"oauth.feishu.client_secret",
 		"oauth.feishu.redirect_uri",
 		"admin.user_ids",
+		"server.trust_proxy_headers",
 	}
 
 	for _, key := range envKeys {
@@ -186,13 +240,23 @@ func setDefaults(v *viper.Viper, env Environment) {
 	}
 
 	defaults := map[string]any{
-		"server.port":                  "8080",
-		"security.access_token_expire": "12h",
-		"security.max_login_attempts":  5,
-		"security.lockout_duration":    "30m",
-		"dev.skip_send_email":          false,
-		"dev.fixed_email_otp":          "",
-		"admin.user_ids":               []string{},
+		"server.port":                       "8080",
+		"server.trust_proxy_headers":        false,
+		"security.access_token_expire":      "12h",
+		"auth.otp_expire":                   "5m",
+		"auth.otp_max_attempts":             5,
+		"auth.access_token_ttl":             "15m",
+		"auth.refresh_token_ttl":            "720h",
+		"auth.password_min_length":          12,
+		"auth.password_account_fail_limit":  5,
+		"auth.password_device_fail_limit":   20,
+		"auth.password_ip_fail_limit":       100,
+		"auth.password_account_fail_window": "10m",
+		"auth.password_device_fail_window":  "10m",
+		"auth.password_ip_fail_window":      "1h",
+		"dev.skip_send_message":             false,
+		"dev.fixed_email_otp":               "",
+		"admin.user_ids":                    []string{},
 	}
 
 	for key, value := range defaults {

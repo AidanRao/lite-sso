@@ -12,18 +12,41 @@ var (
 
 // Authentication related errors
 var (
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrInvalidOTP         = errors.New("invalid otp")
-	ErrInvalidCaptcha     = errors.New("invalid captcha")
-	ErrRateLimited        = errors.New("rate limited")
-	ErrAccountLocked      = errors.New("account locked")
-	ErrEmailNotSent       = errors.New("email not sent")
-	ErrInvalidRedirect    = errors.New("invalid redirect")
+	ErrInvalidCredentials  = errors.New("invalid credentials")
+	ErrInvalidOTP          = errors.New("invalid otp")
+	ErrOTPExpired          = errors.New("otp challenge expired")
+	ErrOTPAttemptsExceeded = errors.New("otp challenge attempts exceeded")
+	ErrChallengeInvalid    = errors.New("invalid login challenge")
+	ErrInvalidCaptcha      = errors.New("invalid captcha")
+	ErrRateLimited         = errors.New("rate limited")
+	ErrCaptchaRequired     = errors.New("captcha required")
+	ErrSessionRevoked      = errors.New("session revoked")
+	ErrDeviceNotFound      = errors.New("login device not found")
+	ErrCurrentDevice       = errors.New("current device cannot be revoked")
+	ErrRefreshTokenInvalid = errors.New("invalid refresh token")
+	ErrAccountLocked       = errors.New("account locked")
+	ErrMessageNotSent      = errors.New("message not sent")
+	ErrInvalidRedirect     = errors.New("invalid redirect")
 )
 
 type AccountLockedError struct {
 	RetryAfterSeconds int `json:"retry_after_seconds"`
 }
+
+type RateLimitedError struct {
+	RetryAfterSeconds int
+	Reason            string
+}
+
+func (e RateLimitedError) Error() string { return ErrRateLimited.Error() }
+func (e RateLimitedError) Unwrap() error { return ErrRateLimited }
+
+type CaptchaRequiredError struct {
+	Reason string
+}
+
+func (e CaptchaRequiredError) Error() string { return ErrCaptchaRequired.Error() }
+func (e CaptchaRequiredError) Unwrap() error { return ErrCaptchaRequired }
 
 func (e AccountLockedError) Error() string {
 	return ErrAccountLocked.Error()
@@ -39,6 +62,8 @@ var (
 	ErrProviderAuthFailed       = errors.New("provider authentication failed")
 	ErrThirdPartyAlreadyBound   = errors.New("third party already bound")
 	ErrThirdPartyBoundToAnother = errors.New("third party bound to another user")
+	ErrThirdPartyNotBound       = errors.New("third party not bound")
+	ErrEmailRequiredForUnbind   = errors.New("email required to unbind third party")
 	ErrOAuthClientExists        = errors.New("oauth client already exists")
 	ErrOAuthClientNotFound      = errors.New("oauth client not found")
 	ErrInvalidOAuthClient       = errors.New("invalid oauth client")

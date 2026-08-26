@@ -1,4 +1,7 @@
+import { clearAccessToken } from '../api/auth'
+
 export function submitGlobalLogout(redirectPath = '/login') {
+  clearAccessToken()
   const form = document.createElement('form')
   const params = new URLSearchParams()
 

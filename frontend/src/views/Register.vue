@@ -40,7 +40,7 @@
               <el-input
                 v-model="form.password"
                 :type="showPassword ? 'text' : 'password'"
-                placeholder="请输入密码（至少8个字符）"
+                placeholder="请输入密码（至少12个字符）"
                 :prefix-icon="Lock"
                 class="h-12 password-input"
               >
@@ -117,6 +117,7 @@
   <SendCodeModal
     :visible="showSendCodeModal"
     :email="form.email"
+    purpose="REGISTER"
     @close="showSendCodeModal = false"
     @success="handleSendCodeSuccess"
   />
@@ -126,7 +127,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Mail, Lock, Eye, EyeOff, MessageSquare } from 'lucide-vue-next'
-import { authAPI } from '../api/auth'
+import { authAPI, setAccessToken } from '../api/auth'
 import AuthSplashPane from '../components/AuthSplashPane.vue'
 import SendCodeModal from '../components/SendCodeModal.vue'
 import { getLoginRedirect, loadTargetClientName } from '../utils/oauthTarget'
@@ -141,6 +142,7 @@ const showPassword = ref(false)
 const showConfirmPassword = ref(false)
 const countdown = ref(0)
 const showSendCodeModal = ref(false)
+const challengeId = ref('')
 
 const form = ref({
   email: '',
@@ -175,7 +177,8 @@ const openSendCodeModal = () => {
   showSendCodeModal.value = true
 }
 
-const handleSendCodeSuccess = () => {
+const handleSendCodeSuccess = (data) => {
+  challengeId.value = data.challenge_id || ''
   successMessage.value = '验证码已发送'
   errorMessage.value = ''
   countdown.value = 60
@@ -194,8 +197,8 @@ const handleRegister = async () => {
       return
     }
 
-    if (form.value.password.length < 8) {
-      errorMessage.value = '密码长度至少为8个字符'
+    if (form.value.password.length < 12) {
+      errorMessage.value = '密码长度至少为12个字符'
       return
     }
 
@@ -203,11 +206,15 @@ const handleRegister = async () => {
     errorMessage.value = ''
     successMessage.value = ''
 
-    await authAPI.register({
+    const response = await authAPI.register({
       email: form.value.email,
       password: form.value.password,
-      otp: form.value.code
+      challenge_id: challengeId.value,
+      code: form.value.code
     })
+
+    const data = response.data || response
+    setAccessToken(data.access_token)
 
     successMessage.value = '注册成功，正在登录...'
     setTimeout(() => {

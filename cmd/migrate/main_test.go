@@ -13,6 +13,8 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"sso-server/dal/db/migration"
 )
 
 type fakeMigrationProvider struct {
@@ -80,7 +82,7 @@ func Test_ExecuteProviderCommand_Dispatch(t *testing.T) {
 			provider := &fakeMigrationProvider{}
 			var output bytes.Buffer
 
-			err := executeProviderCommand(
+			err := migration.ExecuteProviderCommand(
 				context.Background(),
 				provider,
 				testCase.command,
@@ -96,31 +98,37 @@ func Test_ExecuteProviderCommand_Dispatch(t *testing.T) {
 
 func Test_ParseVersion_Validation(t *testing.T) {
 	testCases := []struct {
-		name      string
-		command   string
-		arguments []string
-		allowZero bool
-		want      int64
-		wantError string
+		name       string
+		command    string
+		arguments  []string
+		expectCall string
+		wantError  string
 	}{
-		{name: "positive", command: "up-to", arguments: []string{"12"}, want: 12},
-		{name: "down to zero", command: "down-to", arguments: []string{"0"}, allowZero: true},
+		{name: "positive", command: "up-to", arguments: []string{"12"}, expectCall: "up-to:12"},
+		{name: "down to zero", command: "down-to", arguments: []string{"0"}, expectCall: "down-to:0"},
 		{name: "missing", command: "up-to", wantError: "exactly one VERSION"},
 		{name: "too many", command: "up-to", arguments: []string{"1", "2"}, wantError: "exactly one VERSION"},
-		{name: "not a number", command: "down-to", arguments: []string{"latest"}, allowZero: true, wantError: "must be a number"},
+		{name: "not a number", command: "down-to", arguments: []string{"latest"}, wantError: "must be a number"},
 		{name: "up to zero", command: "up-to", arguments: []string{"0"}, wantError: "positive number"},
-		{name: "negative", command: "down-to", arguments: []string{"-1"}, allowZero: true, wantError: "zero or a positive number"},
+		{name: "negative", command: "down-to", arguments: []string{"-1"}, wantError: "zero or a positive number"},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			got, err := parseVersion(testCase.command, testCase.arguments, testCase.allowZero)
+			provider := &fakeMigrationProvider{}
+			err := migration.ExecuteProviderCommand(
+				context.Background(),
+				provider,
+				testCase.command,
+				testCase.arguments,
+				&bytes.Buffer{},
+			)
 			if testCase.wantError != "" {
 				require.ErrorContains(t, err, testCase.wantError)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, testCase.want, got)
+			assert.Equal(t, []string{testCase.expectCall}, provider.calls)
 		})
 	}
 }
@@ -130,14 +138,14 @@ func Test_NewMigrationProvider_LockerInitializationError(t *testing.T) {
 		"00001_init.sql": &fstest.MapFile{Data: []byte("-- +goose Up\nSELECT 1;\n")},
 	}
 
-	provider, err := newMigrationProvider(&sql.DB{}, migrationFS, 0, 1)
+	provider, err := migration.NewProvider(&sql.DB{}, migrationFS, 0, 1)
 
 	assert.Nil(t, provider)
 	require.ErrorContains(t, err, "create migration session locker")
 }
 
 func Test_NewMigrationProvider_ProviderInitializationError(t *testing.T) {
-	provider, err := newMigrationProvider(&sql.DB{}, fstest.MapFS{}, 1, 1)
+	provider, err := migration.NewProvider(&sql.DB{}, fstest.MapFS{}, 1, 1)
 
 	assert.Nil(t, provider)
 	require.ErrorContains(t, err, "create migration provider")
@@ -148,7 +156,7 @@ func Test_ExecuteProviderCommand_MigrationError(t *testing.T) {
 	migrationError := errors.New("migration failed")
 	provider := &fakeMigrationProvider{err: migrationError}
 
-	err := executeProviderCommand(context.Background(), provider, "up", nil, &bytes.Buffer{})
+	err := migration.ExecuteProviderCommand(context.Background(), provider, "up", nil, &bytes.Buffer{})
 
 	require.ErrorIs(t, err, migrationError)
 }
@@ -157,7 +165,7 @@ func Test_ExecuteProviderCommand_RedoStopsAfterDownError(t *testing.T) {
 	migrationError := errors.New("down failed")
 	provider := &fakeMigrationProvider{err: migrationError}
 
-	err := executeProviderCommand(context.Background(), provider, "redo", nil, &bytes.Buffer{})
+	err := migration.ExecuteProviderCommand(context.Background(), provider, "redo", nil, &bytes.Buffer{})
 
 	require.ErrorIs(t, err, migrationError)
 	assert.Equal(t, []string{"down"}, provider.calls)
@@ -180,7 +188,7 @@ func Test_ExecuteProviderCommand_StatusOutput(t *testing.T) {
 	}
 	var output bytes.Buffer
 
-	err := executeProviderCommand(context.Background(), provider, "status", nil, &output)
+	err := migration.ExecuteProviderCommand(context.Background(), provider, "status", nil, &output)
 
 	require.NoError(t, err)
 	assert.Contains(t, output.String(), "Pending")
@@ -193,14 +201,14 @@ func Test_ExecuteProviderCommand_VersionOutput(t *testing.T) {
 	provider := &fakeMigrationProvider{version: 3}
 	var output bytes.Buffer
 
-	err := executeProviderCommand(context.Background(), provider, "version", nil, &output)
+	err := migration.ExecuteProviderCommand(context.Background(), provider, "version", nil, &output)
 
 	require.NoError(t, err)
 	assert.Equal(t, "goose: version 3\n", output.String())
 }
 
 func Test_ExecuteProviderCommand_UnknownCommand(t *testing.T) {
-	err := executeProviderCommand(
+	err := migration.ExecuteProviderCommand(
 		context.Background(),
 		&fakeMigrationProvider{},
 		"unknown",

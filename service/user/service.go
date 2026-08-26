@@ -2,11 +2,9 @@ package user
 
 import (
 	"context"
-	"net/http"
+	"errors"
 	"strings"
 
-	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	serviceauth "sso-server/service/auth"
 
@@ -18,6 +16,8 @@ import (
 	"sso-server/handler/oauth2"
 	"sso-server/model"
 )
+
+var supportedThirdPartyProviders = []string{"github", "feishu"}
 
 type UserService struct {
 	cfg    *conf.Config
@@ -35,62 +35,9 @@ func NewUserService(cfg *conf.Config, db *gorm.DB, kvStore kv.Store, oauth2Impl 
 	}
 }
 
-func (s *UserService) RegisterWithEmailOTP(ctx context.Context, r *http.Request, email string, password string, username *string, otp string) (*dto.UserResponse, map[string]interface{}, error) {
-	if ok, err := s.verifyOTP(ctx, email, otp); err != nil || !ok {
-		return nil, nil, common.ErrInvalidOTP
-	}
-
-	userRepo := db.NewUserRepository(s.db)
-
-	exists, err := userRepo.ExistsEmail(ctx, email)
-	if err != nil {
-		return nil, nil, err
-	}
-	if exists {
-		return nil, nil, common.ErrEmailExists
-	}
-
-	if username != nil && strings.TrimSpace(*username) != "" {
-		exists, err := userRepo.ExistsUsername(ctx, strings.TrimSpace(*username))
-		if err != nil {
-			return nil, nil, err
-		}
-		if exists {
-			return nil, nil, common.ErrUsernameExists
-		}
-	}
-
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
-	if err != nil {
-		return nil, nil, err
-	}
-	hashStr := string(hash)
-
-	user := &model.User{
-		ID:           uuid.New().String(),
-		Email:        stringPtr(email),
-		PasswordHash: &hashStr,
-		IsActive:     true,
-	}
-	if username != nil && strings.TrimSpace(*username) != "" {
-		u := strings.TrimSpace(*username)
-		user.Username = &u
-	}
-
-	if err := userRepo.Create(ctx, user); err != nil {
-		return nil, nil, err
-	}
-
-	if s.oauth2 == nil || r == nil {
-		return dto.ToUserResponse(user), nil, nil
-	}
-
-	tokenData, err := s.oauth2.IssueTokenForUser(ctx, r, user.ID)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return dto.ToUserResponse(user), tokenData, nil
+func (s *UserService) RegisterWithEmailChallenge(ctx context.Context, email string, password string, username *string, challengeID string, code string, deviceID string) (*model.User, error) {
+	authService := serviceauth.NewAuthService(s.cfg, s.db, s.kv, nil, s.oauth2)
+	return authService.RegisterWithEmailChallenge(ctx, email, password, username, challengeID, code, deviceID)
 }
 
 func (s *UserService) CreateSession(ctx context.Context, userID string) (string, error) {
@@ -98,37 +45,9 @@ func (s *UserService) CreateSession(ctx context.Context, userID string) (string,
 	return authService.CreateSession(ctx, userID)
 }
 
-func (s *UserService) ResetPasswordWithEmailOTP(ctx context.Context, email string, password string, otp string) error {
-	if ok, err := s.verifyOTP(ctx, email, otp); err != nil || !ok {
-		return common.ErrInvalidOTP
-	}
-
-	userRepo := db.NewUserRepository(s.db)
-	user, err := userRepo.FindByEmail(ctx, email)
-	if err != nil {
-		return common.ErrUserNotFound
-	}
-
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
-	if err != nil {
-		return err
-	}
-	hashStr := string(hash)
-	user.PasswordHash = &hashStr
-
-	return userRepo.Update(ctx, user)
-}
-
-func (s *UserService) verifyOTP(ctx context.Context, email string, otp string) (bool, error) {
-	val, err := s.kv.Get(ctx, kv.KeyOTP(email))
-	if err != nil {
-		return false, err
-	}
-	if strings.TrimSpace(val) != strings.TrimSpace(otp) {
-		return false, nil
-	}
-	_ = s.kv.Del(ctx, kv.KeyOTP(email))
-	return true, nil
+func (s *UserService) ResetPasswordWithEmailChallenge(ctx context.Context, email string, password string, challengeID string, code string, deviceID string) error {
+	authService := serviceauth.NewAuthService(s.cfg, s.db, s.kv, nil, s.oauth2)
+	return authService.ResetPasswordWithEmailChallenge(ctx, email, password, challengeID, code, deviceID)
 }
 
 func (s *UserService) GetProfileOverview(ctx context.Context, userID string) (*dto.ProfileResponse, error) {
@@ -165,9 +84,12 @@ func (s *UserService) GetProfileOverview(ctx context.Context, userID string) (*d
 		})
 	}
 
-	providerResponses := []dto.ThirdPartyProviderResponse{
-		{Provider: "github", Bound: boundProviders["github"]},
-		{Provider: "feishu", Bound: boundProviders["feishu"]},
+	providerResponses := make([]dto.ThirdPartyProviderResponse, 0, len(supportedThirdPartyProviders))
+	for _, provider := range supportedThirdPartyProviders {
+		providerResponses = append(providerResponses, dto.ThirdPartyProviderResponse{
+			Provider: provider,
+			Bound:    boundProviders[provider],
+		})
 	}
 
 	return &dto.ProfileResponse{
@@ -176,6 +98,38 @@ func (s *UserService) GetProfileOverview(ctx context.Context, userID string) (*d
 		ThirdPartyProviders: providerResponses,
 		IsAdmin:             s.cfg.IsAdminUser(userID),
 	}, nil
+}
+
+// UnbindThirdParty removes a third-party login method from the current user.
+func (s *UserService) UnbindThirdParty(ctx context.Context, userID string, provider string) error {
+	if !isSupportedThirdPartyProvider(provider) {
+		return common.ErrInvalidProvider
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		userRepo := db.NewUserRepository(tx)
+		user, err := userRepo.FindByID(ctx, userID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.ErrUserNotFound
+			}
+			return err
+		}
+		if user.Email == nil || strings.TrimSpace(*user.Email) == "" {
+			return common.ErrEmailRequiredForUnbind
+		}
+
+		thirdPartyRepo := db.NewUserThirdPartyRepository(tx)
+		binding, err := thirdPartyRepo.FindByUserID(ctx, userID, provider)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.ErrThirdPartyNotBound
+			}
+			return err
+		}
+
+		return thirdPartyRepo.Delete(ctx, binding.ID)
+	})
 }
 
 // UpdateProfile updates user profile
@@ -217,4 +171,13 @@ func stringPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func isSupportedThirdPartyProvider(provider string) bool {
+	for _, supportedProvider := range supportedThirdPartyProviders {
+		if provider == supportedProvider {
+			return true
+		}
+	}
+	return false
 }

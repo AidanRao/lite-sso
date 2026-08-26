@@ -93,6 +93,10 @@ const props = defineProps({
   email: {
     type: String,
     default: ''
+  },
+  purpose: {
+    type: String,
+    default: 'LOGIN'
   }
 })
 
@@ -143,13 +147,15 @@ const handleSubmit = async () => {
   errorMessage.value = ''
 
   try {
-    await authAPI.sendEmailCode({
+    const response = await authAPI.sendEmailCode({
       email: props.email,
       captcha_id: captchaID.value,
-      captcha: captchaInput.value
+      captcha: captchaInput.value,
+      purpose: props.purpose
     })
 
-    emit('success')
+    const data = response.data || response
+    emit('success', data)
     handleClose()
   } catch (error) {
     errorMessage.value = error.message

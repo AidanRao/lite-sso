@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
 	"sso-server/handler/api/admin"
@@ -13,7 +14,6 @@ import (
 	"sso-server/handler/api/user"
 	"sso-server/handler/health"
 	"sso-server/handler/oauth2"
-	"sso-server/util/mailer"
 )
 
 func (s *Server) registerRoutes() {
@@ -38,28 +38,18 @@ func (s *Server) registerRoutes() {
 		o = nil
 	}
 
-	kvStore := kv.Store(kv.NewMemoryStore())
+	baseKVStore := kv.Store(kv.NewMemoryStore())
 	if kv.Client != nil {
-		kvStore = kv.NewRedisStore(kv.Client)
+		baseKVStore = kv.NewRedisStore(kv.Client)
 	}
-
-	var mailerImpl mailer.Mailer
-	if s.cfg != nil {
-		mailerImpl = mailer.NewSMTPMailer(mailer.SMTPConfig{
-			Host: s.cfg.Email.SMTPHost,
-			Port: s.cfg.Email.SMTPPort,
-			User: s.cfg.Email.SMTPUser,
-			Pass: s.cfg.Email.SMTPPass,
-			From: s.cfg.Email.SMTPFrom,
-		})
-	}
+	kvStore := kv.Store(kv.NewNamespacedStore(baseKVStore, conf.GetEnvironmentName()))
 
 	authHandler := auth.NewAuthHandler(auth.AuthDeps{
-		Config: s.cfg,
-		DB:     db.DB,
-		KV:     kvStore,
-		Mailer: mailerImpl,
-		OAuth2: o,
+		Config:        s.cfg,
+		DB:            db.DB,
+		KV:            kvStore,
+		MessageSender: s.messageCenterClient,
+		OAuth2:        o,
 	})
 
 	userHandler := user.NewUserHandler(user.UserDeps{
@@ -81,8 +71,8 @@ func (s *Server) registerRoutes() {
 		DB:     db.DB,
 	})
 
-	authRequired := RequireSessionAuth(kvStore)
-	authRequiredOrRedirect := RequireSessionAuthOrRedirect(kvStore)
+	authRequired := RequireSessionAuth(authHandler.Service())
+	authRequiredOrRedirect := RequireSessionAuthOrRedirect(authHandler.Service())
 	adminRequired := RequireAdmin(s.cfg)
 
 	apiGroup := s.engine.Group("/api")
@@ -96,16 +86,16 @@ func (s *Server) registerRoutes() {
 
 			authGroup.GET("/qr/generate", authHandler.GenerateQRCode)
 			authGroup.GET("/qr/poll", authHandler.PollQRCode)
-			authGroup.POST("/qr/scan", authHandler.ScanQRCode)
-			authGroup.POST("/qr/confirm", authHandler.ConfirmQRCode)
+			authGroup.POST("/qr/scan", authRequired, authHandler.ScanQRCode)
+			authGroup.POST("/qr/confirm", authRequired, authHandler.ConfirmQRCode)
 			authGroup.POST("/qr/complete", authHandler.CompleteQRCode)
 
 			authGroup.GET("/third/:provider", oauthHandler.ThirdPartyLogin)
 			authGroup.GET("/third/:provider/callback", oauthHandler.ThirdPartyCallback)
 
 			authProtected := authGroup.Group("")
-			authProtected.Use(authRequired)
 			authProtected.POST("/logout", authHandler.Logout)
+			authProtected.POST("/token/refresh", authHandler.RefreshToken)
 
 		}
 
@@ -123,7 +113,10 @@ func (s *Server) registerRoutes() {
 			userProtected.Use(authRequired)
 			userProtected.GET("/profile", userHandler.GetProfile)
 			userProtected.PUT("/profile", userHandler.UpdateProfile)
+			userProtected.GET("/devices", userHandler.GetLoginDevices)
+			userProtected.DELETE("/devices/:device_id", userHandler.RevokeLoginDevice)
 			userProtected.GET("/third/:provider/bind", oauthHandler.ThirdPartyBind)
+			userProtected.DELETE("/third/:provider", userHandler.UnbindThirdParty)
 		}
 
 		adminGroup := apiGroup.Group("/admin")

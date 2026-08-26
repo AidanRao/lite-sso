@@ -1,52 +1,59 @@
 package auth
 
 import (
-	"errors"
+	"crypto/sha256"
+	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
-	"sso-server/common"
 	"sso-server/common/ecode"
 	"sso-server/conf"
+	serviceauth "sso-server/service/auth"
 )
 
-// LoginWithEmailOTP handles email OTP-based login
+// LoginWithEmailOTP handles challenge-based email login.
 func (h *AuthHandler) LoginWithEmailOTP(c *gin.Context) {
 	var req struct {
-		Email    string `json:"email" binding:"required,email"`
-		OTP      string `json:"otp" binding:"required"`
-		Redirect string `json:"redirect"`
+		ChallengeID string `json:"challenge_id" binding:"required"`
+		OTP         string `json:"code" binding:"required,len=6"`
+		Redirect    string `json:"redirect"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
 		return
 	}
 
-	user, err := h.auth.LoginWithEmailOTP(c.Request.Context(), req.Email, req.OTP)
-	if err != nil {
-		switch {
-		case errors.Is(err, common.ErrInvalidOTP), errors.Is(err, common.ErrInvalidCredentials):
-			c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "登录失败", Data: nil})
-		case errors.Is(err, common.ErrUserInactive):
-			c.JSON(http.StatusForbidden, ecode.Response[any]{Code: ecode.Forbidden, Message: "用户已禁用", Data: nil})
-		default:
-			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "登录失败", Data: nil})
-		}
+	deviceID, ok := serviceauth.DeviceIDFromRequest(c.Request)
+	if !ok {
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "设备标识已失效，请重新获取验证码", Data: gin.H{"code": "DEVICE_REQUIRED"}})
 		return
 	}
-
-	result, sessionID, err := h.auth.CompleteLogin(c.Request.Context(), user.ID, req.Redirect)
+	user, err := h.auth.LoginWithEmailOTP(c.Request.Context(), req.ChallengeID, req.OTP, serviceauth.EmailOTPLoginContext{
+		DeviceID: deviceID,
+		IP:       serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
+	})
 	if err != nil {
-		switch {
-		case errors.Is(err, common.ErrInvalidRedirect):
-			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "跳转地址无效", Data: nil})
-		default:
-			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "登录失败", Data: nil})
-		}
+		log.Printf("auth email login failed: stage=challenge_verify challenge_id_hash=%s ip=%s error=%v", hashIdentifier(req.ChallengeID), serviceauth.RequestIP(c.Request, h.trustProxyHeaders), err)
+		writeAuthError(c, err)
 		return
 	}
-	WriteSessionCookie(c, sessionID, conf.GetEnv() == conf.EnvProd)
-
+	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, req.Redirect, serviceauth.LoginMetadata{
+		DeviceID:  deviceID,
+		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
+		UserAgent: c.Request.UserAgent(),
+	}, serviceauth.AuthMethodEmailOTP)
+	if err != nil {
+		log.Printf("auth email login failed: stage=session_create user_id=%s ip=%s error=%v", user.ID, serviceauth.RequestIP(c.Request, h.trustProxyHeaders), err)
+		writeAuthError(c, err)
+		return
+	}
+	WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
+}
+
+func hashIdentifier(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("%x", sum[:])
 }

@@ -1,0 +1,19 @@
+dev:
+  skip_send_message: false
+  fixed_email_otp: ""
+
+security:
+  access_token_expire: "12h"
+
+auth:
+  otp_expire: "5m"
+  otp_max_attempts: 5
+  access_token_ttl: "15m"
+  refresh_token_ttl: "720h"
+  password_min_length: 12
+  password_account_fail_limit: 5
+  password_device_fail_limit: 20
+  password_ip_fail_limit: 100
+  password_account_fail_window: "10m"
+  password_device_fail_window: "10m"
+  password_ip_fail_window: "1h"

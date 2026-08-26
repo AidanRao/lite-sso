@@ -15,6 +15,7 @@ import (
 	"sso-server/common/ecode"
 	"sso-server/conf"
 	"sso-server/dal/db"
+	"sso-server/dal/kv"
 	"sso-server/model"
 	serviceauth "sso-server/service/auth"
 )
@@ -35,18 +36,65 @@ func getLogoutTemplate() *template.Template {
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
-	sessionID, err := c.Cookie(serviceauth.SessionCookieName)
-	if err != nil || sessionID == "" {
+	ClearLoginCookies(c, conf.GetEnv() == conf.EnvProd)
+
+	sessionID := c.GetString("session_id")
+	refreshTokenRevoked := false
+	if sessionID == "" {
+		if header := strings.TrimSpace(c.GetHeader("Authorization")); strings.HasPrefix(strings.ToLower(header), "bearer ") {
+			if claims, err := h.auth.ParseAccessToken(strings.TrimSpace(header[7:])); err == nil {
+				sessionID = claims.SessionID
+				if userID, resolveErr := h.auth.ResolveSessionUserID(c.Request.Context(), sessionID); resolveErr == nil {
+					c.Set("user_id", userID)
+				}
+			}
+		}
+	}
+	if sessionID == "" {
+		if refreshCookie, err := c.Cookie(serviceauth.RefreshTokenCookieName); err == nil {
+			parts := strings.SplitN(refreshCookie, ".", 2)
+			var userID string
+			var resolveErr error
+			if len(parts) == 2 {
+				userID, resolveErr = h.auth.ResolveSessionUserID(c.Request.Context(), parts[0])
+			}
+			if resolveErr != nil {
+				userID = ""
+			}
+			revoked, revokeErr := h.auth.InvalidateRefreshToken(c.Request.Context(), refreshCookie)
+			if revokeErr != nil {
+				c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "退出失败", Data: nil})
+				return
+			}
+			if revoked {
+				sessionID = parts[0]
+				refreshTokenRevoked = true
+				if userID != "" {
+					c.Set("user_id", userID)
+				}
+			}
+		}
+	}
+	if sessionID == "" {
+		if sessionCookie, err := c.Cookie(serviceauth.SessionCookieName); err == nil && sessionCookie != "" {
+			if userID, resolveErr := h.auth.ResolveSessionUserID(c.Request.Context(), sessionCookie); resolveErr == nil {
+				sessionID = sessionCookie
+				c.Set("user_id", userID)
+			}
+		}
+	}
+	if sessionID == "" {
 		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
 		return
 	}
-
-	if err := h.auth.InvalidateSession(c.Request.Context(), sessionID); err != nil {
-		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "退出失败", Data: nil})
-		return
+	if c.GetBool("fixture_session") {
+		_ = h.kv.Del(c.Request.Context(), kv.KeySession(sessionID))
+	} else if !refreshTokenRevoked {
+		if err := h.auth.InvalidateSession(c.Request.Context(), sessionID); err != nil {
+			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "退出失败", Data: nil})
+			return
+		}
 	}
-
-	ClearSessionCookie(c, conf.GetEnv() == conf.EnvProd)
 
 	clients := h.getLogoutClients(c)
 	logoutURIs := getLogoutURIs(clients)

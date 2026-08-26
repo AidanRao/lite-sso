@@ -16,10 +16,21 @@ type memoryItem struct {
 type MemoryStore struct {
 	mu    sync.Mutex
 	items map[string]memoryItem
+	sets  map[string]map[string]time.Time
+	rates map[string]memoryRate
+}
+
+type memoryRate struct {
+	startedAt time.Time
+	count     int
 }
 
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{items: make(map[string]memoryItem)}
+	return &MemoryStore{
+		items: make(map[string]memoryItem),
+		sets:  make(map[string]map[string]time.Time),
+		rates: make(map[string]memoryRate),
+	}
 }
 
 func (s *MemoryStore) Get(ctx context.Context, key string) (string, error) {
@@ -117,5 +128,60 @@ func (s *MemoryStore) Del(ctx context.Context, key string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.items, key)
+	delete(s.sets, key)
+	delete(s.rates, key)
 	return nil
+}
+
+func (s *MemoryStore) RateLimit(ctx context.Context, key string, rate int, burst int, period time.Duration) (bool, time.Duration, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	state := s.rates[key]
+	if state.startedAt.IsZero() || now.Sub(state.startedAt) >= period {
+		state = memoryRate{startedAt: now}
+	}
+	if state.count >= burst {
+		retryAfter := period - now.Sub(state.startedAt)
+		if retryAfter <= 0 {
+			retryAfter = time.Second
+		}
+		s.rates[key] = state
+		return false, retryAfter, nil
+	}
+	state.count++
+	s.rates[key] = state
+	return true, 0, nil
+}
+
+func (s *MemoryStore) AddToSet(ctx context.Context, key string, value string, ttl time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sets[key] == nil {
+		s.sets[key] = make(map[string]time.Time)
+	}
+	expiresAt := time.Time{}
+	if ttl > 0 {
+		expiresAt = time.Now().Add(ttl)
+	}
+	s.sets[key][value] = expiresAt
+	return nil
+}
+
+func (s *MemoryStore) SetCardinality(ctx context.Context, key string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	values := s.sets[key]
+	now := time.Now()
+	for value, expiresAt := range values {
+		if !expiresAt.IsZero() && !now.Before(expiresAt) {
+			delete(values, value)
+		}
+	}
+	return int64(len(values)), nil
+}
+
+func (s *MemoryStore) Eval(ctx context.Context, script string, keys []string, args ...interface{}) (interface{}, error) {
+	return nil, ErrScriptUnsupported
 }

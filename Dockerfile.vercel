@@ -30,13 +30,9 @@ COPY --from=builder /sso-server /app/
 COPY --from=builder /sso-migrate /app/
 COPY --from=builder /app/migrations /app/migrations
 COPY --from=frontend-builder /app/frontend/dist /app/web
-COPY --from=builder /app/templates /app/templates
-COPY docker-entrypoint.sh /app/
-RUN chmod +x /app/docker-entrypoint.sh
 
-ENV ENV=prod
+ENV ENV=prod GIN_MODE=release SERVER_TRUST_PROXY_HEADERS=true
 
-EXPOSE 8080
+EXPOSE 80
 
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
-CMD ["/app/sso-server"]
+CMD ["/app/sso-server", "--migrate-after-listen"]

@@ -1,8 +1,11 @@
 package auth_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,337 +13,252 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	gooauth2store "github.com/go-oauth2/oauth2/v4/store"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"sso-server/common"
 	"sso-server/conf"
 	"sso-server/dal/kv"
-	"sso-server/handler/api/auth"
-	"sso-server/handler/oauth2"
+	apiauth "sso-server/handler/api/auth"
 	"sso-server/model"
-	"sso-server/util/mailer"
+	serviceauth "sso-server/service/auth"
 )
 
-type testMailer struct {
-	lastEmail    string
-	lastSubject  string
-	lastTextBody string
-	lastHtmlBody string
-	sendCount    int
+type testMessageSender struct {
+	lastTarget      string
+	lastTemplateKey string
+	lastVariables   map[string]string
+	sendCount       int
+	err             error
 }
 
-func (m *testMailer) SendEmail(ctx context.Context, email string, subject string, textBody string, htmlBody string) error {
+func (m *testMessageSender) Send(ctx context.Context, target string, templateKey string, variables map[string]string) error {
 	m.sendCount++
-	m.lastEmail = email
-	m.lastSubject = subject
-	m.lastTextBody = textBody
-	m.lastHtmlBody = htmlBody
-	return nil
+	m.lastTarget = target
+	m.lastTemplateKey = templateKey
+	m.lastVariables = variables
+	return m.err
 }
 
-func TestAuthEmailSend_SetsOTPAndRateLimit(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	kvStore := kv.NewMemoryStore()
-	_ = kvStore.Set(context.Background(), kv.KeyCaptcha("cid"), "1234", time.Minute)
-
-	m := &testMailer{}
-	h := auth.NewAuthHandler(auth.AuthDeps{
-		Config: &conf.Config{
-			Dev: conf.DevConfig{
-				SkipSendEmail: true,
-			},
-		},
-		KV:     kvStore,
-		Mailer: m,
-	})
-
-	r := gin.New()
-	r.POST("/api/auth/email/send", h.SendEmailOTP)
-
-	body := `{"email":"u1@example.com","captcha_id":"cid","captcha":"1234"}`
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/email/send", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
-	}
-
-	var resp struct {
-		Code int `json:"code"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp.Code != 200 {
-		t.Fatalf("expected code 200, got %d", resp.Code)
-	}
-	_, err := kvStore.Get(context.Background(), kv.KeyOTP("u1@example.com"))
-	if err != nil {
-		t.Fatalf("expected otp in store, got err %v", err)
-	}
-
-	_, err = kvStore.Get(context.Background(), kv.KeyRateLimitEmail("u1@example.com"))
-	if err != nil {
-		t.Fatalf("expected rate limit key set, got err %v", err)
-	}
-}
-
-func TestAuthEmailSend_LocalFixedOTPStoresAndSkipsMail(t *testing.T) {
+func TestAuthEmailSend_CreatesHMACChallenge(t *testing.T) {
 	t.Setenv("ENV", "local")
 	gin.SetMode(gin.TestMode)
-
-	kvStore := kv.NewMemoryStore()
-	if err := kvStore.Set(context.Background(), kv.KeyCaptcha("cid"), "1234", time.Minute); err != nil {
-		t.Fatalf("seed captcha: %v", err)
-	}
-
-	m := &testMailer{}
-	h := auth.NewAuthHandler(auth.AuthDeps{
-		Config: &conf.Config{
-			Dev: conf.DevConfig{
-				FixedEmailOTP: "654321",
-				SkipSendEmail: true,
-			},
-		},
-		KV:     kvStore,
-		Mailer: m,
-	})
+	store := kv.NewMemoryStore()
+	_ = store.Set(context.Background(), kv.KeyCaptcha("cid"), "1234", time.Minute)
+	sender := &testMessageSender{}
+	cfg := &conf.Config{Dev: conf.DevConfig{FixedEmailOTP: "123456"}}
+	h := apiauth.NewAuthHandler(apiauth.AuthDeps{Config: cfg, KV: store, MessageSender: sender})
 
 	r := gin.New()
 	r.POST("/api/auth/email/send", h.SendEmailOTP)
-
-	body := `{"email":"u1@example.com","captcha_id":"cid","captcha":"1234"}`
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/email/send", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/email/send", strings.NewReader(`{"email":"u1@example.com","captcha_id":"cid","captcha":"1234","purpose":"LOGIN"}`))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
 	}
+	var response struct {
+		Data struct {
+			ChallengeID string `json:"challenge_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if response.Data.ChallengeID == "" || sender.lastVariables["code"] != "123456" {
+		t.Fatalf("expected challenge and sent code, response=%s sender=%#v", w.Body.String(), sender)
+	}
+	raw, err := store.Get(context.Background(), kv.KeyChallenge(response.Data.ChallengeID))
+	if err != nil || strings.Contains(raw, "123456") {
+		t.Fatalf("expected challenge without plaintext otp, raw=%q err=%v", raw, err)
+	}
+}
 
-	otp, err := kvStore.Get(context.Background(), kv.KeyOTP("u1@example.com"))
-	if err != nil {
-		t.Fatalf("expected otp in store, got err %v", err)
+func TestAuthEmailSend_LocalFixedOTP_VerifiesChallenge(t *testing.T) {
+	t.Setenv("ENV", "local")
+	store := kv.NewMemoryStore()
+	_ = store.Set(context.Background(), kv.KeyCaptcha("cid"), "1234", time.Minute)
+	cfg := &conf.Config{Dev: conf.DevConfig{FixedEmailOTP: "654321", SkipSendMessage: true}}
+	h := apiauth.NewAuthHandler(apiauth.AuthDeps{Config: cfg, KV: store})
+	r := gin.New()
+	r.POST("/api/auth/email/send", h.SendEmailOTP)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/email/send", strings.NewReader(`{"email":"u1@example.com","captcha_id":"cid","captcha":"1234","purpose":"LOGIN"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
 	}
-	if otp != "654321" {
-		t.Fatalf("expected fixed otp 654321, got %q", otp)
+	var response struct {
+		Data struct {
+			ChallengeID string `json:"challenge_id"`
+		} `json:"data"`
 	}
-	if m.sendCount != 0 {
-		t.Fatalf("expected mail skipped, got send count %d", m.sendCount)
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	deviceCookie := w.Result().Cookies()[0].Value
+	service := serviceauth.NewAuthService(cfg, nil, store, nil, nil)
+	email, err := service.VerifyChallengeForPurpose(context.Background(), response.Data.ChallengeID, "654321", deviceCookie, serviceauth.ChallengePurposeLogin)
+	if err != nil || email != "u1@example.com" {
+		t.Fatalf("expected challenge verification, email=%q err=%v", email, err)
 	}
 }
 
 func TestAuthEmailSend_RateLimited(t *testing.T) {
+	store := kv.NewMemoryStore()
+	cfg := &conf.Config{Dev: conf.DevConfig{FixedEmailOTP: "123456", SkipSendMessage: true}}
+	h := apiauth.NewAuthHandler(apiauth.AuthDeps{Config: cfg, KV: store})
+	r := gin.New()
+	r.POST("/api/auth/email/send", h.SendEmailOTP)
+	for i := 0; i < 2; i++ {
+		captchaID := "cid" + string(rune('0'+i))
+		_ = store.Set(context.Background(), kv.KeyCaptcha(captchaID), "1234", time.Minute)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/email/send", strings.NewReader(`{"email":"u1@example.com","captcha_id":"`+captchaID+`","captcha":"1234","purpose":"LOGIN"}`))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+		if i == 0 && w.Code != http.StatusOK {
+			t.Fatalf("first send expected 200, got %d", w.Code)
+		}
+		if i == 1 && w.Code != http.StatusTooManyRequests {
+			t.Fatalf("second send expected 429, got %d, body=%s", w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestAuthEmailSend_MessageSenderFailure_LogsSanitizedError(t *testing.T) {
+	t.Setenv("ENV", "local")
 	gin.SetMode(gin.TestMode)
-
-	kvStore := kv.NewMemoryStore()
-	_ = kvStore.Set(context.Background(), kv.KeyCaptcha("cid"), "1234", time.Minute)
-	_, _ = kvStore.SetNX(context.Background(), kv.KeyRateLimitEmail("u1@example.com"), "1", time.Minute)
-
-	h := auth.NewAuthHandler(auth.AuthDeps{
-		Config: &conf.Config{},
-		KV:     kvStore,
-		Mailer: &testMailer{},
-	})
-
+	store := kv.NewMemoryStore()
+	_ = store.Set(context.Background(), kv.KeyCaptcha("cid"), "1234", time.Minute)
+	sender := &testMessageSender{err: errors.New("message center returned status 502")}
+	cfg := &conf.Config{Dev: conf.DevConfig{FixedEmailOTP: "123456"}}
+	h := apiauth.NewAuthHandler(apiauth.AuthDeps{Config: cfg, KV: store, MessageSender: sender})
 	r := gin.New()
 	r.POST("/api/auth/email/send", h.SendEmailOTP)
 
-	body := `{"email":"u1@example.com","captcha_id":"cid","captcha":"1234"}`
+	var logs bytes.Buffer
+	originalOutput := log.Writer()
+	originalFlags := log.Flags()
+	log.SetOutput(&logs)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(originalOutput)
+		log.SetFlags(originalFlags)
+	})
+
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/email/send", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/email/send", strings.NewReader(`{"email":"u1@example.com","captcha_id":"cid","captcha":"1234","purpose":"LOGIN"}`))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected 429, got %d, body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d, body=%s", w.Code, w.Body.String())
 	}
-
-	var resp struct {
-		Code int `json:"code"`
+	output := logs.String()
+	if !strings.Contains(output, "auth email OTP send failed: stage=send_otp purpose=LOGIN ip=192.0.2.1 error=message center returned status 502") {
+		t.Fatalf("expected diagnostic log, got %q", output)
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp.Code != 429 {
-		t.Fatalf("expected code 429, got %d", resp.Code)
+	if strings.Contains(output, "u1@example.com") || strings.Contains(output, "123456") {
+		t.Fatalf("expected log without email or OTP, got %q", output)
 	}
 }
 
-func TestAuthPasswordLogin_SetsSessionCookie(t *testing.T) {
+func TestAuthPasswordLogin_ReturnsAccessAndRefreshTokens(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-
-	db, err := gorm.Open(sqlite.Open("file:auth_password_login_session?mode=memory&cache=shared"), &gorm.Config{})
+	database, err := gorm.Open(sqlite.Open("file:auth_password_login_session_v2?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-
-	hash, err := bcrypt.GenerateFromPassword([]byte("password123"), 12)
+	hash, err := serviceauth.HashPassword("password123456")
 	if err != nil {
-		t.Fatalf("hash password: %v", err)
+		t.Fatalf("hash: %v", err)
 	}
-	hashStr := string(hash)
 	email := "u1@example.com"
-
-	if err := db.Create(&model.User{
-		ID:           "u1",
-		Email:        &email,
-		PasswordHash: &hashStr,
-		IsActive:     true,
-	}).Error; err != nil {
+	if err := database.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &hash, IsActive: true}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-
-	tokenStore, err := gooauth2store.NewMemoryTokenStore()
-	if err != nil {
-		t.Fatalf("token store: %v", err)
-	}
-
 	cfg := &conf.Config{}
-	cfg.Security.AccessTokenExpire = time.Hour
-
-	o, err := oauth2.NewWithStores(cfg, db, tokenStore)
-	if err != nil {
-		t.Fatalf("new oauth2: %v", err)
-	}
-
-	h := auth.NewAuthHandler(auth.AuthDeps{
-		Config: cfg,
-		DB:     db,
-		KV:     kv.NewMemoryStore(),
-		OAuth2: o,
-	})
-
+	h := apiauth.NewAuthHandler(apiauth.AuthDeps{Config: cfg, DB: database, KV: kv.NewMemoryStore()})
 	r := gin.New()
 	r.POST("/api/auth/login/password", h.LoginWithPassword)
-
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login/password", strings.NewReader(`{"email":"u1@example.com","password":"password123"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login/password", strings.NewReader(`{"email":"u1@example.com","password":"password123456"}`))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
-
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
 	}
-
-	var resp struct {
-		Code int `json:"code"`
+	var response struct {
 		Data struct {
-			RedirectURL string `json:"redirect_url"`
+			AccessToken string `json:"access_token"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || response.Data.AccessToken == "" {
+		t.Fatalf("expected access token, body=%s err=%v", w.Body.String(), err)
 	}
-	if resp.Code != 200 {
-		t.Fatalf("expected code 200, got %d", resp.Code)
-	}
-	if resp.Data.RedirectURL != "/profile" {
-		t.Fatalf("expected default redirect /profile, got %q", resp.Data.RedirectURL)
-	}
-
-	found := false
+	foundRefresh := false
+	foundSession := false
 	for _, cookie := range w.Result().Cookies() {
-		if cookie.Name == "sso_session" && cookie.Value != "" {
-			found = true
+		if cookie.Name == serviceauth.RefreshTokenCookieName && cookie.Value != "" && cookie.HttpOnly {
+			foundRefresh = true
+		}
+		if cookie.Name == serviceauth.SessionCookieName && cookie.Value != "" && cookie.Path == "/" && cookie.HttpOnly && cookie.MaxAge == int(serviceauth.SessionTTL.Seconds()) {
+			foundSession = true
 		}
 	}
-	if !found {
-		t.Fatalf("expected sso_session cookie, got %#v", w.Result().Cookies())
+	if !foundRefresh || !foundSession {
+		t.Fatalf("expected refresh and session cookies, cookies=%#v", w.Result().Cookies())
 	}
 }
 
-func TestAuthEmailLogin_SetsSessionCookie(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	db, err := gorm.Open(sqlite.Open("file:auth_email_login_session?mode=memory&cache=shared"), &gorm.Config{})
+func TestAuthEmailLogin_ConsumesChallengeAndCreatesSession(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:auth_email_login_session_v2?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-
 	email := "u1@example.com"
-	if err := db.Create(&model.User{
-		ID:       "u1",
-		Email:    &email,
-		IsActive: true,
-	}).Error; err != nil {
+	if err := database.Create(&model.User{ID: "u1", Email: &email, IsActive: true}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-
-	tokenStore, err := gooauth2store.NewMemoryTokenStore()
+	store := kv.NewMemoryStore()
+	cfg := &conf.Config{Dev: conf.DevConfig{FixedEmailOTP: "123456", SkipSendMessage: true}}
+	_ = store.Set(context.Background(), kv.KeyCaptcha("send"), "1234", time.Minute)
+	service := serviceauth.NewAuthService(cfg, database, store, nil, nil)
+	challenge, err := service.SendEmailOTP(context.Background(), email, "send", "1234", serviceauth.OTPRequestContext{DeviceID: "dev_test", IP: "192.0.2.1"}, serviceauth.ChallengePurposeLogin)
 	if err != nil {
-		t.Fatalf("token store: %v", err)
+		t.Fatalf("create challenge: %v", err)
 	}
-
-	cfg := &conf.Config{}
-	cfg.Security.AccessTokenExpire = time.Hour
-
-	o, err := oauth2.NewWithStores(cfg, db, tokenStore)
-	if err != nil {
-		t.Fatalf("new oauth2: %v", err)
-	}
-
-	kvStore := kv.NewMemoryStore()
-	if err := kvStore.Set(context.Background(), kv.KeyOTP("u1@example.com"), "123456", time.Minute); err != nil {
-		t.Fatalf("seed otp: %v", err)
-	}
-
-	h := auth.NewAuthHandler(auth.AuthDeps{
-		Config: cfg,
-		DB:     db,
-		KV:     kvStore,
-		OAuth2: o,
-	})
-
+	h := apiauth.NewAuthHandler(apiauth.AuthDeps{Config: cfg, DB: database, KV: store})
 	r := gin.New()
 	r.POST("/api/auth/login/email", h.LoginWithEmailOTP)
-
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login/email", strings.NewReader(`{"email":"u1@example.com","otp":"123456"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login/email", strings.NewReader(`{"challenge_id":"`+challenge.ChallengeID+`","code":"123456"}`))
+	req.AddCookie(&http.Cookie{Name: serviceauth.DeviceCookieName, Value: "dev_test"})
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
-
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
 	}
-
-	var resp struct {
-		Code int `json:"code"`
-		Data struct {
-			RedirectURL string `json:"redirect_url"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp.Code != 200 {
-		t.Fatalf("expected code 200, got %d", resp.Code)
-	}
-	if resp.Data.RedirectURL != "/profile" {
-		t.Fatalf("expected default redirect /profile, got %q", resp.Data.RedirectURL)
-	}
-
-	found := false
+	foundRefresh := false
+	foundSession := false
 	for _, cookie := range w.Result().Cookies() {
-		if cookie.Name == "sso_session" && cookie.Value != "" {
-			found = true
-		}
+		foundRefresh = foundRefresh || cookie.Name == serviceauth.RefreshTokenCookieName && cookie.Value != ""
+		foundSession = foundSession || cookie.Name == serviceauth.SessionCookieName && cookie.Value != "" && cookie.Path == "/"
 	}
-	if !found {
-		t.Fatalf("expected sso_session cookie, got %#v", w.Result().Cookies())
+	if !foundRefresh || !foundSession {
+		t.Fatalf("expected refresh and session cookies, cookies=%#v", w.Result().Cookies())
 	}
 }
 
-var _ mailer.Mailer = (*testMailer)(nil)
+var _ serviceauth.MessageSender = (*testMessageSender)(nil)
+var _ = common.ErrInvalidCredentials

@@ -17,6 +17,7 @@ import (
 
 	"sso-server/conf"
 	"sso-server/dal/db"
+	"sso-server/dal/kv"
 )
 
 type OAuth2 struct {
@@ -27,7 +28,7 @@ type OAuth2 struct {
 }
 
 func New(cfg *conf.Config) (*OAuth2, error) {
-	tokenStore := oredis.NewRedisStore(toRedisV8Options(cfg))
+	tokenStore := oredis.NewRedisStore(toRedisV8Options(cfg), kv.NamespacePrefix(conf.GetEnvironmentName()))
 	return NewWithStores(cfg, db.DB, tokenStore)
 }
 

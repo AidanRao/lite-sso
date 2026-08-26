@@ -1,5 +1,6 @@
 server:
   port: "8080"
+  trust_proxy_headers: false
 
 database:
   host: "localhost"
@@ -14,11 +15,27 @@ cache:
 
 security:
   access_token_expire: "12h"
-  max_login_attempts: 5
-  lockout_duration: "30m"
+
+auth:
+  otp_expire: "5m"
+  otp_max_attempts: 5
+  access_token_ttl: "15m"
+  refresh_token_ttl: "720h"
+  password_min_length: 12
+  password_account_fail_limit: 5
+  password_device_fail_limit: 20
+  password_ip_fail_limit: 100
+  password_account_fail_window: "10m"
+  password_device_fail_window: "10m"
+  password_ip_fail_window: "1h"
+
+message_center:
+  url: "https://message-center.example.com"
+  api_key: "replace-with-api-client-key"
+  sender_key: "noreply"
 
 dev:
-  skip_send_email: true
+  skip_send_message: true
   fixed_email_otp: "123456"
 
 oauth:
