@@ -1,5 +1,6 @@
 .git
 .gitignore
+conf/local.yaml
 .idea
 .vscode
 *.md

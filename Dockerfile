@@ -28,6 +28,7 @@ WORKDIR /app
 
 COPY --from=builder /sso-server /app/
 COPY --from=builder /sso-migrate /app/
+COPY --from=builder /app/conf /app/conf
 COPY --from=builder /app/migrations /app/migrations
 COPY --from=frontend-builder /app/frontend/dist /app/web
 COPY docker-entrypoint.sh /app/
