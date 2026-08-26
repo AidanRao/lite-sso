@@ -17,6 +17,9 @@ security:
   access_token_expire: "12h"
 
 auth:
+  # 生产环境要求 >= 32 字符，建议用 `openssl rand -hex 32` 生成
+  otp_secret: "replace-with-32-or-more-char-random-otp-secret"
+  jwt_secret: "replace-with-32-or-more-char-random-jwt-secret"
   otp_expire: "5m"
   otp_max_attempts: 5
   access_token_ttl: "15m"
