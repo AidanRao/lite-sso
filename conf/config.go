@@ -48,6 +48,57 @@ type Config struct {
 	Dev           DevConfig             `mapstructure:"dev"`
 	OAuth         ThirdPartyOAuthConfig `mapstructure:"oauth"`
 	Admin         AdminConfig           `mapstructure:"admin"`
+	OSS           OSSConfig             `mapstructure:"oss"`
+}
+
+// OSSConfig contains the Alibaba Cloud OSS settings used for user avatars.
+type OSSConfig struct {
+	Region          string `mapstructure:"region"`
+	Endpoint        string `mapstructure:"endpoint"`
+	Bucket          string `mapstructure:"bucket"`
+	AccessKeyID     string `mapstructure:"access_key_id"`
+	AccessKeySecret string `mapstructure:"access_key_secret"`
+	AvatarPrefix    string `mapstructure:"avatar_prefix"`
+	PublicBaseURL   string `mapstructure:"public_base_url"`
+}
+
+// IsConfigured reports whether any OSS setting has been provided.
+func (c OSSConfig) IsConfigured() bool {
+	return strings.TrimSpace(c.Region) != "" ||
+		strings.TrimSpace(c.Endpoint) != "" ||
+		strings.TrimSpace(c.Bucket) != "" ||
+		strings.TrimSpace(c.AccessKeyID) != "" ||
+		strings.TrimSpace(c.AccessKeySecret) != "" ||
+		strings.TrimSpace(c.AvatarPrefix) != "" ||
+		strings.TrimSpace(c.PublicBaseURL) != ""
+}
+
+// ValidateOSS checks that all required OSS settings are supplied together.
+func (c *Config) ValidateOSS() error {
+	if c == nil {
+		return errors.New("configuration is required")
+	}
+	if !c.OSS.IsConfigured() {
+		if GetEnv() == EnvProd {
+			return errors.New("oss configuration is required in production")
+		}
+		return nil
+	}
+
+	values := map[string]string{
+		"oss.region":            c.OSS.Region,
+		"oss.bucket":            c.OSS.Bucket,
+		"oss.access_key_id":     c.OSS.AccessKeyID,
+		"oss.access_key_secret": c.OSS.AccessKeySecret,
+		"oss.avatar_prefix":     c.OSS.AvatarPrefix,
+		"oss.public_base_url":   c.OSS.PublicBaseURL,
+	}
+	for name, value := range values {
+		if strings.TrimSpace(value) == "" {
+			return errors.New(name + " is required when OSS is configured")
+		}
+	}
+	return nil
 }
 
 func (c *Config) IsAdminUser(userID string) bool {
@@ -215,6 +266,13 @@ func bindEnvs(v *viper.Viper) {
 		"oauth.feishu.redirect_uri",
 		"admin.user_ids",
 		"server.trust_proxy_headers",
+		"oss.region",
+		"oss.endpoint",
+		"oss.bucket",
+		"oss.access_key_id",
+		"oss.access_key_secret",
+		"oss.avatar_prefix",
+		"oss.public_base_url",
 	}
 
 	for _, key := range envKeys {

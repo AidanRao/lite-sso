@@ -4,6 +4,7 @@ go 1.26
 
 require (
 	github.com/alexedwards/argon2id v1.0.0
+	github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.6.0
 	github.com/gin-gonic/gin v1.9.1
 	github.com/go-oauth2/oauth2/v4 v4.5.4
 	github.com/go-oauth2/redis/v4 v4.1.1
@@ -18,6 +19,7 @@ require (
 	github.com/redis/go-redis/v9 v9.0.5
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/image v0.23.0
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/driver/sqlite v1.6.0
@@ -77,11 +79,11 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.3.0 // indirect
 	golang.org/x/crypto v0.50.0 // indirect
-	golang.org/x/image v0.23.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/time v0.4.0 // indirect
 	google.golang.org/appengine v1.6.6 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

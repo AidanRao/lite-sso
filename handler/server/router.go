@@ -53,10 +53,11 @@ func (s *Server) registerRoutes() {
 	})
 
 	userHandler := user.NewUserHandler(user.UserDeps{
-		Config: s.cfg,
-		DB:     db.DB,
-		KV:     kvStore,
-		OAuth2: o,
+		Config:      s.cfg,
+		DB:          db.DB,
+		KV:          kvStore,
+		OAuth2:      o,
+		AvatarStore: s.avatarStore,
 	})
 
 	oauthHandler := oauth.NewOAuthHandler(oauth.OAuthDeps{
@@ -113,6 +114,7 @@ func (s *Server) registerRoutes() {
 			userProtected.Use(authRequired)
 			userProtected.GET("/profile", userHandler.GetProfile)
 			userProtected.PUT("/profile", userHandler.UpdateProfile)
+			userProtected.POST("/avatar", userHandler.UploadAvatar)
 			userProtected.GET("/devices", userHandler.GetLoginDevices)
 			userProtected.DELETE("/devices/:device_id", userHandler.RevokeLoginDevice)
 			userProtected.GET("/third/:provider/bind", oauthHandler.ThirdPartyBind)

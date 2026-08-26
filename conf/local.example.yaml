@@ -54,3 +54,12 @@ oauth:
 admin:
   user_ids:
     - "replace-with-user-id"
+
+oss:
+  region: "cn-beijing"
+  endpoint: ""
+  bucket: "your-avatar-bucket"
+  access_key_id: ""
+  access_key_secret: ""
+  avatar_prefix: "avatars"
+  public_base_url: "https://cdn.example.com"

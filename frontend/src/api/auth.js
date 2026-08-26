@@ -117,6 +117,12 @@ export const userAPI = {
     return api.put('/user/profile', data)
   },
 
+  uploadAvatar: (file) => {
+    const data = new FormData()
+    data.append('file', file)
+    return api.post('/user/avatar', data)
+  },
+
   getDevices: () => {
     return api.get('/user/devices')
   },

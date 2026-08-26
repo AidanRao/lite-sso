@@ -4,10 +4,11 @@ import "errors"
 
 // User related errors
 var (
-	ErrUserNotFound   = errors.New("user not found")
-	ErrEmailExists    = errors.New("email already exists")
-	ErrUsernameExists = errors.New("username already exists")
-	ErrUserInactive   = errors.New("user inactive")
+	ErrUserNotFound             = errors.New("user not found")
+	ErrEmailExists              = errors.New("email already exists")
+	ErrUsernameExists           = errors.New("username already exists")
+	ErrUserInactive             = errors.New("user inactive")
+	ErrAvatarStorageUnavailable = errors.New("avatar storage unavailable")
 )
 
 // Authentication related errors

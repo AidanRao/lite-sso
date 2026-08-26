@@ -1,11 +1,17 @@
 package user
 
 import (
+	"encoding/json"
 	"errors"
+	"image"
+	"image/jpeg"
+	"image/png"
+	"io"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/image/webp"
 	"gorm.io/gorm"
 	apiauth "sso-server/handler/api/auth"
 
@@ -14,15 +20,17 @@ import (
 	"sso-server/conf"
 	"sso-server/dal/kv"
 	"sso-server/handler/oauth2"
+	manageross "sso-server/manager/oss"
 	serviceauth "sso-server/service/auth"
 	serviceuser "sso-server/service/user"
 )
 
 type UserDeps struct {
-	Config *conf.Config
-	DB     *gorm.DB
-	KV     kv.Store
-	OAuth2 *oauth2.OAuth2
+	Config      *conf.Config
+	DB          *gorm.DB
+	KV          kv.Store
+	OAuth2      *oauth2.OAuth2
+	AvatarStore manageross.AvatarStore
 }
 
 type UserHandler struct {
@@ -34,10 +42,39 @@ type UserHandler struct {
 func NewUserHandler(deps UserDeps) *UserHandler {
 	trustProxyHeaders := deps.Config != nil && deps.Config.Server.TrustProxyHeaders
 	return &UserHandler{
-		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2),
+		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2, deps.AvatarStore),
 		auth:              serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
 		trustProxyHeaders: trustProxyHeaders,
 	}
+}
+
+const (
+	maxAvatarFileSize      int64 = 2 * 1024 * 1024
+	maxAvatarMultipartSize       = maxAvatarFileSize + 64*1024
+)
+
+type avatarImageType struct {
+	contentType  string
+	extension    string
+	decodeConfig func(io.Reader) (image.Config, error)
+}
+
+var supportedAvatarImageTypes = map[string]avatarImageType{
+	"jpeg": {
+		contentType:  "image/jpeg",
+		extension:    ".jpg",
+		decodeConfig: jpeg.DecodeConfig,
+	},
+	"png": {
+		contentType:  "image/png",
+		extension:    ".png",
+		decodeConfig: png.DecodeConfig,
+	},
+	"webp": {
+		contentType:  "image/webp",
+		extension:    ".webp",
+		decodeConfig: webp.DecodeConfig,
+	},
 }
 
 // Register handles user registration
@@ -193,10 +230,11 @@ func (h *UserHandler) RevokeLoginDevice(c *gin.Context) {
 // UpdateProfile updates user profile
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	var req struct {
-		Username  *string `json:"username"`
-		AvatarURL *string `json:"avatar_url"`
+		Username *string `json:"username"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
 		return
 	}
@@ -207,7 +245,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	user, err := h.user.UpdateProfile(c.Request.Context(), userID, req.Username, req.AvatarURL)
+	user, err := h.user.UpdateProfile(c.Request.Context(), userID, req.Username)
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrUserNotFound):
@@ -221,6 +259,84 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"user": user}))
+}
+
+// UploadAvatar uploads an avatar for the current user.
+func (h *UserHandler) UploadAvatar(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		return
+	}
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxAvatarMultipartSize)
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		writeAvatarUploadFormError(c, err)
+		return
+	}
+	defer file.Close()
+
+	if header.Size > maxAvatarFileSize {
+		writeAvatarTooLarge(c)
+		return
+	}
+
+	contentType, extension, err := validateAvatarImage(file)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "仅支持 JPEG、PNG 或 WebP 图片", Data: nil})
+		return
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "头像上传失败", Data: nil})
+		return
+	}
+
+	user, err := h.user.UploadAvatar(c.Request.Context(), userID, contentType, extension, file, header.Size)
+	if err != nil {
+		switch {
+		case errors.Is(err, common.ErrAvatarStorageUnavailable):
+			c.JSON(http.StatusServiceUnavailable, ecode.Response[any]{Code: ecode.ServiceUnavailable, Message: "头像服务暂未配置", Data: nil})
+		case errors.Is(err, common.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+		default:
+			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "头像上传失败", Data: nil})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"user": user}))
+}
+
+func validateAvatarImage(file io.ReadSeeker) (string, string, error) {
+	_, format, err := image.DecodeConfig(file)
+	if err != nil {
+		return "", "", err
+	}
+	imageType, ok := supportedAvatarImageTypes[format]
+	if !ok {
+		return "", "", errors.New("unsupported avatar image format")
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", "", err
+	}
+	if _, err := imageType.decodeConfig(file); err != nil {
+		return "", "", err
+	}
+	return imageType.contentType, imageType.extension, nil
+}
+
+func writeAvatarUploadFormError(c *gin.Context, err error) {
+	var maxBytesError *http.MaxBytesError
+	if errors.As(err, &maxBytesError) {
+		writeAvatarTooLarge(c)
+		return
+	}
+	c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "请选择头像图片", Data: nil})
+}
+
+func writeAvatarTooLarge(c *gin.Context) {
+	c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "头像大小不能超过 2MB", Data: nil})
 }
 
 // UnbindThirdParty removes a third-party login method from the current user.

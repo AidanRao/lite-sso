@@ -3,9 +3,16 @@ package user_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"image"
+	"image/jpeg"
+	"image/png"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +26,25 @@ import (
 	serverhandler "sso-server/handler/server"
 	"sso-server/model"
 )
+
+type fakeAvatarStore struct {
+	objectKey string
+	avatarURL string
+	uploaded  []byte
+}
+
+func (s *fakeAvatarStore) UploadAvatar(_ context.Context, _ string, _ string, body io.Reader, _ int64) (string, string, error) {
+	var err error
+	s.uploaded, err = io.ReadAll(body)
+	if err != nil {
+		return "", "", err
+	}
+	return s.objectKey, s.avatarURL, nil
+}
+
+func (s *fakeAvatarStore) DeleteAvatar(_ context.Context, _ string) error {
+	return nil
+}
 
 func TestUserProfile_RequiresSessionCookie(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -245,4 +271,200 @@ func TestUserProfile_UpdateUsernameRejectsDuplicate(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d, body=%s", w.Code, w.Body.String())
 	}
+}
+
+func TestUserProfile_UpdateProfileRejectsAvatarURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db, err := gorm.Open(sqlite.Open("file:update_profile_avatar_url?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := db.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	h := apiuser.NewUserHandler(apiuser.UserDeps{Config: &conf.Config{}, DB: db, KV: kv.NewMemoryStore()})
+	r := gin.New()
+	r.PUT("/api/user/profile", func(c *gin.Context) {
+		c.Set("user_id", "u1")
+	}, h.UpdateProfile)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/user/profile", bytes.NewBufferString(`{"avatar_url":"https://attacker.example/avatar.png"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d, body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestUserProfile_UploadAvatarAcceptsPNG(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := newAvatarUploadTestDB(t)
+	store := &fakeAvatarStore{
+		objectKey: "avatars/u1/avatar.png",
+		avatarURL: "https://cdn.example.com/avatars/u1/avatar.png",
+	}
+	h := apiuser.NewUserHandler(apiuser.UserDeps{Config: &conf.Config{}, DB: db, KV: kv.NewMemoryStore(), AvatarStore: store})
+	r := newAvatarUploadTestRouter(h)
+
+	body, contentType := avatarMultipartBody(t, "avatar.png", pngAvatar(t))
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/user/avatar", &body)
+	req.Header.Set("Content-Type", contentType)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+	if len(store.uploaded) == 0 {
+		t.Fatal("expected avatar to be uploaded")
+	}
+
+	var user model.User
+	if err := db.First(&user, "id = ?", "u1").Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	if user.AvatarURL == nil || *user.AvatarURL != store.avatarURL {
+		t.Fatalf("unexpected avatar URL: %#v", user.AvatarURL)
+	}
+}
+
+func TestUserProfile_UploadAvatarAcceptsJPEGAndWebP(t *testing.T) {
+	testCases := []struct {
+		name     string
+		fileName string
+		content  func(*testing.T) []byte
+	}{
+		{name: "JPEG", fileName: "avatar.jpeg", content: jpegAvatar},
+		{name: "WebP", fileName: "avatar.webp", content: webpAvatar},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			db := newAvatarUploadTestDB(t)
+			store := &fakeAvatarStore{
+				objectKey: "avatars/u1/avatar",
+				avatarURL: "https://cdn.example.com/avatars/u1/avatar",
+			}
+			h := apiuser.NewUserHandler(apiuser.UserDeps{Config: &conf.Config{}, DB: db, KV: kv.NewMemoryStore(), AvatarStore: store})
+			r := newAvatarUploadTestRouter(h)
+			body, contentType := avatarMultipartBody(t, testCase.fileName, testCase.content(t))
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/user/avatar", &body)
+			req.Header.Set("Content-Type", contentType)
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestUserProfile_UploadAvatarRejectsInvalidInput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	testCases := []struct {
+		name     string
+		fileName string
+		content  []byte
+		message  string
+	}{
+		{name: "unsupported content", fileName: "avatar.txt", content: []byte("not an image"), message: "仅支持 JPEG、PNG 或 WebP 图片"},
+		{name: "too large", fileName: "avatar.png", content: []byte(strings.Repeat("a", 2*1024*1024+1)), message: "头像大小不能超过 2MB"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			db := newAvatarUploadTestDB(t)
+			h := apiuser.NewUserHandler(apiuser.UserDeps{Config: &conf.Config{}, DB: db, KV: kv.NewMemoryStore()})
+			r := newAvatarUploadTestRouter(h)
+			body, contentType := avatarMultipartBody(t, testCase.fileName, testCase.content)
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/user/avatar", &body)
+			req.Header.Set("Content-Type", contentType)
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), testCase.message) {
+				t.Fatalf("expected validation error %q, got %d %s", testCase.message, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func newAvatarUploadTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	database, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := database.AutoMigrate(&model.User{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := database.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	return database
+}
+
+func newAvatarUploadTestRouter(h *apiuser.UserHandler) *gin.Engine {
+	r := gin.New()
+	r.POST("/api/user/avatar", func(c *gin.Context) {
+		c.Set("user_id", "u1")
+	}, h.UploadAvatar)
+	return r
+}
+
+func avatarMultipartBody(t *testing.T, filename string, content []byte) (bytes.Buffer, string) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := part.Write(content); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	return body, writer.FormDataContentType()
+}
+
+func pngAvatar(t *testing.T) []byte {
+	t.Helper()
+	var body bytes.Buffer
+	if err := png.Encode(&body, image.NewRGBA(image.Rect(0, 0, 1, 1))); err != nil {
+		t.Fatalf("encode PNG: %v", err)
+	}
+	return body.Bytes()
+}
+
+func jpegAvatar(t *testing.T) []byte {
+	t.Helper()
+	var body bytes.Buffer
+	if err := jpeg.Encode(&body, image.NewRGBA(image.Rect(0, 0, 1, 1)), nil); err != nil {
+		t.Fatalf("encode JPEG: %v", err)
+	}
+	return body.Bytes()
+}
+
+func webpAvatar(t *testing.T) []byte {
+	t.Helper()
+	content, err := base64.StdEncoding.DecodeString("UklGRiIAAABXRUJQVlA4IBYAAADQAQCdASoBAAEAAUAmJaQAA3AA/vuUAAA=")
+	if err != nil {
+		t.Fatalf("decode WebP: %v", err)
+	}
+	return content
 }

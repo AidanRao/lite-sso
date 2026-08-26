@@ -2,9 +2,25 @@
   <main class="profile-page">
     <section class="account-hero">
       <div class="account-summary">
-        <div class="avatar">
+        <div class="avatar avatar-upload">
           <img v-if="user?.avatar_url" :src="user.avatar_url" :alt="displayName" />
           <span v-else>{{ avatarInitial }}</span>
+          <button
+            class="avatar-change-button"
+            type="button"
+            :disabled="!user || avatarUploading"
+            @click="avatarInput?.click()"
+          >
+            {{ avatarUploading ? '上传中' : '更换头像' }}
+          </button>
+          <input
+            ref="avatarInput"
+            class="avatar-file-input"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            :disabled="avatarUploading"
+            @change="uploadAvatar"
+          />
         </div>
         <div class="account-copy">
           <h1>{{ displayName }}</h1>
@@ -219,6 +235,8 @@ const usernameDraft = ref('')
 const usernameSaving = ref(false)
 const usernameDialogOpen = ref(false)
 const usernameInput = ref(null)
+const avatarInput = ref(null)
+const avatarUploading = ref(false)
 const idCopied = ref(false)
 const unbindingProvider = ref('')
 const revokingDevice = ref('')
@@ -322,6 +340,39 @@ const saveUsername = async () => {
     ElMessage.error(error.message || '更新失败')
   } finally {
     usernameSaving.value = false
+  }
+}
+
+const uploadAvatar = async (event) => {
+  const [file] = event.target.files || []
+  event.target.value = ''
+  if (!file || avatarUploading.value) {
+    return
+  }
+
+  const supportedTypes = ['image/jpeg', 'image/png', 'image/webp']
+  if (!supportedTypes.includes(file.type)) {
+    ElMessage.error('仅支持 JPEG、PNG 或 WebP 图片')
+    return
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    ElMessage.error('头像大小不能超过 2MB')
+    return
+  }
+
+  avatarUploading.value = true
+  try {
+    const result = await userAPI.uploadAvatar(file)
+    user.value = result?.data?.user || user.value
+    ElMessage.success('头像已更新')
+  } catch (error) {
+    if (error.status === 401) {
+      router.push('/login?redirect=/profile')
+      return
+    }
+    ElMessage.error(error.message || '头像上传失败')
+  } finally {
+    avatarUploading.value = false
   }
 }
 
@@ -544,10 +595,41 @@ onBeforeUnmount(() => {
   font-weight: 800;
 }
 
+.avatar-upload {
+  position: relative;
+}
+
 .avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.avatar-change-button {
+  position: absolute;
+  inset: auto 0 0;
+  min-height: 28px;
+  border: 0;
+  background: rgba(15, 23, 42, 0.78);
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.avatar-upload:hover .avatar-change-button,
+.avatar-upload:focus-within .avatar-change-button {
+  opacity: 1;
+}
+
+.avatar-change-button:disabled {
+  cursor: not-allowed;
+}
+
+.avatar-file-input {
+  display: none;
 }
 
 .account-copy {

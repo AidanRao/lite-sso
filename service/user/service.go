@@ -3,6 +3,8 @@ package user
 import (
 	"context"
 	"errors"
+	"io"
+	"log"
 	"strings"
 
 	"gorm.io/gorm"
@@ -14,24 +16,27 @@ import (
 	"sso-server/dal/kv"
 	"sso-server/dto"
 	"sso-server/handler/oauth2"
+	manageross "sso-server/manager/oss"
 	"sso-server/model"
 )
 
 var supportedThirdPartyProviders = []string{"github", "feishu"}
 
 type UserService struct {
-	cfg    *conf.Config
-	db     *gorm.DB
-	kv     kv.Store
-	oauth2 *oauth2.OAuth2
+	cfg         *conf.Config
+	db          *gorm.DB
+	kv          kv.Store
+	oauth2      *oauth2.OAuth2
+	avatarStore manageross.AvatarStore
 }
 
-func NewUserService(cfg *conf.Config, db *gorm.DB, kvStore kv.Store, oauth2Impl *oauth2.OAuth2) *UserService {
+func NewUserService(cfg *conf.Config, db *gorm.DB, kvStore kv.Store, oauth2Impl *oauth2.OAuth2, avatarStore manageross.AvatarStore) *UserService {
 	return &UserService{
-		cfg:    cfg,
-		db:     db,
-		kv:     kvStore,
-		oauth2: oauth2Impl,
+		cfg:         cfg,
+		db:          db,
+		kv:          kvStore,
+		oauth2:      oauth2Impl,
+		avatarStore: avatarStore,
 	}
 }
 
@@ -132,8 +137,8 @@ func (s *UserService) UnbindThirdParty(ctx context.Context, userID string, provi
 	})
 }
 
-// UpdateProfile updates user profile
-func (s *UserService) UpdateProfile(ctx context.Context, userID string, username *string, avatarURL *string) (*dto.UserResponse, error) {
+// UpdateProfile updates user profile.
+func (s *UserService) UpdateProfile(ctx context.Context, userID string, username *string) (*dto.UserResponse, error) {
 	userRepo := db.NewUserRepository(s.db)
 	user, err := userRepo.FindByID(ctx, userID)
 	if err != nil {
@@ -155,12 +160,44 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID string, username
 			user.Username = &trimmedUsername
 		}
 	}
-	if avatarURL != nil {
-		user.AvatarURL = avatarURL
-	}
-
 	if err := userRepo.Update(ctx, user); err != nil {
 		return nil, err
+	}
+
+	return dto.ToUserResponse(user), nil
+}
+
+// UploadAvatar uploads and assigns a user avatar.
+func (s *UserService) UploadAvatar(ctx context.Context, userID string, contentType string, extension string, body io.Reader, size int64) (*dto.UserResponse, error) {
+	if s.avatarStore == nil {
+		return nil, common.ErrAvatarStorageUnavailable
+	}
+
+	userRepo := db.NewUserRepository(s.db)
+	user, err := userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	objectKey, avatarURL, err := s.avatarStore.UploadAvatar(ctx, contentType, extension, body, size)
+	if err != nil {
+		return nil, err
+	}
+
+	previousObjectKey := user.AvatarObjectKey
+	user.AvatarURL = &avatarURL
+	user.AvatarObjectKey = &objectKey
+	if err := userRepo.Update(ctx, user); err != nil {
+		if deleteErr := s.avatarStore.DeleteAvatar(ctx, objectKey); deleteErr != nil {
+			log.Printf("avatar upload cleanup failed: stage=database_update")
+		}
+		return nil, err
+	}
+
+	if previousObjectKey != nil && *previousObjectKey != "" && *previousObjectKey != objectKey {
+		if err := s.avatarStore.DeleteAvatar(ctx, *previousObjectKey); err != nil {
+			log.Printf("avatar replacement cleanup failed: stage=delete_previous")
+		}
 	}
 
 	return dto.ToUserResponse(user), nil

@@ -3,13 +3,14 @@ package ecode
 type Code int
 
 const (
-	OK              Code = 200
-	BadRequest      Code = 400
-	Unauthorized    Code = 401
-	Forbidden       Code = 403
-	NotFound        Code = 404
-	TooManyRequests Code = 429
-	InternalServer  Code = 500
+	OK                 Code = 200
+	BadRequest         Code = 400
+	Unauthorized       Code = 401
+	Forbidden          Code = 403
+	NotFound           Code = 404
+	TooManyRequests    Code = 429
+	InternalServer     Code = 500
+	ServiceUnavailable Code = 503
 )
 
 type Error struct {

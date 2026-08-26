@@ -21,3 +21,10 @@ auth:
 message_center:
   url: "https://message-api.aidanrao.top"
   sender_key: "sso"
+
+oss:
+  region: "cn-beijing"
+  endpoint: ""
+  bucket: "aidan-space"
+  avatar_prefix: "sso/user-assets"
+  public_base_url: "https://aidan-space.oss-cn-beijing.aliyuncs.com"
