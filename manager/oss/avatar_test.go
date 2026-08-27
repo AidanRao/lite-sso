@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	aliyunoss "github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss"
 
@@ -70,6 +71,24 @@ func TestAvatarStorage_UploadImage(t *testing.T) {
 	}
 	if *client.putRequest.ContentLength != 10 || string(client.putBody) != "image-data" {
 		t.Fatalf("unexpected upload body: size=%d body=%q", *client.putRequest.ContentLength, client.putBody)
+	}
+}
+
+func Test_NewOSSClientConfig_UsesUploadTimeoutAndRetries(t *testing.T) {
+	clientConfig := newOSSClientConfig(conf.OSSConfig{
+		Region:          "cn-beijing",
+		AccessKeyID:     "test-access-key",
+		AccessKeySecret: "test-access-secret",
+	})
+
+	if clientConfig.ConnectTimeout == nil || *clientConfig.ConnectTimeout != 3*time.Second {
+		t.Fatalf("unexpected OSS connect timeout: %#v", clientConfig.ConnectTimeout)
+	}
+	if clientConfig.ReadWriteTimeout == nil || *clientConfig.ReadWriteTimeout != 3*time.Second {
+		t.Fatalf("unexpected OSS read/write timeout: %#v", clientConfig.ReadWriteTimeout)
+	}
+	if clientConfig.RetryMaxAttempts == nil || *clientConfig.RetryMaxAttempts != 3 {
+		t.Fatalf("unexpected OSS retry max attempts: %#v", clientConfig.RetryMaxAttempts)
 	}
 }
 

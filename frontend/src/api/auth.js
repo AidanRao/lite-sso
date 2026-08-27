@@ -120,7 +120,7 @@ export const userAPI = {
   uploadAvatar: (file) => {
     const data = new FormData()
     data.append('file', file)
-    return api.post('/user/avatar', data)
+    return api.post('/user/avatar', data, { timeout: 15000 })
   },
 
   getDevices: () => {
@@ -164,7 +164,7 @@ export const adminAPI = {
   uploadOAuthClientLogo: (id, file) => {
     const data = new FormData()
     data.append('file', file)
-    return api.post(`/admin/oauth-clients/${id}/logo`, data)
+    return api.post(`/admin/oauth-clients/${id}/logo`, data, { timeout: 15000 })
   },
 
   clearOAuthClientLogo: (id) => {

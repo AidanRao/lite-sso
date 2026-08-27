@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	aliyunoss "github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss"
 	"github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss/credentials"
@@ -21,7 +22,11 @@ import (
 	"sso-server/conf"
 )
 
-const avatarCacheControl = "public, max-age=31536000, immutable"
+const (
+	avatarCacheControl   = "public, max-age=31536000, immutable"
+	ossRequestTimeout    = 3 * time.Second
+	ossUploadMaxAttempts = 3
+)
 
 type imageType struct {
 	contentType  string
@@ -92,14 +97,21 @@ func NewAvatarStorage(cfg conf.OSSConfig) (*AvatarStorage, error) {
 		return nil, err
 	}
 
+	clientConfig := newOSSClientConfig(cfg)
+	return newAvatarStorage(cfg, aliyunoss.NewClient(clientConfig), publicBaseURL)
+}
+
+func newOSSClientConfig(cfg conf.OSSConfig) *aliyunoss.Config {
 	clientConfig := aliyunoss.LoadDefaultConfig().
 		WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.AccessKeySecret)).
-		WithRegion(cfg.Region)
+		WithRegion(cfg.Region).
+		WithConnectTimeout(ossRequestTimeout).
+		WithReadWriteTimeout(ossRequestTimeout).
+		WithRetryMaxAttempts(ossUploadMaxAttempts)
 	if endpoint := strings.TrimSpace(cfg.Endpoint); endpoint != "" {
 		clientConfig.WithEndpoint(endpoint)
 	}
-
-	return newAvatarStorage(cfg, aliyunoss.NewClient(clientConfig), publicBaseURL)
+	return clientConfig
 }
 
 func newAvatarStorage(cfg conf.OSSConfig, client objectClient, publicBaseURL *url.URL) (*AvatarStorage, error) {
