@@ -80,7 +80,16 @@ jobs:
           vercel env run "${env_args[@]}" -- env \
             ENV="$APP_ENVIRONMENT" \
             GOCACHE="$RUNNER_TEMP/go-cache" \
-            go run ./cmd/migrate up
+            bash -c '
+              set -euo pipefail
+              : "${DATABASE_HOST:?DATABASE_HOST is not configured in Vercel}"
+              : "${DATABASE_PORT:?DATABASE_PORT is not configured in Vercel}"
+              : "${DATABASE_USER:?DATABASE_USER is not configured in Vercel}"
+              : "${DATABASE_PASSWORD:?DATABASE_PASSWORD is not configured in Vercel}"
+              : "${DATABASE_NAME:?DATABASE_NAME is not configured in Vercel}"
+              : "${DB_SSLMODE:?DB_SSLMODE is not configured in Vercel}"
+              exec go run ./cmd/migrate up
+            '
 
       - name: Deploy
         shell: bash
