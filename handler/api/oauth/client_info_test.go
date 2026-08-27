@@ -26,11 +26,13 @@ func TestOAuthClientInfo_ReturnsClientName(t *testing.T) {
 	if err := gormDB.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	logoURL := "https://cdn.example.com/logos/order.png"
 	if err := gormDB.Create(&model.OAuthClient{
 		Name:         "订单系统",
 		ClientID:     "order-app",
 		ClientSecret: "secret",
 		RedirectURI:  "http://localhost/callback",
+		LogoURL:      &logoURL,
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
 	}
@@ -55,8 +57,9 @@ func TestOAuthClientInfo_ReturnsClientName(t *testing.T) {
 	var resp struct {
 		Code int `json:"code"`
 		Data struct {
-			ClientID string `json:"client_id"`
-			Name     string `json:"name"`
+			ClientID string  `json:"client_id"`
+			Name     string  `json:"name"`
+			LogoURL  *string `json:"logo_url"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -64,5 +67,8 @@ func TestOAuthClientInfo_ReturnsClientName(t *testing.T) {
 	}
 	if resp.Data.ClientID != "order-app" || resp.Data.Name != "订单系统" {
 		t.Fatalf("unexpected response: %s", w.Body.String())
+	}
+	if resp.Data.LogoURL == nil || *resp.Data.LogoURL != logoURL {
+		t.Fatalf("expected logo url, got %s", w.Body.String())
 	}
 }

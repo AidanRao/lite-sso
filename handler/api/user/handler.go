@@ -3,15 +3,11 @@ package user
 import (
 	"encoding/json"
 	"errors"
-	"image"
-	"image/jpeg"
-	"image/png"
 	"io"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/image/webp"
 	"gorm.io/gorm"
 	apiauth "sso-server/handler/api/auth"
 
@@ -26,11 +22,11 @@ import (
 )
 
 type UserDeps struct {
-	Config      *conf.Config
-	DB          *gorm.DB
-	KV          kv.Store
-	OAuth2      *oauth2.OAuth2
-	AvatarStore manageross.AvatarStore
+	Config     *conf.Config
+	DB         *gorm.DB
+	KV         kv.Store
+	OAuth2     *oauth2.OAuth2
+	ImageStore manageross.ImageStore
 }
 
 type UserHandler struct {
@@ -42,7 +38,7 @@ type UserHandler struct {
 func NewUserHandler(deps UserDeps) *UserHandler {
 	trustProxyHeaders := deps.Config != nil && deps.Config.Server.TrustProxyHeaders
 	return &UserHandler{
-		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2, deps.AvatarStore),
+		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2, deps.ImageStore),
 		auth:              serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
 		trustProxyHeaders: trustProxyHeaders,
 	}
@@ -52,30 +48,6 @@ const (
 	maxAvatarFileSize      int64 = 2 * 1024 * 1024
 	maxAvatarMultipartSize       = maxAvatarFileSize + 64*1024
 )
-
-type avatarImageType struct {
-	contentType  string
-	extension    string
-	decodeConfig func(io.Reader) (image.Config, error)
-}
-
-var supportedAvatarImageTypes = map[string]avatarImageType{
-	"jpeg": {
-		contentType:  "image/jpeg",
-		extension:    ".jpg",
-		decodeConfig: jpeg.DecodeConfig,
-	},
-	"png": {
-		contentType:  "image/png",
-		extension:    ".png",
-		decodeConfig: png.DecodeConfig,
-	},
-	"webp": {
-		contentType:  "image/webp",
-		extension:    ".webp",
-		decodeConfig: webp.DecodeConfig,
-	},
-}
 
 // Register handles user registration
 func (h *UserHandler) Register(c *gin.Context) {
@@ -282,7 +254,7 @@ func (h *UserHandler) UploadAvatar(c *gin.Context) {
 		return
 	}
 
-	contentType, extension, err := validateAvatarImage(file)
+	contentType, extension, err := manageross.ValidateImage(file)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "仅支持 JPEG、PNG 或 WebP 图片", Data: nil})
 		return
@@ -306,24 +278,6 @@ func (h *UserHandler) UploadAvatar(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"user": user}))
-}
-
-func validateAvatarImage(file io.ReadSeeker) (string, string, error) {
-	_, format, err := image.DecodeConfig(file)
-	if err != nil {
-		return "", "", err
-	}
-	imageType, ok := supportedAvatarImageTypes[format]
-	if !ok {
-		return "", "", errors.New("unsupported avatar image format")
-	}
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return "", "", err
-	}
-	if _, err := imageType.decodeConfig(file); err != nil {
-		return "", "", err
-	}
-	return imageType.contentType, imageType.extension, nil
 }
 
 func writeAvatarUploadFormError(c *gin.Context, err error) {

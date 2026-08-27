@@ -25,7 +25,7 @@ type fakeAvatarStore struct {
 	deleted   []string
 }
 
-func (s *fakeAvatarStore) UploadAvatar(_ context.Context, _ string, _ string, body io.Reader, _ int64) (string, string, error) {
+func (s *fakeAvatarStore) UploadImage(_ context.Context, _ string, _ string, body io.Reader, _ int64) (string, string, error) {
 	if _, err := io.ReadAll(body); err != nil {
 		return "", "", err
 	}
@@ -35,7 +35,7 @@ func (s *fakeAvatarStore) UploadAvatar(_ context.Context, _ string, _ string, bo
 	return s.objectKey, s.avatarURL, nil
 }
 
-func (s *fakeAvatarStore) DeleteAvatar(_ context.Context, objectKey string) error {
+func (s *fakeAvatarStore) DeleteImage(_ context.Context, objectKey string) error {
 	s.deleted = append(s.deleted, objectKey)
 	return s.deleteErr
 }

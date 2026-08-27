@@ -69,13 +69,16 @@
 
       <article class="panel provider-panel">
         <header class="panel-header">
-          <h2>登录方式</h2>
+          <h2>第三方登录方式</h2>
         </header>
 
         <div class="provider-list">
           <div v-for="provider in providerCards" :key="provider.id" class="provider-row">
-            <div>
-              <strong>{{ provider.name }}</strong>
+            <div class="provider-copy">
+              <strong class="provider-name">
+                <ThirdPartyProviderIcon :provider="provider.id" :size="20" />
+                {{ provider.name }}
+              </strong>
               <span>{{ provider.bound ? '已绑定' : '未绑定' }}</span>
             </div>
             <button
@@ -168,16 +171,19 @@
             <span>最近登录</span>
           </div>
           <div v-for="app in applications" :key="app.client_id" class="app-row">
-            <a
-              v-if="app.homepage_url"
-              class="app-link"
-              :href="app.homepage_url"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {{ app.name || app.client_id }}
-            </a>
-            <strong v-else>{{ app.name || app.client_id }}</strong>
+            <div class="app-identity">
+              <ApplicationLogo :label="app.name || app.client_id" :src="app.logo_url" size="small" />
+              <a
+                v-if="app.homepage_url"
+                class="app-link"
+                :href="app.homepage_url"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {{ app.name || app.client_id }}
+              </a>
+              <strong v-else>{{ app.name || app.client_id }}</strong>
+            </div>
             <span class="mono">{{ app.client_id }}</span>
             <time>{{ formatDate(app.last_login_at) }}</time>
           </div>
@@ -220,6 +226,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Copy, Monitor, Pencil, Smartphone, X } from 'lucide-vue-next'
 import { userAPI } from '../api/auth'
+import ApplicationLogo from '../components/ApplicationLogo.vue'
+import ThirdPartyProviderIcon from '../components/ThirdPartyProviderIcon.vue'
 import { submitGlobalLogout } from '../utils/logout'
 
 const router = useRouter()
@@ -1054,6 +1062,18 @@ button {
   gap: 4px;
 }
 
+.provider-name,
+.app-identity {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.provider-name svg {
+  flex: 0 0 auto;
+}
+
 .bind-button {
   height: 34px;
   min-width: 62px;
@@ -1119,6 +1139,13 @@ button {
   justify-self: end;
   color: #475569;
   font-weight: 700;
+}
+
+.app-identity .app-link,
+.app-identity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .empty-state {

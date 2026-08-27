@@ -11,8 +11,10 @@
         <div class="login-card bg-white rounded-2xl shadow-xl shadow-[#0891b2]/5 p-6 sm:p-8 xl:p-10">
           <div class="login-header text-center mb-6 xl:mb-8">
             <h2 class="text-2xl font-bold text-gray-800">欢迎回来</h2>
-            <p v-if="targetClientName" class="text-gray-500 text-sm mt-2">
-              登录后将进入 <span class="font-semibold text-[#0891b2]">{{ targetClientName }}</span>
+            <p v-if="targetClientName" class="target-client text-gray-500 text-sm mt-2">
+              登录后将进入
+              <ApplicationLogo :label="targetClientName" :src="targetClientLogo" size="small" />
+              <span class="font-semibold text-[#0891b2]">{{ targetClientName }}</span>
             </p>
             <p v-else class="text-gray-500 text-sm mt-2">请登录您的账号</p>
           </div>
@@ -185,7 +187,7 @@
               @click="oauthLogin(provider.id)"
               class="login-provider-button w-full flex items-center justify-center gap-2 border-2 border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm transition-all duration-200 text-gray-700 font-medium"
             >
-              <span v-html="provider.icon" class="login-provider-icon flex-shrink-0"></span>
+              <ThirdPartyProviderIcon :provider="provider.id" :size="20" class="login-provider-icon flex-shrink-0" />
               <span>{{ provider.name }} 登录</span>
             </button>
           </div>
@@ -213,14 +215,18 @@ import { useRoute } from 'vue-router'
 import { Mail, Lock, Eye, EyeOff, MessageSquare, AlertTriangle } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
 import { authAPI, setAccessToken } from '../api/auth'
+import ApplicationLogo from '../components/ApplicationLogo.vue'
 import AuthSplashPane from '../components/AuthSplashPane.vue'
 import SendCodeModal from '../components/SendCodeModal.vue'
-import { getLoginRedirect, loadTargetClientName } from '../utils/oauthTarget'
+import ThirdPartyProviderIcon from '../components/ThirdPartyProviderIcon.vue'
+import { getLoginRedirect, loadTargetClient as loadTargetClientInfo } from '../utils/oauthTarget'
 
 const route = useRoute()
 
 const redirectUrl = ref(getLoginRedirect(route))
-const targetClientName = ref('')
+const targetClient = ref(null)
+const targetClientName = computed(() => targetClient.value?.name || '')
+const targetClientLogo = computed(() => targetClient.value?.logo_url || '')
 
 const tabs = [
   { key: 'password', label: '密码登录' },
@@ -231,13 +237,11 @@ const tabs = [
 const oauthProviders = [
   {
     id: 'github',
-    name: 'GitHub',
-    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>`
+    name: 'GitHub'
   },
   {
     id: 'feishu',
-    name: '飞书',
-    icon: `<svg width="20" height="20" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 8c0 1 7 3.5 14.745 16.744 0 0 4.184-4.363 6.255-5.744 1.5-1 2.712-1.332 2.712-1.332C33.712 15.156 29.5 8 28 8z" fill="#00d6b9"/><path d="M43.5 18.5c-1-.667-3.65-1.771-6.5-1.5a15 15 0 0 0-3.288.668S32.5 18 31 19c-2.07 1.38-6.255 5.744-6.255 5.744-1.428 1.397-3.05 2.732-5.245 3.756 0 0 7 3 11.5 3 5.063 0 7-3.5 7-3.5 1.5-3.305 3.5-7 5.5-9.5" fill="#163c9a"/><path d="M4 17.5v17c0 1 6 5.5 15 5.5 10 0 17.05-7.705 19-12 0 0-1.937 3.5-7 3.5-4.5 0-11.5-3-11.5-3-5.117-2.239-10.03-6.577-12.906-9.117C4.974 17.953 4 17.093 4 17.5" fill="#3370ff"/></svg>`
+    name: '飞书'
   }
 ]
 
@@ -347,7 +351,7 @@ const emailRules = {
 const responseData = (response) => response?.data || response || {}
 
 const loadTargetClient = async () => {
-  targetClientName.value = await loadTargetClientName(redirectUrl.value)
+  targetClient.value = await loadTargetClientInfo(redirectUrl.value)
 }
 
 const loadPasswordCaptcha = async () => {
@@ -594,6 +598,13 @@ watch(activeTab, (tab) => {
   height: 48px;
   border-radius: 8px;
   padding: 0 14px;
+}
+
+.target-client {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .login-provider-icon {

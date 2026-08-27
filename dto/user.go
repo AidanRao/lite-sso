@@ -21,6 +21,7 @@ type UserApplicationResponse struct {
 	ClientID    string    `json:"client_id"`
 	Name        string    `json:"name"`
 	HomepageURL string    `json:"homepage_url"`
+	LogoURL     *string   `json:"logo_url"`
 	LastLoginAt time.Time `json:"last_login_at"`
 }
 

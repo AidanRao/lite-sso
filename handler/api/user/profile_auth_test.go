@@ -33,7 +33,7 @@ type fakeAvatarStore struct {
 	uploaded  []byte
 }
 
-func (s *fakeAvatarStore) UploadAvatar(_ context.Context, _ string, _ string, body io.Reader, _ int64) (string, string, error) {
+func (s *fakeAvatarStore) UploadImage(_ context.Context, _ string, _ string, body io.Reader, _ int64) (string, string, error) {
 	var err error
 	s.uploaded, err = io.ReadAll(body)
 	if err != nil {
@@ -42,7 +42,7 @@ func (s *fakeAvatarStore) UploadAvatar(_ context.Context, _ string, _ string, bo
 	return s.objectKey, s.avatarURL, nil
 }
 
-func (s *fakeAvatarStore) DeleteAvatar(_ context.Context, _ string) error {
+func (s *fakeAvatarStore) DeleteImage(_ context.Context, _ string) error {
 	return nil
 }
 
@@ -86,6 +86,7 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 	email := "u1@example.com"
+	logoURL := "https://cdn.example.com/logos/demo.png"
 	if err := db.Create(&model.User{
 		ID:       "u1",
 		Email:    &email,
@@ -99,6 +100,7 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 		ClientSecret: "s1",
 		HomepageURL:  "https://demo.example.com",
 		RedirectURI:  "http://localhost/cb",
+		LogoURL:      &logoURL,
 	}).Error; err != nil {
 		t.Fatalf("create oauth client: %v", err)
 	}
@@ -147,9 +149,10 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 				ID string `json:"id"`
 			} `json:"user"`
 			Applications []struct {
-				ClientID    string `json:"client_id"`
-				Name        string `json:"name"`
-				HomepageURL string `json:"homepage_url"`
+				ClientID    string  `json:"client_id"`
+				Name        string  `json:"name"`
+				HomepageURL string  `json:"homepage_url"`
+				LogoURL     *string `json:"logo_url"`
 			} `json:"applications"`
 			ThirdPartyProviders []struct {
 				Provider string `json:"provider"`
@@ -168,6 +171,9 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 	}
 	if resp.Data.Applications[0].HomepageURL != "https://demo.example.com" {
 		t.Fatalf("expected homepage url, got %s", w.Body.String())
+	}
+	if resp.Data.Applications[0].LogoURL == nil || *resp.Data.Applications[0].LogoURL != logoURL {
+		t.Fatalf("expected application logo url, got %s", w.Body.String())
 	}
 	if len(resp.Data.ThirdPartyProviders) != 2 {
 		t.Fatalf("expected two providers, got %s", w.Body.String())
@@ -311,7 +317,7 @@ func TestUserProfile_UploadAvatarAcceptsPNG(t *testing.T) {
 		objectKey: "avatars/u1/avatar.png",
 		avatarURL: "https://cdn.example.com/avatars/u1/avatar.png",
 	}
-	h := apiuser.NewUserHandler(apiuser.UserDeps{Config: &conf.Config{}, DB: db, KV: kv.NewMemoryStore(), AvatarStore: store})
+	h := apiuser.NewUserHandler(apiuser.UserDeps{Config: &conf.Config{}, DB: db, KV: kv.NewMemoryStore(), ImageStore: store})
 	r := newAvatarUploadTestRouter(h)
 
 	body, contentType := avatarMultipartBody(t, "avatar.png", pngAvatar(t))
@@ -354,7 +360,7 @@ func TestUserProfile_UploadAvatarAcceptsJPEGAndWebP(t *testing.T) {
 				objectKey: "avatars/u1/avatar",
 				avatarURL: "https://cdn.example.com/avatars/u1/avatar",
 			}
-			h := apiuser.NewUserHandler(apiuser.UserDeps{Config: &conf.Config{}, DB: db, KV: kv.NewMemoryStore(), AvatarStore: store})
+			h := apiuser.NewUserHandler(apiuser.UserDeps{Config: &conf.Config{}, DB: db, KV: kv.NewMemoryStore(), ImageStore: store})
 			r := newAvatarUploadTestRouter(h)
 			body, contentType := avatarMultipartBody(t, testCase.fileName, testCase.content(t))
 

@@ -27,10 +27,10 @@ export const getTargetClientID = (redirect) => {
   }
 }
 
-export const loadTargetClientName = async (redirect) => {
+export const loadTargetClient = async (redirect) => {
   const clientID = getTargetClientID(redirect)
   if (!clientID) {
-    return ''
+    return null
   }
 
   try {
@@ -40,8 +40,20 @@ export const loadTargetClientName = async (redirect) => {
     }
 
     const result = await response.json()
-    return result?.data?.name || ''
+    const client = result?.data
+    if (!client?.name) {
+      return null
+    }
+    return {
+      name: client.name,
+      logo_url: client.logo_url || ''
+    }
   } catch (error) {
-    return ''
+    return null
   }
+}
+
+export const loadTargetClientName = async (redirect) => {
+  const client = await loadTargetClient(redirect)
+  return client?.name || ''
 }

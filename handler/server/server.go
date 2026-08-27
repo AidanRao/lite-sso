@@ -15,7 +15,7 @@ type Server struct {
 	cfg                 *conf.Config
 	engine              *gin.Engine
 	messageCenterClient *messagecenter.Client
-	avatarStore         manageross.AvatarStore
+	imageStore          manageross.ImageStore
 }
 
 func New(cfg *conf.Config) (*Server, error) {
@@ -33,9 +33,9 @@ func New(cfg *conf.Config) (*Server, error) {
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 
-	var avatarStore manageross.AvatarStore
+	var imageStore manageross.ImageStore
 	if cfg.OSS.IsConfigured() {
-		avatarStore, err = manageross.NewAvatarStorage(cfg.OSS)
+		imageStore, err = manageross.NewAvatarStorage(cfg.OSS)
 		if err != nil {
 			return nil, fmt.Errorf("create avatar store: %w", err)
 		}
@@ -45,7 +45,7 @@ func New(cfg *conf.Config) (*Server, error) {
 		cfg:                 cfg,
 		engine:              engine,
 		messageCenterClient: messageCenterClient,
-		avatarStore:         avatarStore,
+		imageStore:          imageStore,
 	}
 	srv.registerRoutes()
 	return srv, nil

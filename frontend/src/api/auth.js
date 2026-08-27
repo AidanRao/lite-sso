@@ -159,5 +159,15 @@ export const adminAPI = {
 
   updateOAuthClient: (id, data) => {
     return api.put(`/admin/oauth-clients/${id}`, data)
+  },
+
+  uploadOAuthClientLogo: (id, file) => {
+    const data = new FormData()
+    data.append('file', file)
+    return api.post(`/admin/oauth-clients/${id}/logo`, data)
+  },
+
+  clearOAuthClientLogo: (id) => {
+    return api.delete(`/admin/oauth-clients/${id}/logo`)
   }
 }

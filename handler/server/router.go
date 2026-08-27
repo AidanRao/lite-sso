@@ -53,11 +53,11 @@ func (s *Server) registerRoutes() {
 	})
 
 	userHandler := user.NewUserHandler(user.UserDeps{
-		Config:      s.cfg,
-		DB:          db.DB,
-		KV:          kvStore,
-		OAuth2:      o,
-		AvatarStore: s.avatarStore,
+		Config:     s.cfg,
+		DB:         db.DB,
+		KV:         kvStore,
+		OAuth2:     o,
+		ImageStore: s.imageStore,
 	})
 
 	oauthHandler := oauth.NewOAuthHandler(oauth.OAuthDeps{
@@ -68,8 +68,9 @@ func (s *Server) registerRoutes() {
 	})
 
 	adminHandler := admin.NewAdminHandler(admin.AdminDeps{
-		Config: s.cfg,
-		DB:     db.DB,
+		Config:     s.cfg,
+		DB:         db.DB,
+		ImageStore: s.imageStore,
 	})
 
 	authRequired := RequireSessionAuth(authHandler.Service())
@@ -130,6 +131,8 @@ func (s *Server) registerRoutes() {
 			adminGroup.GET("/oauth-clients/:id/secret", adminHandler.GetOAuthClientSecret)
 			adminGroup.POST("/oauth-clients", adminHandler.CreateOAuthClient)
 			adminGroup.PUT("/oauth-clients/:id", adminHandler.UpdateOAuthClient)
+			adminGroup.POST("/oauth-clients/:id/logo", adminHandler.UploadOAuthClientLogo)
+			adminGroup.DELETE("/oauth-clients/:id/logo", adminHandler.ClearOAuthClientLogo)
 		}
 	}
 

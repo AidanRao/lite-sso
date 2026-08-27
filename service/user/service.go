@@ -23,20 +23,20 @@ import (
 var supportedThirdPartyProviders = []string{"github", "feishu"}
 
 type UserService struct {
-	cfg         *conf.Config
-	db          *gorm.DB
-	kv          kv.Store
-	oauth2      *oauth2.OAuth2
-	avatarStore manageross.AvatarStore
+	cfg        *conf.Config
+	db         *gorm.DB
+	kv         kv.Store
+	oauth2     *oauth2.OAuth2
+	imageStore manageross.ImageStore
 }
 
-func NewUserService(cfg *conf.Config, db *gorm.DB, kvStore kv.Store, oauth2Impl *oauth2.OAuth2, avatarStore manageross.AvatarStore) *UserService {
+func NewUserService(cfg *conf.Config, db *gorm.DB, kvStore kv.Store, oauth2Impl *oauth2.OAuth2, imageStore manageross.ImageStore) *UserService {
 	return &UserService{
-		cfg:         cfg,
-		db:          db,
-		kv:          kvStore,
-		oauth2:      oauth2Impl,
-		avatarStore: avatarStore,
+		cfg:        cfg,
+		db:         db,
+		kv:         kvStore,
+		oauth2:     oauth2Impl,
+		imageStore: imageStore,
 	}
 }
 
@@ -85,6 +85,7 @@ func (s *UserService) GetProfileOverview(ctx context.Context, userID string) (*d
 			ClientID:    app.ClientID,
 			Name:        app.Name,
 			HomepageURL: app.HomepageURL,
+			LogoURL:     app.LogoURL,
 			LastLoginAt: app.LastLoginAt,
 		})
 	}
@@ -169,7 +170,7 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID string, username
 
 // UploadAvatar uploads and assigns a user avatar.
 func (s *UserService) UploadAvatar(ctx context.Context, userID string, contentType string, extension string, body io.Reader, size int64) (*dto.UserResponse, error) {
-	if s.avatarStore == nil {
+	if s.imageStore == nil {
 		return nil, common.ErrAvatarStorageUnavailable
 	}
 
@@ -179,7 +180,7 @@ func (s *UserService) UploadAvatar(ctx context.Context, userID string, contentTy
 		return nil, common.ErrUserNotFound
 	}
 
-	objectKey, avatarURL, err := s.avatarStore.UploadAvatar(ctx, contentType, extension, body, size)
+	objectKey, avatarURL, err := s.imageStore.UploadImage(ctx, contentType, extension, body, size)
 	if err != nil {
 		return nil, err
 	}
@@ -188,14 +189,14 @@ func (s *UserService) UploadAvatar(ctx context.Context, userID string, contentTy
 	user.AvatarURL = &avatarURL
 	user.AvatarObjectKey = &objectKey
 	if err := userRepo.Update(ctx, user); err != nil {
-		if deleteErr := s.avatarStore.DeleteAvatar(ctx, objectKey); deleteErr != nil {
+		if deleteErr := s.imageStore.DeleteImage(ctx, objectKey); deleteErr != nil {
 			log.Printf("avatar upload cleanup failed: stage=database_update")
 		}
 		return nil, err
 	}
 
 	if previousObjectKey != nil && *previousObjectKey != "" && *previousObjectKey != objectKey {
-		if err := s.avatarStore.DeleteAvatar(ctx, *previousObjectKey); err != nil {
+		if err := s.imageStore.DeleteImage(ctx, *previousObjectKey); err != nil {
 			log.Printf("avatar replacement cleanup failed: stage=delete_previous")
 		}
 	}

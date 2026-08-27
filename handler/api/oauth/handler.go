@@ -81,6 +81,7 @@ func (h *OAuthHandler) ClientInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{
 		"client_id": client.ClientID,
 		"name":      client.Name,
+		"logo_url":  client.LogoURL,
 	}))
 }
 

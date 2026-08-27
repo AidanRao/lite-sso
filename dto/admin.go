@@ -23,12 +23,13 @@ type AdminUserDetailResponse struct {
 
 // OAuthClientResponse represents an OAuth client without exposing its secret.
 type OAuthClientResponse struct {
-	ID          uint   `json:"id"`
-	Name        string `json:"name"`
-	ClientID    string `json:"client_id"`
-	HomepageURL string `json:"homepage_url"`
-	RedirectURI string `json:"redirect_uri"`
-	LogoutURI   string `json:"logout_uri"`
+	ID          uint    `json:"id"`
+	Name        string  `json:"name"`
+	ClientID    string  `json:"client_id"`
+	HomepageURL string  `json:"homepage_url"`
+	RedirectURI string  `json:"redirect_uri"`
+	LogoutURI   string  `json:"logout_uri"`
+	LogoURL     *string `json:"logo_url"`
 }
 
 // OAuthClientSecretResponse represents an OAuth client secret for administrators.

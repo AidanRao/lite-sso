@@ -38,7 +38,7 @@ func (c *fakeObjectClient) DeleteObject(_ context.Context, request *aliyunoss.De
 	return &aliyunoss.DeleteObjectResult{}, c.deleteErr
 }
 
-func TestAvatarStorage_UploadAvatar(t *testing.T) {
+func TestAvatarStorage_UploadImage(t *testing.T) {
 	client := &fakeObjectClient{}
 	publicBaseURL, err := parsePublicBaseURL("https://cdn.example.com/profile-images/")
 	if err != nil {
@@ -52,7 +52,7 @@ func TestAvatarStorage_UploadAvatar(t *testing.T) {
 		t.Fatalf("new avatar storage: %v", err)
 	}
 
-	objectKey, publicURL, err := storage.UploadAvatar(context.Background(), "image/png", ".png", bytes.NewBufferString("image-data"), 10)
+	objectKey, publicURL, err := storage.UploadImage(context.Background(), "image/png", ".png", bytes.NewBufferString("image-data"), 10)
 	if err != nil {
 		t.Fatalf("upload avatar: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestAvatarStorage_UploadAvatar(t *testing.T) {
 	}
 }
 
-func TestAvatarStorage_DeleteAvatar(t *testing.T) {
+func TestAvatarStorage_DeleteImage(t *testing.T) {
 	client := &fakeObjectClient{}
 	publicBaseURL, err := parsePublicBaseURL("https://cdn.example.com")
 	if err != nil {
@@ -84,7 +84,7 @@ func TestAvatarStorage_DeleteAvatar(t *testing.T) {
 		t.Fatalf("new avatar storage: %v", err)
 	}
 
-	if err := storage.DeleteAvatar(context.Background(), "sso/user-assets/old.png"); err != nil {
+	if err := storage.DeleteImage(context.Background(), "sso/user-assets/old.png"); err != nil {
 		t.Fatalf("delete avatar: %v", err)
 	}
 	if client.deleteRequest == nil || *client.deleteRequest.Key != "sso/user-assets/old.png" {
@@ -103,7 +103,7 @@ func TestAvatarStorage_UploadAvatarReturnsStorageError(t *testing.T) {
 		t.Fatalf("new avatar storage: %v", err)
 	}
 
-	if _, _, err := storage.UploadAvatar(context.Background(), "image/png", ".png", bytes.NewBufferString("image-data"), 10); err == nil {
+	if _, _, err := storage.UploadImage(context.Background(), "image/png", ".png", bytes.NewBufferString("image-data"), 10); err == nil {
 		t.Fatal("expected OSS upload error")
 	}
 }

@@ -76,7 +76,10 @@
             <span></span>
           </div>
           <div v-for="client in clients" :key="client.id" class="table-row">
-            <strong>{{ client.name }}</strong>
+            <div class="client-identity">
+              <ApplicationLogo :label="client.name || client.client_id" :src="client.logo_url" size="small" />
+              <strong>{{ client.name }}</strong>
+            </div>
             <span class="uri-list">{{ client.homepage_url }}</span>
             <span class="uri-list">{{ client.redirect_uri }}</span>
             <button class="icon-button" type="button" title="编辑平台" @click="openEditDialog(client)">
@@ -101,14 +104,34 @@
           <span>平台名称</span>
           <input v-model.trim="form.name" required maxlength="50" />
         </label>
+        <div class="logo-field">
+          <span>应用 Logo</span>
+          <div class="logo-editor">
+            <ApplicationLogo :label="form.name || form.client_id" :src="displayedLogoURL" size="large" />
+            <div class="logo-actions">
+              <button class="icon-text-button secondary" type="button" :disabled="saving" @click="logoInput?.click()">
+                <Upload :size="16" />
+                <span>{{ displayedLogoURL ? '更换 Logo' : '上传 Logo' }}</span>
+              </button>
+              <button
+                v-if="displayedLogoURL"
+                class="icon-text-button secondary"
+                type="button"
+                :disabled="saving"
+                @click="clearClientLogo"
+              >
+                <X :size="16" />
+                <span>清除</span>
+              </button>
+              <small>支持 JPEG、PNG、WebP，最大 1MB</small>
+            </div>
+          </div>
+          <input ref="logoInput" class="logo-file-input" type="file" accept="image/jpeg,image/png,image/webp" @change="selectClientLogo" />
+        </div>
         <label>
           <span>Client ID</span>
           <output v-if="editingClient" class="readonly-output mono">{{ form.client_id }}</output>
           <input v-else v-model.trim="form.client_id" required maxlength="50" />
-        </label>
-        <label>
-          <span>Homepage URL</span>
-          <input v-model.trim="form.homepage_url" required maxlength="255" />
         </label>
         <div class="secret-field">
           <span>Client Secret</span>
@@ -138,6 +161,10 @@
             </button>
           </div>
         </div>
+        <label>
+          <span>Homepage URL</span>
+          <input v-model.trim="form.homepage_url" required maxlength="255" />
+        </label>
         <label>
           <span>回调地址</span>
           <input v-model.trim="form.redirect_uri" required maxlength="255" />
@@ -202,9 +229,12 @@
             <h3>登录应用</h3>
             <div v-if="selectedUserDetail?.applications?.length" class="detail-list">
               <div v-for="app in selectedUserDetail.applications" :key="app.client_id" class="detail-list-row">
-                <div>
-                  <strong>{{ app.name || app.client_id }}</strong>
-                  <span class="mono">{{ app.client_id }}</span>
+                <div class="detail-app-identity">
+                  <ApplicationLogo :label="app.name || app.client_id" :src="app.logo_url" size="small" />
+                  <div>
+                    <strong>{{ app.name || app.client_id }}</strong>
+                    <span class="mono">{{ app.client_id }}</span>
+                  </div>
                 </div>
                 <time>{{ formatDate(app.last_login_at) }}</time>
               </div>
@@ -231,11 +261,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Copy, Eye, EyeOff, PanelsTopLeft, Pencil, Plus, RefreshCw, Save, Users, X } from 'lucide-vue-next'
+import { ArrowLeft, Copy, Eye, EyeOff, PanelsTopLeft, Pencil, Plus, RefreshCw, Save, Upload, Users, X } from 'lucide-vue-next'
 import { adminAPI } from '../api/auth'
+import ApplicationLogo from '../components/ApplicationLogo.vue'
 import { generateClientSecret, maskClientSecret } from '../utils/clientSecret'
 
 const router = useRouter()
@@ -249,6 +280,9 @@ const editingClient = ref(null)
 const selectedUserDetail = ref(null)
 const secretVisible = ref(false)
 const secretLoading = ref(false)
+const logoInput = ref(null)
+const pendingLogoFile = ref(null)
+const logoPreviewURL = ref('')
 const users = ref([])
 const clients = ref([])
 const form = reactive({
@@ -265,6 +299,7 @@ const clientSecretDisplay = computed(() => {
   }
   return maskClientSecret(form.client_secret)
 })
+const displayedLogoURL = computed(() => logoPreviewURL.value || editingClient.value?.logo_url || '')
 
 const loadData = async () => {
   loading.value = true
@@ -340,6 +375,7 @@ const closeDialog = () => {
 
 const saveClient = async () => {
   saving.value = true
+  let savedClient = null
   try {
     if (!editingClient.value && !form.client_secret) {
       regenerateClientSecret()
@@ -355,16 +391,31 @@ const saveClient = async () => {
     }
 
     if (editingClient.value) {
-      await adminAPI.updateOAuthClient(editingClient.value.id, payload)
-      ElMessage.success('平台已更新')
+      const response = await adminAPI.updateOAuthClient(editingClient.value.id, payload)
+      savedClient = response?.data?.client || editingClient.value
     } else {
       payload.client_id = form.client_id
-      await adminAPI.createOAuthClient(payload)
-      ElMessage.success('平台已新增')
+      const response = await adminAPI.createOAuthClient(payload)
+      savedClient = response?.data?.client
     }
+    if (pendingLogoFile.value) {
+      const response = await adminAPI.uploadOAuthClientLogo(savedClient.id, pendingLogoFile.value)
+      savedClient = response?.data?.client || savedClient
+    }
+    ElMessage.success(editingClient.value ? '平台已更新' : '平台已新增')
     closeDialog()
     await loadData()
   } catch (error) {
+    if (savedClient) {
+      if (!editingClient.value) {
+        editingClient.value = savedClient
+        form.client_id = savedClient.client_id || form.client_id
+      }
+      replaceClient(savedClient)
+      await loadData()
+      ElMessage.error(error.message || '平台信息已保存，但 Logo 上传失败，可重试')
+      return
+    }
     ElMessage.error(error.message || '保存平台失败')
   } finally {
     saving.value = false
@@ -380,7 +431,69 @@ const resetForm = () => {
   secretLoading.value = false
   form.redirect_uri = ''
   form.logout_uri = ''
+  clearPendingLogo()
 }
+
+const selectClientLogo = (event) => {
+  const [file] = event.target.files || []
+  event.target.value = ''
+  if (!file) {
+    return
+  }
+  const supportedTypes = ['image/jpeg', 'image/png', 'image/webp']
+  if (!supportedTypes.includes(file.type)) {
+    ElMessage.error('仅支持 JPEG、PNG 或 WebP 图片')
+    return
+  }
+  if (file.size > 1 * 1024 * 1024) {
+    ElMessage.error('应用 Logo 大小不能超过 1MB')
+    return
+  }
+
+  clearPendingLogo()
+  pendingLogoFile.value = file
+  logoPreviewURL.value = URL.createObjectURL(file)
+}
+
+const clearPendingLogo = () => {
+  if (logoPreviewURL.value) {
+    URL.revokeObjectURL(logoPreviewURL.value)
+  }
+  logoPreviewURL.value = ''
+  pendingLogoFile.value = null
+}
+
+const clearClientLogo = async () => {
+  if (pendingLogoFile.value) {
+    clearPendingLogo()
+    return
+  }
+  if (!editingClient.value?.logo_url || saving.value) {
+    return
+  }
+
+  saving.value = true
+  try {
+    const response = await adminAPI.clearOAuthClientLogo(editingClient.value.id)
+    const client = response?.data?.client || { ...editingClient.value, logo_url: null }
+    editingClient.value = client
+    replaceClient(client)
+    ElMessage.success('应用 Logo 已清除')
+  } catch (error) {
+    ElMessage.error(error.message || '清除应用 Logo 失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+const replaceClient = (client) => {
+  const index = clients.value.findIndex((item) => item.id === client.id)
+  if (index >= 0) {
+    clients.value.splice(index, 1, client)
+  }
+}
+
+onBeforeUnmount(clearPendingLogo)
 
 const regenerateClientSecret = () => {
   form.client_secret = generateClientSecret()
@@ -655,6 +768,20 @@ button:disabled {
   grid-template-columns: minmax(160px, 0.9fr) minmax(150px, 0.7fr) minmax(240px, 1.2fr) 46px;
 }
 
+.client-identity,
+.detail-app-identity {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+
+.client-identity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .table-row strong,
 .table-row > span,
 .table-row time {
@@ -791,12 +918,38 @@ button:disabled {
 }
 
 .dialog label,
-.secret-field {
+.secret-field,
+.logo-field {
   display: grid;
   gap: 7px;
   color: #334155;
   font-size: 14px;
   font-weight: 750;
+}
+
+.logo-editor {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-actions {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo-actions small {
+  flex-basis: 100%;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.logo-file-input {
+  display: none;
 }
 
 .secret-row {
@@ -959,6 +1112,18 @@ button:disabled {
 }
 
 .detail-list-row > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.detail-list-row > .detail-app-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.detail-app-identity > div {
   display: grid;
   min-width: 0;
   gap: 4px;

@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/png"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,6 +25,27 @@ import (
 	"sso-server/model"
 	serviceauth "sso-server/service/auth"
 )
+
+type fakeImageStore struct {
+	objectKey string
+	imageURL  string
+	uploaded  []byte
+	deleted   []string
+}
+
+func (s *fakeImageStore) UploadImage(_ context.Context, _ string, _ string, body io.Reader, _ int64) (string, string, error) {
+	var err error
+	s.uploaded, err = io.ReadAll(body)
+	if err != nil {
+		return "", "", err
+	}
+	return s.objectKey, s.imageURL, nil
+}
+
+func (s *fakeImageStore) DeleteImage(_ context.Context, objectKey string) error {
+	s.deleted = append(s.deleted, objectKey)
+	return nil
+}
 
 func TestAdminUsers_RequiresConfiguredAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -144,6 +170,7 @@ func TestAdminOAuthClientSecret_ReturnsSecretSeparately(t *testing.T) {
 
 	createAdminTestUser(t, database, "admin-user", "admin@example.com")
 	createAdminTestSession(t, kvStore, "sid-admin", "admin-user")
+	logoURL := "https://cdn.example.com/logos/order.png"
 	if err := database.Create(&model.OAuthClient{
 		Name:         "订单系统",
 		ClientID:     "order-app",
@@ -151,6 +178,7 @@ func TestAdminOAuthClientSecret_ReturnsSecretSeparately(t *testing.T) {
 		HomepageURL:  "https://order.example.com",
 		RedirectURI:  "https://order.example.com/callback",
 		LogoutURI:    "https://order.example.com/logout",
+		LogoURL:      &logoURL,
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
 	}
@@ -159,6 +187,9 @@ func TestAdminOAuthClientSecret_ReturnsSecretSeparately(t *testing.T) {
 	listResp := doAdminJSONRequest(t, router, http.MethodGet, "/api/admin/oauth-clients", "sid-admin", "")
 	if bytes.Contains(listResp.Body.Bytes(), []byte("secret-1")) {
 		t.Fatalf("list response should not include secret, body=%s", listResp.Body.String())
+	}
+	if !bytes.Contains(listResp.Body.Bytes(), []byte(logoURL)) {
+		t.Fatalf("list response should include logo url, body=%s", listResp.Body.String())
 	}
 
 	secretResp := doAdminJSONRequest(t, router, http.MethodGet, "/api/admin/oauth-clients/1/secret", "sid-admin", "")
@@ -183,6 +214,49 @@ func TestAdminOAuthClientSecret_ReturnsSecretSeparately(t *testing.T) {
 	}
 }
 
+func TestAdminOAuthClientLogo_UploadClearAndSizeLimit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	database := newAdminTestDB(t)
+	kvStore := kv.NewMemoryStore()
+	cfg := &conf.Config{Admin: conf.AdminConfig{UserIDs: []string{"admin-user"}}}
+	createAdminTestUser(t, database, "admin-user", "admin@example.com")
+	createAdminTestSession(t, kvStore, "sid-admin", "admin-user")
+	if err := database.Create(&model.OAuthClient{
+		Name:         "订单系统",
+		ClientID:     "order-app",
+		ClientSecret: "secret",
+		HomepageURL:  "https://order.example.com",
+		RedirectURI:  "https://order.example.com/callback",
+	}).Error; err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+	store := &fakeImageStore{objectKey: "logos/order.png", imageURL: "https://cdn.example.com/logos/order.png"}
+	router := newAdminTestRouterWithImageStore(cfg, database, kvStore, store)
+
+	body, contentType := logoMultipartBody(t, "logo.png", pngLogo(t))
+	uploadResponse := doAdminMultipartRequest(t, router, http.MethodPost, "/api/admin/oauth-clients/1/logo", "sid-admin", &body, contentType)
+	if uploadResponse.Code != http.StatusOK {
+		t.Fatalf("expected logo upload 200, got %d, body=%s", uploadResponse.Code, uploadResponse.Body.String())
+	}
+	if len(store.uploaded) == 0 {
+		t.Fatal("expected logo object upload")
+	}
+
+	clearResponse := doAdminJSONRequest(t, router, http.MethodDelete, "/api/admin/oauth-clients/1/logo", "sid-admin", "")
+	if clearResponse.Code != http.StatusOK {
+		t.Fatalf("expected logo clear 200, got %d, body=%s", clearResponse.Code, clearResponse.Body.String())
+	}
+	if len(store.deleted) != 1 || store.deleted[0] != store.objectKey {
+		t.Fatalf("expected stored logo deletion, got %#v", store.deleted)
+	}
+
+	tooLargeBody, tooLargeContentType := logoMultipartBody(t, "logo.png", bytes.Repeat([]byte("a"), 1024*1024+1))
+	tooLargeResponse := doAdminMultipartRequest(t, router, http.MethodPost, "/api/admin/oauth-clients/1/logo", "sid-admin", &tooLargeBody, tooLargeContentType)
+	if tooLargeResponse.Code != http.StatusBadRequest || !bytes.Contains(tooLargeResponse.Body.Bytes(), []byte("1MB")) {
+		t.Fatalf("expected 1MB validation error, got %d, body=%s", tooLargeResponse.Code, tooLargeResponse.Body.String())
+	}
+}
+
 func TestAdminUserDetail_ReturnsProfileOverview(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	database := newAdminTestDB(t)
@@ -194,12 +268,14 @@ func TestAdminUserDetail_ReturnsProfileOverview(t *testing.T) {
 	createAdminTestUser(t, database, "admin-user", "admin@example.com")
 	createAdminTestUser(t, database, "target-user", "target@example.com")
 	createAdminTestSession(t, kvStore, "sid-admin", "admin-user")
+	logoURL := "https://cdn.example.com/logos/demo.png"
 	if err := database.Create(&model.OAuthClient{
 		Name:         "demo app",
 		ClientID:     "demo",
 		ClientSecret: "secret",
 		HomepageURL:  "https://demo.example.com",
 		RedirectURI:  "https://demo.example.com/callback",
+		LogoURL:      &logoURL,
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
 	}
@@ -235,8 +311,9 @@ func TestAdminUserDetail_ReturnsProfileOverview(t *testing.T) {
 					ID string `json:"id"`
 				} `json:"user"`
 				Applications []struct {
-					ClientID string `json:"client_id"`
-					Name     string `json:"name"`
+					ClientID string  `json:"client_id"`
+					Name     string  `json:"name"`
+					LogoURL  *string `json:"logo_url"`
 				} `json:"applications"`
 				ThirdPartyProviders []struct {
 					Provider string `json:"provider"`
@@ -253,6 +330,9 @@ func TestAdminUserDetail_ReturnsProfileOverview(t *testing.T) {
 	}
 	if len(resp.Data.Profile.Applications) != 1 || resp.Data.Profile.Applications[0].Name != "demo app" {
 		t.Fatalf("expected demo app, got %s", w.Body.String())
+	}
+	if resp.Data.Profile.Applications[0].LogoURL == nil || *resp.Data.Profile.Applications[0].LogoURL != logoURL {
+		t.Fatalf("expected application logo, got %s", w.Body.String())
 	}
 	if len(resp.Data.Profile.ThirdPartyProviders) != 2 || !resp.Data.Profile.ThirdPartyProviders[0].Bound {
 		t.Fatalf("expected github bound provider, got %s", w.Body.String())
@@ -273,9 +353,14 @@ func newAdminTestDB(t *testing.T) *gorm.DB {
 }
 
 func newAdminTestRouter(cfg *conf.Config, database *gorm.DB, kvStore kv.Store) *gin.Engine {
+	return newAdminTestRouterWithImageStore(cfg, database, kvStore, nil)
+}
+
+func newAdminTestRouterWithImageStore(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, imageStore *fakeImageStore) *gin.Engine {
 	handler := admin.NewAdminHandler(admin.AdminDeps{
-		Config: cfg,
-		DB:     database,
+		Config:     cfg,
+		DB:         database,
+		ImageStore: imageStore,
 	})
 
 	router := gin.New()
@@ -283,10 +368,51 @@ func newAdminTestRouter(cfg *conf.Config, database *gorm.DB, kvStore kv.Store) *
 	group.Use(serverhandler.RequireSessionAuth(kvStore), serverhandler.RequireAdmin(cfg))
 	group.GET("/users", handler.ListUsers)
 	group.GET("/users/:id", handler.GetUserDetail)
+	group.GET("/oauth-clients", handler.ListOAuthClients)
 	group.GET("/oauth-clients/:id/secret", handler.GetOAuthClientSecret)
 	group.POST("/oauth-clients", handler.CreateOAuthClient)
 	group.PUT("/oauth-clients/:id", handler.UpdateOAuthClient)
+	group.POST("/oauth-clients/:id/logo", handler.UploadOAuthClientLogo)
+	group.DELETE("/oauth-clients/:id/logo", handler.ClearOAuthClientLogo)
 	return router
+}
+
+func doAdminMultipartRequest(t *testing.T, router *gin.Engine, method string, path string, sessionID string, body *bytes.Buffer, contentType string) *httptest.ResponseRecorder {
+	t.Helper()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(method, path, body)
+	req.Header.Set("Content-Type", contentType)
+	req.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: sessionID})
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func logoMultipartBody(t *testing.T, filename string, content []byte) (bytes.Buffer, string) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	if _, err := part.Write(content); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	return body, writer.FormDataContentType()
+}
+
+func pngLogo(t *testing.T) []byte {
+	t.Helper()
+	imageValue := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	imageValue.SetRGBA(0, 0, color.RGBA{R: 15, G: 118, B: 110, A: 255})
+	var body bytes.Buffer
+	if err := png.Encode(&body, imageValue); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	return body.Bytes()
 }
 
 func createAdminTestUser(t *testing.T, database *gorm.DB, id string, email string) {

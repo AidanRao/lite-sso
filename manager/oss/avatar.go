@@ -3,7 +3,11 @@ package oss
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"net/url"
 	"path"
@@ -12,16 +16,60 @@ import (
 	aliyunoss "github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss"
 	"github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss/credentials"
 	"github.com/google/uuid"
+	"golang.org/x/image/webp"
 
 	"sso-server/conf"
 )
 
 const avatarCacheControl = "public, max-age=31536000, immutable"
 
-// AvatarStore stores and removes uploaded user avatars.
-type AvatarStore interface {
-	UploadAvatar(ctx context.Context, contentType string, extension string, body io.Reader, size int64) (string, string, error)
-	DeleteAvatar(ctx context.Context, objectKey string) error
+type imageType struct {
+	contentType  string
+	extension    string
+	decodeConfig func(io.Reader) (image.Config, error)
+}
+
+var supportedImageTypes = map[string]imageType{
+	"jpeg": {
+		contentType:  "image/jpeg",
+		extension:    ".jpg",
+		decodeConfig: jpeg.DecodeConfig,
+	},
+	"png": {
+		contentType:  "image/png",
+		extension:    ".png",
+		decodeConfig: png.DecodeConfig,
+	},
+	"webp": {
+		contentType:  "image/webp",
+		extension:    ".webp",
+		decodeConfig: webp.DecodeConfig,
+	},
+}
+
+// ImageStore stores and removes uploaded public images.
+type ImageStore interface {
+	UploadImage(ctx context.Context, contentType string, extension string, body io.Reader, size int64) (string, string, error)
+	DeleteImage(ctx context.Context, objectKey string) error
+}
+
+// ValidateImage verifies a supported image and returns its canonical storage metadata.
+func ValidateImage(file io.ReadSeeker) (string, string, error) {
+	_, format, err := image.DecodeConfig(file)
+	if err != nil {
+		return "", "", err
+	}
+	imageType, ok := supportedImageTypes[format]
+	if !ok {
+		return "", "", errors.New("unsupported image format")
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", "", err
+	}
+	if _, err := imageType.decodeConfig(file); err != nil {
+		return "", "", err
+	}
+	return imageType.contentType, imageType.extension, nil
 }
 
 type objectClient interface {
@@ -29,7 +77,7 @@ type objectClient interface {
 	DeleteObject(ctx context.Context, request *aliyunoss.DeleteObjectRequest, optFns ...func(*aliyunoss.Options)) (*aliyunoss.DeleteObjectResult, error)
 }
 
-// AvatarStorage stores avatar objects using a configured Alibaba Cloud OSS bucket.
+// AvatarStorage stores public image objects using the configured Alibaba Cloud OSS bucket.
 type AvatarStorage struct {
 	bucket        string
 	avatarPrefix  string
@@ -37,7 +85,7 @@ type AvatarStorage struct {
 	client        objectClient
 }
 
-// NewAvatarStorage builds an avatar store from OSS configuration.
+// NewAvatarStorage builds an image store from the existing OSS configuration.
 func NewAvatarStorage(cfg conf.OSSConfig) (*AvatarStorage, error) {
 	publicBaseURL, err := parsePublicBaseURL(cfg.PublicBaseURL)
 	if err != nil {
@@ -74,8 +122,8 @@ func newAvatarStorage(cfg conf.OSSConfig, client objectClient, publicBaseURL *ur
 	}, nil
 }
 
-// UploadAvatar uploads an avatar and returns its object key and public URL.
-func (s *AvatarStorage) UploadAvatar(ctx context.Context, contentType string, extension string, body io.Reader, size int64) (string, string, error) {
+// UploadImage uploads an image and returns its object key and public URL.
+func (s *AvatarStorage) UploadImage(ctx context.Context, contentType string, extension string, body io.Reader, size int64) (string, string, error) {
 	if body == nil {
 		return "", "", fmt.Errorf("avatar body is required")
 	}
@@ -99,8 +147,8 @@ func (s *AvatarStorage) UploadAvatar(ctx context.Context, contentType string, ex
 	return objectKey, publicURL.String(), nil
 }
 
-// DeleteAvatar removes an avatar object by its internal key.
-func (s *AvatarStorage) DeleteAvatar(ctx context.Context, objectKey string) error {
+// DeleteImage removes an image object by its internal key.
+func (s *AvatarStorage) DeleteImage(ctx context.Context, objectKey string) error {
 	if strings.TrimSpace(objectKey) == "" {
 		return nil
 	}

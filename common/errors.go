@@ -68,6 +68,7 @@ var (
 	ErrOAuthClientExists        = errors.New("oauth client already exists")
 	ErrOAuthClientNotFound      = errors.New("oauth client not found")
 	ErrInvalidOAuthClient       = errors.New("invalid oauth client")
+	ErrLogoStorageUnavailable   = errors.New("logo storage unavailable")
 )
 
 // QR Code related errors
