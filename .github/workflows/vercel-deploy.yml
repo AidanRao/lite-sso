@@ -42,6 +42,17 @@ jobs:
           : "${VERCEL_TOKEN:?VERCEL_TOKEN is not configured for the ${VERCEL_ENVIRONMENT} environment}"
           : "${VERCEL_ORG_ID:?VERCEL_ORG_ID is not configured for the ${VERCEL_ENVIRONMENT} environment}"
           : "${VERCEL_PROJECT_ID:?VERCEL_PROJECT_ID is not configured for the ${VERCEL_ENVIRONMENT} environment}"
+          if ! vercel whoami --non-interactive --no-color >/dev/null 2>&1; then
+            echo "::error title=Unsupported Vercel token scope::VERCEL_TOKEN must be a valid team-scoped token. Vercel CLI 59.x cannot use a project-scoped token with pull or env run."
+            exit 1
+          fi
+          if ! vercel project inspect "$VERCEL_PROJECT_ID" \
+            --scope="$VERCEL_ORG_ID" \
+            --non-interactive \
+            --no-color >/dev/null 2>&1; then
+            echo "::error title=Vercel project access failed::VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID do not resolve to an accessible project."
+            exit 1
+          fi
 
       - name: Pull project settings
         shell: bash
