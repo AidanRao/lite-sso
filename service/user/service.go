@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 	serviceauth "sso-server/service/auth"
@@ -180,8 +181,11 @@ func (s *UserService) UploadAvatar(ctx context.Context, userID string, contentTy
 		return nil, common.ErrUserNotFound
 	}
 
+	startedAt := time.Now()
+	log.Printf("avatar upload started: content_type=%s size_bytes=%d", contentType, size)
 	objectKey, avatarURL, err := s.imageStore.UploadImage(ctx, contentType, extension, body, size)
 	if err != nil {
+		log.Printf("avatar upload failed: stage=oss_put duration_ms=%d err=%v", time.Since(startedAt).Milliseconds(), err)
 		return nil, err
 	}
 
@@ -189,17 +193,21 @@ func (s *UserService) UploadAvatar(ctx context.Context, userID string, contentTy
 	user.AvatarURL = &avatarURL
 	user.AvatarObjectKey = &objectKey
 	if err := userRepo.Update(ctx, user); err != nil {
+		cleanupFailed := false
 		if deleteErr := s.imageStore.DeleteImage(ctx, objectKey); deleteErr != nil {
-			log.Printf("avatar upload cleanup failed: stage=database_update")
+			cleanupFailed = true
 		}
+		log.Printf("avatar upload failed: stage=database_update duration_ms=%d cleanup_new_object_failed=%t err=%v", time.Since(startedAt).Milliseconds(), cleanupFailed, err)
 		return nil, err
 	}
 
+	previousObjectCleanupFailed := false
 	if previousObjectKey != nil && *previousObjectKey != "" && *previousObjectKey != objectKey {
 		if err := s.imageStore.DeleteImage(ctx, *previousObjectKey); err != nil {
-			log.Printf("avatar replacement cleanup failed: stage=delete_previous")
+			previousObjectCleanupFailed = true
 		}
 	}
+	log.Printf("avatar upload completed: duration_ms=%d previous_object_cleanup_failed=%t", time.Since(startedAt).Milliseconds(), previousObjectCleanupFailed)
 
 	return dto.ToUserResponse(user), nil
 }
