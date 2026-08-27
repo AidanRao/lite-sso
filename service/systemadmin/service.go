@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/url"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -109,26 +110,34 @@ func (s *AdminService) UploadOAuthClientLogo(ctx context.Context, id uint, conte
 		return nil, common.ErrOAuthClientNotFound
 	}
 
+	startedAt := time.Now()
+	log.Printf("oauth client logo upload started: client_id=%d content_type=%s size_bytes=%d", id, contentType, size)
 	objectKey, logoURL, err := s.imageStore.UploadImage(ctx, contentType, extension, body, size)
 	if err != nil {
+		log.Printf("oauth client logo upload failed: client_id=%d stage=oss_put duration_ms=%d err=%v", id, time.Since(startedAt).Milliseconds(), err)
 		return nil, err
 	}
+	log.Printf("oauth client logo upload oss completed: client_id=%d duration_ms=%d", id, time.Since(startedAt).Milliseconds())
 
 	previousObjectKey := client.LogoObjectKey
 	client.LogoURL = &logoURL
 	client.LogoObjectKey = &objectKey
 	if err := s.clientRepo.Update(ctx, client); err != nil {
+		cleanupFailed := false
 		if deleteErr := s.imageStore.DeleteImage(ctx, objectKey); deleteErr != nil {
-			log.Printf("oauth client logo upload cleanup failed: stage=database_update")
+			cleanupFailed = true
 		}
+		log.Printf("oauth client logo upload failed: client_id=%d stage=database_update duration_ms=%d cleanup_new_object_failed=%t err=%v", id, time.Since(startedAt).Milliseconds(), cleanupFailed, err)
 		return nil, err
 	}
 
+	previousObjectCleanupFailed := false
 	if previousObjectKey != nil && *previousObjectKey != "" && *previousObjectKey != objectKey {
 		if err := s.imageStore.DeleteImage(ctx, *previousObjectKey); err != nil {
-			log.Printf("oauth client logo replacement cleanup failed: stage=delete_previous")
+			previousObjectCleanupFailed = true
 		}
 	}
+	log.Printf("oauth client logo upload completed: client_id=%d duration_ms=%d previous_object_cleanup_failed=%t", id, time.Since(startedAt).Milliseconds(), previousObjectCleanupFailed)
 
 	response := toOAuthClientResponse(client)
 	return &response, nil
