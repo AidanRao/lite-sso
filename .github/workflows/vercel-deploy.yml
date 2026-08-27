@@ -6,16 +6,22 @@ on:
       - dev
       - main
 
+permissions:
+  contents: read
+
 concurrency:
   group: sso-vercel-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  deploy-preview:
-    if: github.ref_name == 'dev'
+  deploy:
+    name: Deploy ${{ github.ref_name == 'main' && 'production' || 'preview' }}
     runs-on: ubuntu-latest
-    environment: preview
+    timeout-minutes: 30
+    environment: ${{ github.ref_name == 'main' && 'production' || 'preview' }}
     env:
+      APP_ENVIRONMENT: ${{ github.ref_name == 'main' && 'prod' || 'test' }}
+      VERCEL_ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'preview' }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -30,33 +36,49 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@59.5.0
 
-      - name: Apply preview migrations
-        run: vercel env run --environment=preview --git-branch=dev -- env ENV=prod GOCACHE="$RUNNER_TEMP/go-cache" go run ./cmd/migrate up
+      - name: Validate Vercel configuration
+        shell: bash
+        run: |
+          : "${VERCEL_TOKEN:?VERCEL_TOKEN is not configured for the ${VERCEL_ENVIRONMENT} environment}"
+          : "${VERCEL_ORG_ID:?VERCEL_ORG_ID is not configured for the ${VERCEL_ENVIRONMENT} environment}"
+          : "${VERCEL_PROJECT_ID:?VERCEL_PROJECT_ID is not configured for the ${VERCEL_ENVIRONMENT} environment}"
 
-      - name: Deploy preview
-        run: vercel deploy --yes
+      - name: Pull project settings
+        shell: bash
+        run: |
+          pull_args=(
+            --yes
+            "--environment=$VERCEL_ENVIRONMENT"
+            "--project=$VERCEL_PROJECT_ID"
+          )
+          if [[ "$VERCEL_ENVIRONMENT" == "preview" ]]; then
+            pull_args+=("--git-branch=$GITHUB_REF_NAME")
+          fi
+          vercel pull "${pull_args[@]}"
 
-  deploy-production:
-    if: github.ref_name == 'main'
-    runs-on: ubuntu-latest
-    environment: production
-    env:
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Apply migrations
+        shell: bash
+        run: |
+          env_args=(
+            "--environment=$VERCEL_ENVIRONMENT"
+            "--project=$VERCEL_PROJECT_ID"
+          )
+          if [[ "$VERCEL_ENVIRONMENT" == "preview" ]]; then
+            env_args+=("--git-branch=$GITHUB_REF_NAME")
+          fi
+          vercel env run "${env_args[@]}" -- env \
+            ENV="$APP_ENVIRONMENT" \
+            GOCACHE="$RUNNER_TEMP/go-cache" \
+            go run ./cmd/migrate up
 
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.x'
-
-      - name: Install Vercel CLI
-        run: npm install --global vercel@59.5.0
-
-      - name: Apply production migrations
-        run: vercel env run --environment=production -- env ENV=prod GOCACHE="$RUNNER_TEMP/go-cache" go run ./cmd/migrate up
-
-      - name: Deploy production
-        run: vercel deploy --prod --yes
+      - name: Deploy
+        shell: bash
+        run: |
+          deploy_args=(
+            --yes
+            "--project=$VERCEL_PROJECT_ID"
+          )
+          if [[ "$VERCEL_ENVIRONMENT" == "production" ]]; then
+            deploy_args+=(--prod)
+          fi
+          vercel deploy "${deploy_args[@]}"
