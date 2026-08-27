@@ -407,8 +407,10 @@ const logout = () => {
 }
 
 const bindProvider = (provider) => {
-  const redirect = encodeURIComponent('/profile?bind=success')
-  window.location.href = `/api/user/third/${provider}/bind?redirect=${redirect}`
+  router.push({
+    name: 'ThirdPartyBindPreview',
+    query: { provider }
+  })
 }
 
 const unbindProvider = async (provider) => {

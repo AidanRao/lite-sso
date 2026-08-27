@@ -53,3 +53,7 @@ func KeySession(sessionID string) string {
 func KeyOAuthState(state string) string {
 	return fmt.Sprintf("oauth:state:%s", state)
 }
+
+func KeyOAuthPendingBinding(bindingID string) string {
+	return fmt.Sprintf("oauth:pending-binding:%s", bindingID)
+}

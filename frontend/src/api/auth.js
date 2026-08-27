@@ -133,6 +133,14 @@ export const userAPI = {
 
   unbindThirdParty: (provider) => {
     return api.delete(`/user/third/${provider}`)
+  },
+
+  getThirdPartyBindingPreview: (bindingID) => {
+    return api.get(`/user/third/bindings/${encodeURIComponent(bindingID)}`)
+  },
+
+  confirmThirdPartyBinding: (bindingID) => {
+    return api.post(`/user/third/bindings/${encodeURIComponent(bindingID)}/confirm`)
   }
 }
 

@@ -111,6 +111,10 @@ func (s *Server) registerRoutes() {
 			userGroup.POST("/register", userHandler.Register)
 			userGroup.POST("/password/reset", userHandler.ResetPassword)
 
+			userBrowserProtected := userGroup.Group("")
+			userBrowserProtected.Use(authRequiredOrRedirect)
+			userBrowserProtected.GET("/third/:provider/bind", oauthHandler.ThirdPartyBind)
+
 			userProtected := userGroup.Group("")
 			userProtected.Use(authRequired)
 			userProtected.GET("/profile", userHandler.GetProfile)
@@ -118,7 +122,8 @@ func (s *Server) registerRoutes() {
 			userProtected.POST("/avatar", userHandler.UploadAvatar)
 			userProtected.GET("/devices", userHandler.GetLoginDevices)
 			userProtected.DELETE("/devices/:device_id", userHandler.RevokeLoginDevice)
-			userProtected.GET("/third/:provider/bind", oauthHandler.ThirdPartyBind)
+			userProtected.GET("/third/bindings/:binding_id", oauthHandler.GetThirdPartyBindingPreview)
+			userProtected.POST("/third/bindings/:binding_id/confirm", oauthHandler.ConfirmThirdPartyBinding)
 			userProtected.DELETE("/third/:provider", userHandler.UnbindThirdParty)
 		}
 

@@ -36,6 +36,11 @@ const routes = [
     component: Profile
   },
   {
+    path: '/profile/third-party-bind',
+    name: 'ThirdPartyBindPreview',
+    component: () => import('../views/ThirdPartyBindPreview.vue')
+  },
+  {
     path: '/admin',
     name: 'Admin',
     component: () => import('../views/Admin.vue')

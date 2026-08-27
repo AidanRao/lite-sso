@@ -8,6 +8,7 @@ const (
 	Unauthorized       Code = 401
 	Forbidden          Code = 403
 	NotFound           Code = 404
+	Conflict           Code = 409
 	TooManyRequests    Code = 429
 	InternalServer     Code = 500
 	ServiceUnavailable Code = 503

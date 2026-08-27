@@ -130,7 +130,7 @@ func TestFeishuTokenResponse_TopLevelAccessToken(t *testing.T) {
 	}
 }
 
-func TestOAuthService_ThirdPartyBind_BindsCurrentUser(t *testing.T) {
+func Test_OAuthService_ThirdPartyBind_PreviewsBeforeConfirmation(t *testing.T) {
 	ctx := context.Background()
 	gormDB := newOAuthTestDB(t)
 	if err := gormDB.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {
@@ -157,21 +157,79 @@ func TestOAuthService_ThirdPartyBind_BindsCurrentUser(t *testing.T) {
 		t.Fatalf("parse auth url: %v", err)
 	}
 
-	result, err := service.HandleThirdPartyCallbackWithState(ctx, githubProvider, "code", parsed.Query().Get("state"))
+	state := parsed.Query().Get("state")
+	if !service.IsThirdPartyBindingState(ctx, githubProvider, state) {
+		t.Fatal("expected binding state to be recognized before callback")
+	}
+
+	result, err := service.HandleThirdPartyCallbackWithState(ctx, githubProvider, "code", state)
 	if err != nil {
 		t.Fatalf("handle bind callback: %v", err)
 	}
+	if service.IsThirdPartyBindingState(ctx, githubProvider, state) {
+		t.Fatal("expected callback to consume binding state")
+	}
 
-	if result.Action != ThirdPartyActionBind || result.User.ID != "u1" {
+	if result.Action != ThirdPartyActionBind || result.User.ID != "u1" || result.PendingBindingID == "" {
 		t.Fatalf("unexpected bind result: %#v", result)
 	}
 
 	var binding model.UserThirdParty
+	if err := gormDB.First(&binding, "user_id = ? AND provider = ?", "u1", githubProvider).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected no binding before confirmation, got %v", err)
+	}
+
+	preview, err := service.GetThirdPartyBindingPreview(ctx, "u1", result.PendingBindingID)
+	if err != nil {
+		t.Fatalf("get binding preview: %v", err)
+	}
+	if preview.Provider != githubProvider || preview.Username != "alice" {
+		t.Fatalf("unexpected preview: %#v", preview)
+	}
+
+	if _, err := service.ConfirmThirdPartyBinding(ctx, "u1", result.PendingBindingID); err != nil {
+		t.Fatalf("confirm binding: %v", err)
+	}
 	if err := gormDB.First(&binding, "user_id = ? AND provider = ?", "u1", githubProvider).Error; err != nil {
-		t.Fatalf("expected binding: %v", err)
+		t.Fatalf("expected confirmed binding: %v", err)
 	}
 	if binding.ProviderUID != "gh_1" {
 		t.Fatalf("expected provider uid gh_1, got %q", binding.ProviderUID)
+	}
+	if _, err := service.GetThirdPartyBindingPreview(ctx, "u1", result.PendingBindingID); !errors.Is(err, common.ErrThirdPartyBindingNotFound) {
+		t.Fatalf("expected consumed preview, got %v", err)
+	}
+}
+
+func Test_OAuthService_ThirdPartyBind_RejectsPreviewOwnedByAnotherUser(t *testing.T) {
+	ctx := context.Background()
+	gormDB := newOAuthTestDB(t)
+	for _, userID := range []string{"u1", "u2"} {
+		if err := gormDB.Create(&model.User{ID: userID, IsActive: true}).Error; err != nil {
+			t.Fatalf("create user %s: %v", userID, err)
+		}
+	}
+
+	kvStore := kv.NewMemoryStore()
+	service := NewOAuthService(&conf.Config{}, gormDB, kvStore, db.NewUserRepository(gormDB))
+	service.providers[githubProvider] = &fakeThirdPartyProvider{
+		profile: &thirdPartyProfile{Provider: githubProvider, ProviderUID: "gh_1"},
+	}
+	authURL, err := service.HandleThirdPartyBind(ctx, "u1", githubProvider, "/profile")
+	if err != nil {
+		t.Fatalf("start third party bind: %v", err)
+	}
+	parsed, err := url.Parse(authURL)
+	if err != nil {
+		t.Fatalf("parse auth url: %v", err)
+	}
+	result, err := service.HandleThirdPartyCallbackWithState(ctx, githubProvider, "code", parsed.Query().Get("state"))
+	if err != nil {
+		t.Fatalf("handle callback: %v", err)
+	}
+
+	if _, err := service.GetThirdPartyBindingPreview(ctx, "u2", result.PendingBindingID); !errors.Is(err, common.ErrThirdPartyBindingNotFound) {
+		t.Fatalf("expected inaccessible preview, got %v", err)
 	}
 }
 

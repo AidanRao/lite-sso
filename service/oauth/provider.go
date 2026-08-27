@@ -14,11 +14,11 @@ type thirdPartyProvider interface {
 }
 
 type thirdPartyProfile struct {
-	Provider    string
-	ProviderUID string
-	Email       string
-	Username    string
-	AvatarURL   string
+	Provider    string `json:"provider"`
+	ProviderUID string `json:"provider_uid"`
+	Email       string `json:"email"`
+	Username    string `json:"username"`
+	AvatarURL   string `json:"avatar_url"`
 }
 
 func stringPtr(s string) *string {
