@@ -1,0 +1,64 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+
+concurrency:
+  group: sso-vercel-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-preview:
+    if: github.ref_name == 'dev'
+    runs-on: ubuntu-latest
+    environment: preview
+    env:
+      GOCACHE: ${{ runner.temp }}/go-cache
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@59.5.0
+
+      - name: Apply preview migrations
+        run: vercel env run --environment=preview --git-branch=dev -- env ENV=prod go run ./cmd/migrate up
+
+      - name: Deploy preview
+        run: vercel deploy --yes
+
+  deploy-production:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      GOCACHE: ${{ runner.temp }}/go-cache
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@59.5.0
+
+      - name: Apply production migrations
+        run: vercel env run --environment=production -- env ENV=prod go run ./cmd/migrate up
+
+      - name: Deploy production
+        run: vercel deploy --prod --yes
