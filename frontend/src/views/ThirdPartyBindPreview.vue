@@ -39,7 +39,7 @@
           <p class="description">
             {{ currentStep === 1
               ? `系统将跳转至 ${providerName} 进行授权。授权完成后，请确认将要绑定的账号资料。`
-              : '请确认以下第三方账号资料属于你。确认后，该账号将可以用于登录 Lite SSO。' }}
+              : '请确认以下第三方账号资料属于你。' }}
           </p>
         </header>
 
@@ -64,8 +64,9 @@
             <span></span>
           </div>
 
-          <article class="identity-card">
+          <article class="identity-card third-party-card">
             <span class="identity-label">{{ currentStep === 1 ? '第三方平台' : '第三方账号' }}</span>
+            <ThirdPartyProviderIcon v-if="currentStep === 2" class="provider-corner-icon" :provider="selectedProvider" :size="24" />
             <div class="identity-content">
               <div class="avatar provider-avatar" aria-hidden="true">
                 <img v-if="preview?.avatar_url" :src="preview.avatar_url" alt="" />
@@ -73,10 +74,7 @@
                 <span v-else>{{ providerAccountInitial }}</span>
               </div>
               <div class="identity-copy">
-                <strong>
-                  <ThirdPartyProviderIcon v-if="currentStep === 2" :provider="selectedProvider" :size="20" />
-                  {{ currentStep === 1 ? providerName : (preview.username || '未提供用户名') }}
-                </strong>
+                <strong>{{ currentStep === 1 ? providerName : (preview.username || '未提供用户名') }}</strong>
                 <span>{{ currentStep === 1 ? `即将跳转至 ${providerName} 完成授权` : (preview.email || '该账号未提供邮箱') }}</span>
               </div>
             </div>
@@ -383,6 +381,16 @@ h1 {
   box-sizing: border-box;
   min-height: 176px;
   padding: 24px 20px;
+}
+
+.third-party-card {
+  position: relative;
+}
+
+.provider-corner-icon {
+  position: absolute;
+  right: 20px;
+  top: 22px;
 }
 
 .identity-label {
