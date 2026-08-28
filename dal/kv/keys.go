@@ -57,3 +57,11 @@ func KeyOAuthState(state string) string {
 func KeyOAuthPendingBinding(bindingID string) string {
 	return fmt.Sprintf("oauth:pending-binding:%s", bindingID)
 }
+
+func KeyWebAuthnCeremony(ceremonyID string) string {
+	return fmt.Sprintf("webauthn:ceremony:%s", ceremonyID)
+}
+
+func KeyPasskeyReauthGrant(tokenHash string) string {
+	return fmt.Sprintf("passkey:reauth:%s", tokenHash)
+}

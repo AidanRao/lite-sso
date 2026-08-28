@@ -18,6 +18,14 @@ auth:
   password_device_fail_window: "10m"
   password_ip_fail_window: "1h"
 
+passkey:
+  rp_id: "sso.aidanrao.top"
+  rp_origins:
+    - "https://sso.aidanrao.top"
+  rp_display_name: "SSO"
+  ceremony_ttl: "5m"
+  reauth_token_ttl: "5m"
+
 message_center:
   url: "https://message-api.aidanrao.top"
   sender_key: "sso"

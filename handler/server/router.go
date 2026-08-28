@@ -11,9 +11,11 @@ import (
 	"sso-server/handler/api/admin"
 	"sso-server/handler/api/auth"
 	"sso-server/handler/api/oauth"
+	passkeyapi "sso-server/handler/api/passkey"
 	"sso-server/handler/api/user"
 	"sso-server/handler/health"
 	"sso-server/handler/oauth2"
+	"sso-server/service/reauth"
 )
 
 func (s *Server) registerRoutes() {
@@ -51,6 +53,10 @@ func (s *Server) registerRoutes() {
 		MessageSender: s.messageCenterClient,
 		OAuth2:        o,
 	})
+	reauthService := reauth.NewService(s.cfg, kvStore)
+	passkeyHandler := passkeyapi.NewHandler(passkeyapi.Deps{
+		Config: s.cfg, DB: db.DB, KV: kvStore, Auth: authHandler.Service(),
+	}, reauthService)
 
 	userHandler := user.NewUserHandler(user.UserDeps{
 		Config:     s.cfg,
@@ -76,6 +82,7 @@ func (s *Server) registerRoutes() {
 	authRequired := RequireSessionAuth(authHandler.Service())
 	authRequiredOrRedirect := RequireSessionAuthOrRedirect(authHandler.Service())
 	adminRequired := RequireAdmin(s.cfg)
+	passkeyRequired := RequirePasskeyReauth(reauthService)
 
 	apiGroup := s.engine.Group("/api")
 	{
@@ -123,8 +130,16 @@ func (s *Server) registerRoutes() {
 			userProtected.GET("/devices", userHandler.GetLoginDevices)
 			userProtected.DELETE("/devices/:device_id", userHandler.RevokeLoginDevice)
 			userProtected.GET("/third/bindings/:binding_id", oauthHandler.GetThirdPartyBindingPreview)
-			userProtected.POST("/third/bindings/:binding_id/confirm", oauthHandler.ConfirmThirdPartyBinding)
-			userProtected.DELETE("/third/:provider", userHandler.UnbindThirdParty)
+			userProtected.POST("/third/bindings/:binding_id/confirm", passkeyRequired, oauthHandler.ConfirmThirdPartyBinding)
+			userProtected.DELETE("/third/:provider", passkeyRequired, userHandler.UnbindThirdParty)
+			userProtected.GET("/passkeys", passkeyHandler.List)
+			userProtected.POST("/passkeys/registration/email/send", passkeyHandler.SendRegistrationEmail)
+			userProtected.POST("/passkeys/registration/options", passkeyHandler.RegistrationOptions)
+			userProtected.POST("/passkeys/registration/verify", passkeyHandler.RegistrationVerify)
+			userProtected.PATCH("/passkeys/:id", passkeyHandler.Rename)
+			userProtected.DELETE("/passkeys/:id", passkeyRequired, passkeyHandler.Delete)
+			userProtected.POST("/reauth/passkey/options", passkeyHandler.ReauthOptions)
+			userProtected.POST("/reauth/passkey/verify", passkeyHandler.ReauthVerify)
 		}
 
 		adminGroup := apiGroup.Group("/admin")

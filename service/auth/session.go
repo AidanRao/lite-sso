@@ -211,7 +211,13 @@ func (s *AuthService) RefreshTokens(ctx context.Context, refreshToken string) (*
 	}
 	repository := db.NewUserSessionRepository(s.db)
 	session, err := repository.FindByID(ctx, parts[0])
-	if err != nil || session.RevokedAt != nil || time.Now().After(session.ExpiresAt) {
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.ErrRefreshTokenInvalid
+		}
+		return nil, err
+	}
+	if session.RevokedAt != nil || time.Now().After(session.ExpiresAt) {
 		return nil, common.ErrRefreshTokenInvalid
 	}
 	if subtle.ConstantTimeCompare([]byte(session.RefreshTokenHash), []byte(refreshHash(refreshToken))) != 1 {
@@ -226,8 +232,9 @@ func (s *AuthService) RefreshTokens(ctx context.Context, refreshToken string) (*
 	if err := repository.Rotate(ctx, session.ID, session.RefreshTokenHash, refreshHash(newRefresh), now); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			_ = repository.Revoke(ctx, session.ID, "refresh_token_reuse", now)
+			return nil, common.ErrRefreshTokenInvalid
 		}
-		return nil, common.ErrRefreshTokenInvalid
+		return nil, err
 	}
 	access, expiresIn, err := s.issueAccessToken(session.UserID, session.ID)
 	if err != nil {

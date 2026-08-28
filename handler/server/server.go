@@ -25,6 +25,9 @@ func New(cfg *conf.Config) (*Server, error) {
 	if err := cfg.ValidateOSS(); err != nil {
 		return nil, err
 	}
+	if err := cfg.ValidatePasskey(); err != nil {
+		return nil, err
+	}
 	messageCenterClient, err := newMessageCenterClient(cfg)
 	if err != nil {
 		return nil, err

@@ -26,6 +26,15 @@ func (s *RedisStore) Get(ctx context.Context, key string) (string, error) {
 	return val, err
 }
 
+// Take atomically reads and removes a value using Redis GETDEL.
+func (s *RedisStore) Take(ctx context.Context, key string) (string, error) {
+	val, err := s.client.GetDel(ctx, key).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", ErrNotFound
+	}
+	return val, err
+}
+
 func (s *RedisStore) Set(ctx context.Context, key string, value string, ttl time.Duration) error {
 	return s.client.Set(ctx, key, value, ttl).Err()
 }

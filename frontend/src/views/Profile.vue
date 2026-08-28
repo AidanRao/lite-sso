@@ -93,14 +93,40 @@
               v-else
               class="unbind-button"
               type="button"
-              :disabled="!user?.email || Boolean(unbindingProvider)"
-              :title="user?.email ? `撤销 ${provider.name} 授权` : '请先设置邮箱，再撤销第三方授权'"
+			  :disabled="Boolean(unbindingProvider)"
+			  :title="`撤销 ${provider.name} 授权`"
               @click="unbindProvider(provider)"
             >
               {{ unbindingProvider === provider.id ? '撤销中' : '撤销授权' }}
             </button>
           </div>
         </div>
+      </article>
+
+      <article class="panel passkey-panel">
+        <header class="panel-header">
+          <div>
+            <h2>Passkey</h2>
+            <p class="panel-description">用于确认绑定、解绑和其他敏感操作</p>
+          </div>
+          <button class="bind-button" type="button" @click="enrollmentOpen = true">
+            <Plus :size="16" /> 注册 Passkey
+          </button>
+        </header>
+
+        <div v-if="passkeysLoading" class="empty-state">正在加载 Passkey</div>
+        <div v-else-if="passkeys.length" class="passkey-list">
+          <div v-for="passkey in passkeys" :key="passkey.id" class="passkey-row">
+            <div class="passkey-icon"><Fingerprint :size="21" /></div>
+            <div class="passkey-copy">
+              <strong>{{ passkey.name }}</strong>
+              <span>{{ passkey.backup_state ? '已同步' : (passkey.backup_eligible ? '可同步' : '仅此设备') }} · 最近使用 {{ formatDate(passkey.last_used_at) }}</span>
+            </div>
+            <button class="icon-button" type="button" title="重命名" @click="renamePasskey(passkey)"><Pencil :size="16" /></button>
+            <button class="icon-button danger-icon" type="button" title="删除" @click="deletePasskey(passkey)"><Trash2 :size="16" /></button>
+          </div>
+        </div>
+        <div v-else class="empty-state passkey-empty">尚未注册 Passkey</div>
       </article>
 
       <article class="panel devices-panel">
@@ -217,6 +243,8 @@
         </footer>
       </form>
     </div>
+
+    <PasskeyEnrollmentDialog :visible="enrollmentOpen" @close="enrollmentOpen = false" @registered="handlePasskeyRegistered" />
   </main>
 </template>
 
@@ -224,11 +252,13 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Copy, Monitor, Pencil, Smartphone, X } from 'lucide-vue-next'
-import { userAPI } from '../api/auth'
+import { Check, Copy, Fingerprint, Monitor, Pencil, Plus, Smartphone, Trash2, X } from 'lucide-vue-next'
+import { passkeyAPI, userAPI } from '../api/auth'
 import ApplicationLogo from '../components/ApplicationLogo.vue'
+import PasskeyEnrollmentDialog from '../components/PasskeyEnrollmentDialog.vue'
 import ThirdPartyProviderIcon from '../components/ThirdPartyProviderIcon.vue'
 import { submitGlobalLogout } from '../utils/logout'
+import { isPasskeyCancelled, withPasskeyReauth } from '../utils/passkeyReauth'
 
 const router = useRouter()
 const route = useRoute()
@@ -248,6 +278,9 @@ const avatarUploading = ref(false)
 const idCopied = ref(false)
 const unbindingProvider = ref('')
 const revokingDevice = ref('')
+const passkeys = ref([])
+const passkeysLoading = ref(true)
+const enrollmentOpen = ref(false)
 let copyTimer = null
 
 const providerMeta = [
@@ -308,6 +341,59 @@ const loadDevices = async () => {
     ElMessage.error(devicesError.value)
   } finally {
     devicesLoading.value = false
+  }
+}
+
+const loadPasskeys = async () => {
+  passkeysLoading.value = true
+  try {
+    const result = await passkeyAPI.list()
+    passkeys.value = Array.isArray(result?.data?.passkeys) ? result.data.passkeys : []
+  } catch (error) {
+    passkeys.value = []
+    if (error.status !== 401) ElMessage.error(error.message || 'Passkey 加载失败')
+  } finally {
+    passkeysLoading.value = false
+  }
+}
+
+const handlePasskeyRegistered = async () => {
+  enrollmentOpen.value = false
+  await loadPasskeys()
+  ElMessage.success('Passkey 注册成功')
+}
+
+const renamePasskey = async (passkey) => {
+  try {
+    const { value } = await ElMessageBox.prompt('输入便于识别的名称', '重命名 Passkey', {
+      inputValue: passkey.name,
+      inputValidator: (name) => Boolean(name?.trim()) || '名称不能为空'
+    })
+    await passkeyAPI.rename(passkey.id, value.trim())
+    passkey.name = value.trim()
+    ElMessage.success('Passkey 名称已更新')
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(error.message || '重命名失败')
+  }
+}
+
+const deletePasskey = async (passkey) => {
+  const isLast = passkeys.value.length === 1
+  try {
+    await ElMessageBox.confirm(
+      isLast
+        ? '这是最后一个 Passkey。删除后，第三方账号管理等敏感操作将被阻断，直到你通过邮箱验证码重新注册 Passkey。'
+        : `确定删除“${passkey.name}”吗？`,
+      '删除 Passkey',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+    await withPasskeyReauth((token) => passkeyAPI.remove(passkey.id, token))
+    passkeys.value = passkeys.value.filter((item) => item.id !== passkey.id)
+    ElMessage.success('Passkey 已删除')
+  } catch (error) {
+    if (error === 'cancel' || error === 'close' || isPasskeyCancelled(error)) return
+    ElMessage.error(error.message || '删除失败')
   }
 }
 
@@ -414,7 +500,7 @@ const bindProvider = (provider) => {
 }
 
 const unbindProvider = async (provider) => {
-  if (!user.value?.email || unbindingProvider.value) {
+  if (unbindingProvider.value) {
     return
   }
 
@@ -434,12 +520,16 @@ const unbindProvider = async (provider) => {
 
   unbindingProvider.value = provider.id
   try {
-    await userAPI.unbindThirdParty(provider.id)
+	await withPasskeyReauth((token) => userAPI.unbindThirdParty(provider.id, token))
     thirdPartyProviders.value = thirdPartyProviders.value.map((item) => (
       item.provider === provider.id ? { ...item, bound: false } : item
     ))
     ElMessage.success(`${provider.name} 授权已撤销`)
   } catch (error) {
+	if (isPasskeyCancelled(error)) return
+	if (error?.data?.code === 'PASSKEY_REQUIRED') {
+	  enrollmentOpen.value = true
+	}
     if (error.status === 401) {
       router.push('/login?redirect=/profile')
       return
@@ -550,6 +640,7 @@ onMounted(() => {
   }
   loadProfile()
   loadDevices()
+	loadPasskeys()
 })
 
 onBeforeUnmount(() => {
@@ -1161,6 +1252,70 @@ button {
   font-weight: 700;
 }
 
+.panel-description {
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.passkey-panel .panel-header > div {
+  min-width: 0;
+}
+
+.passkey-panel .bind-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.passkey-list {
+  display: grid;
+}
+
+.passkey-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 34px 34px;
+  gap: 10px;
+  align-items: center;
+  padding: 14px 0;
+  border-top: 1px solid #e2e8f0;
+}
+
+.passkey-row:first-child {
+  border-top: 0;
+}
+
+.passkey-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: #ecfeff;
+  color: #0e7490;
+}
+
+.passkey-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.passkey-copy span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.danger-icon {
+  color: #dc2626;
+}
+
+.passkey-empty {
+  line-height: 1.5;
+}
+
 @media (max-width: 820px) {
   .profile-page {
     padding: 24px 16px;
@@ -1208,6 +1363,11 @@ button {
   .app-row {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .passkey-panel .panel-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .device-row {

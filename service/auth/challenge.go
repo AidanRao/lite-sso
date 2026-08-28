@@ -26,9 +26,10 @@ var challengeScripts embed.FS
 type ChallengePurpose string
 
 const (
-	ChallengePurposeLogin         ChallengePurpose = "LOGIN"
-	ChallengePurposeRegister      ChallengePurpose = "REGISTER"
-	ChallengePurposePasswordReset ChallengePurpose = "PASSWORD_RESET"
+	ChallengePurposeLogin               ChallengePurpose = "LOGIN"
+	ChallengePurposeRegister            ChallengePurpose = "REGISTER"
+	ChallengePurposePasswordReset       ChallengePurpose = "PASSWORD_RESET"
+	ChallengePurposePasskeyRegistration ChallengePurpose = "PASSKEY_REGISTRATION"
 )
 
 type loginChallenge struct {

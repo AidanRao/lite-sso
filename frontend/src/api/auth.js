@@ -131,18 +131,31 @@ export const userAPI = {
     return api.delete(`/user/devices/${encodeURIComponent(deviceID)}`)
   },
 
-  unbindThirdParty: (provider) => {
-    return api.delete(`/user/third/${provider}`)
+  unbindThirdParty: (provider, reauthToken = '') => {
+    return api.delete(`/user/third/${provider}`, { headers: reauthHeaders(reauthToken) })
   },
 
   getThirdPartyBindingPreview: (bindingID) => {
     return api.get(`/user/third/bindings/${encodeURIComponent(bindingID)}`)
   },
 
-  confirmThirdPartyBinding: (bindingID) => {
-    return api.post(`/user/third/bindings/${encodeURIComponent(bindingID)}/confirm`)
+  confirmThirdPartyBinding: (bindingID, reauthToken = '') => {
+    return api.post(`/user/third/bindings/${encodeURIComponent(bindingID)}/confirm`, null, { headers: reauthHeaders(reauthToken) })
   }
 }
+
+export const passkeyAPI = {
+  list: () => api.get('/user/passkeys'),
+  sendRegistrationEmail: (data) => api.post('/user/passkeys/registration/email/send', data),
+  registrationOptions: (data) => api.post('/user/passkeys/registration/options', data),
+  registrationVerify: (data) => api.post('/user/passkeys/registration/verify', data),
+  rename: (id, name) => api.patch(`/user/passkeys/${encodeURIComponent(id)}`, { name }),
+  remove: (id, reauthToken = '') => api.delete(`/user/passkeys/${encodeURIComponent(id)}`, { headers: reauthHeaders(reauthToken) }),
+  reauthOptions: () => api.post('/user/reauth/passkey/options'),
+  reauthVerify: (data) => api.post('/user/reauth/passkey/verify', data)
+}
+
+const reauthHeaders = (token) => token ? { 'X-Reauth-Token': token } : {}
 
 export const adminAPI = {
   listUsers: () => {

@@ -123,6 +123,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRightLeft, Info, ShieldCheck } from 'lucide-vue-next'
 import { userAPI } from '../api/auth'
 import ThirdPartyProviderIcon from '../components/ThirdPartyProviderIcon.vue'
+import { isPasskeyCancelled, withPasskeyReauth } from '../utils/passkeyReauth'
 
 const route = useRoute()
 const router = useRouter()
@@ -173,7 +174,6 @@ const loadBindingContext = async () => {
       errorMessage.value = '无法读取当前账号信息，请返回账号页后重试。'
       return
     }
-
     if (!bindingID.value) {
       return
     }
@@ -224,9 +224,10 @@ const confirm = async () => {
 
   confirming.value = true
   try {
-    const result = await userAPI.confirmThirdPartyBinding(bindingID.value)
+	const result = await withPasskeyReauth((token) => userAPI.confirmThirdPartyBinding(bindingID.value, token))
     router.replace(result?.data?.redirect_url || '/profile?bind=success')
   } catch (error) {
+	if (isPasskeyCancelled(error)) return
     errorMessage.value = error.message || '确认绑定失败，请重新授权。'
     preview.value = null
   } finally {

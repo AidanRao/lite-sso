@@ -39,6 +39,10 @@ func (s *NamespacedStore) Get(ctx context.Context, key string) (string, error) {
 	return s.store.Get(ctx, s.namespacedKey(key))
 }
 
+func (s *NamespacedStore) Take(ctx context.Context, key string) (string, error) {
+	return s.store.Take(ctx, s.namespacedKey(key))
+}
+
 func (s *NamespacedStore) Set(ctx context.Context, key string, value string, ttl time.Duration) error {
 	return s.store.Set(ctx, s.namespacedKey(key), value, ttl)
 }

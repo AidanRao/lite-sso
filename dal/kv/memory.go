@@ -48,6 +48,22 @@ func (s *MemoryStore) Get(ctx context.Context, key string) (string, error) {
 	return it.value, nil
 }
 
+// Take atomically reads and removes a value.
+func (s *MemoryStore) Take(ctx context.Context, key string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	it, ok := s.items[key]
+	if !ok {
+		return "", ErrNotFound
+	}
+	delete(s.items, key)
+	if it.hasExpiry && time.Now().After(it.expiresAt) {
+		return "", ErrNotFound
+	}
+	return it.value, nil
+}
+
 func (s *MemoryStore) Set(ctx context.Context, key string, value string, ttl time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
