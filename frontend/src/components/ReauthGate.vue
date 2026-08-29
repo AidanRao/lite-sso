@@ -10,15 +10,35 @@
           <p>已登录为 <strong>{{ accountLabel }}</strong></p>
         </section>
 
-        <section class="verification-card passkey-card" :class="{ 'is-unavailable': !hasPasskey }">
+        <section class="verification-card passkey-card" :class="{ 'is-unavailable': !canUsePasskey }">
           <span class="verification-icon" aria-hidden="true"><Fingerprint :size="29" /></span>
           <h2>Passkey</h2>
-          <p v-if="hasPasskey">准备好后，使用当前设备、安全密钥或其他设备上的 Passkey 完成验证。</p>
-          <p v-else>当前账号没有可用的 Passkey，请使用下方的其他验证方式。</p>
-          <p v-if="activeMethod === 'passkey' && errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
-          <button class="primary-button" type="button" :disabled="submitting || !hasPasskey" @click="verifyPasskey">
-            {{ submitting && activeMethod === 'passkey' ? '验证中…' : '使用 Passkey' }}
-          </button>
+
+          <template v-if="canUsePasskey">
+            <p>准备好后，使用当前设备、安全密钥或其他设备上的 Passkey 完成验证。</p>
+            <p v-if="activeMethod === 'passkey' && errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
+            <button class="primary-button" type="button" :disabled="submitting || enrollmentSubmitting" @click="verifyPasskey">
+              {{ submitting && activeMethod === 'passkey' ? '验证中…' : '使用 Passkey' }}
+            </button>
+          </template>
+
+          <template v-else-if="!hasEmail">
+            <p>创建 Passkey 需要先绑定邮箱。请前往账号资料页完成绑定后，再重新发起当前操作。</p>
+            <button class="secondary-action-button" type="button" :disabled="submitting || enrollmentSubmitting" @click="goToProfile">
+              前往账号资料
+            </button>
+          </template>
+
+          <template v-else-if="activeMethod === 'setup'">
+            <PasskeyEnrollmentForm @registered="handlePasskeyRegistered" @submitting="enrollmentSubmitting = $event" />
+          </template>
+
+          <template v-else>
+            <p>尚未设置 Passkey。设置后可使用设备生物识别、锁屏密码或安全密钥完成验证。</p>
+            <button class="primary-button" type="button" :disabled="submitting || enrollmentSubmitting" @click="startPasskeyEnrollment">
+              开始设置 Passkey
+            </button>
+          </template>
         </section>
 
         <section class="verification-card alternatives-card">
@@ -26,7 +46,7 @@
           <p class="alternatives-description">无法使用 Passkey？请选择以下方式完成验证。</p>
 
           <template v-if="hasEmail">
-            <button class="email-method" type="button" :disabled="submitting" @click="selectEmail">
+            <button class="email-method" type="button" :disabled="submitting || enrollmentSubmitting" @click="selectEmail">
               <span class="email-method-icon" aria-hidden="true"><Mail :size="18" /></span>
               <span class="email-method-copy">
                 <strong>邮箱验证码</strong>
@@ -69,7 +89,7 @@
         </section>
 
         <footer class="reauth-footer">
-          <button class="cancel-button" type="button" :disabled="submitting" @click="cancelReauth">取消并返回</button>
+          <button class="cancel-button" type="button" :disabled="submitting || enrollmentSubmitting" @click="cancelReauth">取消并返回</button>
           <p class="reauth-tip"><ShieldCheck :size="15" /> 提示：验证成功后，当前操作会自动继续。</p>
         </footer>
       </section>
@@ -79,11 +99,14 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { startAuthentication } from '@simplewebauthn/browser'
 import { Fingerprint, Mail, ShieldCheck } from 'lucide-vue-next'
 import { authAPI, reauthAPI } from '../api/auth'
+import PasskeyEnrollmentForm from './PasskeyEnrollmentForm.vue'
 import { cancelReauth, completeReauth, reauthState } from '../utils/reauthCoordinator'
 
+const router = useRouter()
 const activeMethod = ref('')
 const emailStep = ref('captcha')
 const captcha = ref('')
@@ -92,6 +115,8 @@ const captchaImage = ref('')
 const challengeID = ref('')
 const emailCode = ref('')
 const submitting = ref(false)
+const enrollmentSubmitting = ref(false)
+const passkeyRegistered = ref(false)
 const errorMessage = ref('')
 const resendSeconds = ref(0)
 let resendTimer = null
@@ -99,6 +124,7 @@ let resendTimer = null
 const methods = computed(() => reauthState.descriptor?.methods || [])
 const hasPasskey = computed(() => methods.value.includes('passkey'))
 const hasEmail = computed(() => methods.value.includes('email'))
+const canUsePasskey = computed(() => hasPasskey.value || passkeyRegistered.value)
 const emailHint = computed(() => reauthState.descriptor?.email_hint || '已绑定邮箱')
 const accountLabel = computed(() => reauthState.descriptor?.username || reauthState.descriptor?.email_hint || '当前账号')
 const avatarURL = computed(() => reauthState.descriptor?.avatar_url || '')
@@ -106,7 +132,7 @@ const avatarInitial = computed(() => accountLabel.value.slice(0, 1).toUpperCase(
 
 const reset = () => {
   stopResendTimer()
-  activeMethod.value = hasPasskey.value ? 'passkey' : (hasEmail.value ? 'email' : '')
+  activeMethod.value = hasPasskey.value ? 'passkey' : (hasEmail.value ? '' : 'unavailable')
   emailStep.value = 'captcha'
   captcha.value = ''
   captchaID.value = ''
@@ -114,13 +140,14 @@ const reset = () => {
   challengeID.value = ''
   emailCode.value = ''
   submitting.value = false
+  enrollmentSubmitting.value = false
+  passkeyRegistered.value = false
   errorMessage.value = ''
   resendSeconds.value = 0
-  if (activeMethod.value === 'email') loadCaptcha()
 }
 
 const verifyPasskey = async () => {
-  if (!hasPasskey.value || submitting.value) return
+  if (!canUsePasskey.value || submitting.value || enrollmentSubmitting.value) return
   activeMethod.value = 'passkey'
   if (!window.PublicKeyCredential) {
     errorMessage.value = '当前浏览器不支持 Passkey，请改用邮箱验证码。'
@@ -145,10 +172,28 @@ const verifyPasskey = async () => {
   }
 }
 
+const startPasskeyEnrollment = () => {
+  if (submitting.value || enrollmentSubmitting.value || !hasEmail.value) return
+  activeMethod.value = 'setup'
+  errorMessage.value = ''
+}
+
+const handlePasskeyRegistered = async () => {
+  passkeyRegistered.value = true
+  activeMethod.value = 'passkey'
+  await verifyPasskey()
+}
+
 const selectEmail = () => {
-  if (submitting.value || activeMethod.value === 'email') return
+  if (submitting.value || enrollmentSubmitting.value || activeMethod.value === 'email') return
   activeMethod.value = 'email'
   restartEmail()
+}
+
+const goToProfile = () => {
+  if (submitting.value || enrollmentSubmitting.value) return
+  cancelReauth()
+  router.push('/profile')
 }
 
 const loadCaptcha = async () => {
@@ -241,10 +286,12 @@ h1 { margin: 0 0 20px; font-size: 24px; font-weight: 500; letter-spacing: -.02em
 h2 { margin: 0; font-size: 18px; font-weight: 600; }
 .passkey-card > p:not(.error-message) { margin: 17px 0 15px; color: #24292f; font-size: 14px; line-height: 1.55; text-align: left; }
 .is-unavailable { background: #f6f8fa; }
-.is-unavailable .verification-icon, .is-unavailable > p { color: #6e7781; }
-.primary-button, .cancel-button, .link-button, .captcha-button, .email-method { font: inherit; cursor: pointer; }
+.is-unavailable .verification-icon { color: #6e7781; }
+.primary-button, .secondary-action-button, .cancel-button, .link-button, .captcha-button, .email-method { font: inherit; cursor: pointer; }
 .primary-button { width: 100%; min-height: 36px; border: 1px solid rgba(27, 31, 36, .15); border-radius: 6px; background: #1f883d; box-shadow: 0 1px 0 rgba(31, 35, 40, .1); color: #fff; font-size: 14px; font-weight: 600; }
 .primary-button:hover:not(:disabled) { background: #1a7f37; }
+.secondary-action-button { width: 100%; min-height: 36px; border: 1px solid rgba(27, 31, 36, .15); border-radius: 6px; background: #fff; color: #24292f; font-size: 14px; font-weight: 600; }
+.secondary-action-button:hover:not(:disabled) { background: #f6f8fa; }
 .alternatives-card { padding: 18px 17px; }
 .alternatives-card h2 { font-size: 16px; }
 .alternatives-description { margin: 8px 0 13px; color: #57606a; font-size: 13px; line-height: 1.5; }
