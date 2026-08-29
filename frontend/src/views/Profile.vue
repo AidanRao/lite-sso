@@ -258,7 +258,7 @@ import ApplicationLogo from '../components/ApplicationLogo.vue'
 import PasskeyEnrollmentDialog from '../components/PasskeyEnrollmentDialog.vue'
 import ThirdPartyProviderIcon from '../components/ThirdPartyProviderIcon.vue'
 import { submitGlobalLogout } from '../utils/logout'
-import { isPasskeyCancelled, withPasskeyReauth } from '../utils/passkeyReauth'
+import { isReauthCancelled } from '../utils/reauthCoordinator'
 
 const router = useRouter()
 const route = useRoute()
@@ -388,11 +388,11 @@ const deletePasskey = async (passkey) => {
       '删除 Passkey',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
     )
-    await withPasskeyReauth((token) => passkeyAPI.remove(passkey.id, token))
+    await passkeyAPI.remove(passkey.id)
     passkeys.value = passkeys.value.filter((item) => item.id !== passkey.id)
     ElMessage.success('Passkey 已删除')
   } catch (error) {
-    if (error === 'cancel' || error === 'close' || isPasskeyCancelled(error)) return
+    if (error === 'cancel' || error === 'close' || isReauthCancelled(error)) return
     ElMessage.error(error.message || '删除失败')
   }
 }
@@ -520,16 +520,13 @@ const unbindProvider = async (provider) => {
 
   unbindingProvider.value = provider.id
   try {
-	await withPasskeyReauth((token) => userAPI.unbindThirdParty(provider.id, token))
+    await userAPI.unbindThirdParty(provider.id)
     thirdPartyProviders.value = thirdPartyProviders.value.map((item) => (
       item.provider === provider.id ? { ...item, bound: false } : item
     ))
     ElMessage.success(`${provider.name} 授权已撤销`)
   } catch (error) {
-	if (isPasskeyCancelled(error)) return
-	if (error?.data?.code === 'PASSKEY_REQUIRED') {
-	  enrollmentOpen.value = true
-	}
+    if (isReauthCancelled(error)) return
     if (error.status === 401) {
       router.push('/login?redirect=/profile')
       return

@@ -69,6 +69,15 @@ func (r *WebAuthnRepository) ListCredentials(ctx context.Context, rpID string, u
 	return records, nil
 }
 
+// HasCredentials reports whether the user has at least one Passkey for the relying party.
+func (r *WebAuthnRepository) HasCredentials(ctx context.Context, rpID string, userID string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.WebAuthnCredential{}).Where("rp_id = ? AND user_id = ?", rpID, userID).Limit(1).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // CreateCredential persists a newly verified Passkey.
 func (r *WebAuthnRepository) CreateCredential(ctx context.Context, rpID string, userID string, name string, extensionsJSON string, credential *webauthn.Credential) (*model.WebAuthnCredential, error) {
 	record, err := credentialToRecord(rpID, userID, name, extensionsJSON, credential)

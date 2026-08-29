@@ -274,7 +274,7 @@ func (s *Service) FinishReauth(ctx context.Context, userID string, sessionID str
 	if record.CloneWarning {
 		return nil, common.ErrPasskeyCloneWarning
 	}
-	return s.reauth.Issue(ctx, userID, sessionID, record.ID)
+	return s.reauth.Issue(ctx, userID, sessionID, reauth.MethodPasskey, record.ID)
 }
 
 // Rename updates one Passkey display name.

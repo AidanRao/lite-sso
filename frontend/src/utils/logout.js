@@ -1,4 +1,4 @@
-import { clearAccessToken } from '../api/auth'
+import { clearAccessToken } from '../api/auth.js'
 
 export function submitGlobalLogout(redirectPath = '/login') {
   clearAccessToken()

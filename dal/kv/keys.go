@@ -62,6 +62,14 @@ func KeyWebAuthnCeremony(ceremonyID string) string {
 	return fmt.Sprintf("webauthn:ceremony:%s", ceremonyID)
 }
 
-func KeyPasskeyReauthGrant(tokenHash string) string {
-	return fmt.Sprintf("passkey:reauth:%s", tokenHash)
+func KeyReauthGrant(tokenHash string) string {
+	return fmt.Sprintf("reauth:grant:%s", tokenHash)
+}
+
+func KeyReauthSession(sessionID string) string {
+	return fmt.Sprintf("reauth:session:%s", sessionID)
+}
+
+func KeyReauthEmailChallenge(challengeID string) string {
+	return fmt.Sprintf("reauth:email:%s", challengeID)
 }

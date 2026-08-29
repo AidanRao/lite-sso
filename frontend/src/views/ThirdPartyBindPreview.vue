@@ -123,7 +123,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRightLeft, Info, ShieldCheck } from 'lucide-vue-next'
 import { userAPI } from '../api/auth'
 import ThirdPartyProviderIcon from '../components/ThirdPartyProviderIcon.vue'
-import { isPasskeyCancelled, withPasskeyReauth } from '../utils/passkeyReauth'
+import { isReauthCancelled } from '../utils/reauthCoordinator'
 
 const route = useRoute()
 const router = useRouter()
@@ -224,10 +224,10 @@ const confirm = async () => {
 
   confirming.value = true
   try {
-	const result = await withPasskeyReauth((token) => userAPI.confirmThirdPartyBinding(bindingID.value, token))
+    const result = await userAPI.confirmThirdPartyBinding(bindingID.value)
     router.replace(result?.data?.redirect_url || '/profile?bind=success')
   } catch (error) {
-	if (isPasskeyCancelled(error)) return
+    if (isReauthCancelled(error)) return
     errorMessage.value = error.message || '确认绑定失败，请重新授权。'
     preview.value = null
   } finally {

@@ -60,7 +60,7 @@ type OTPRequestContext struct {
 	IP       string
 }
 
-// SendEmailOTP creates an independent login challenge and sends its code.
+// SendEmailOTP creates an independent purpose-bound challenge and sends its code.
 func (s *AuthService) SendEmailOTP(ctx context.Context, email string, captchaID string, captchaAnswer string, requestContext OTPRequestContext, purpose ChallengePurpose) (*ChallengeResult, error) {
 	email = normalizeEmail(email)
 	if ok, err := s.verifyCaptcha(ctx, captchaID, captchaAnswer); err != nil || !ok {
@@ -134,21 +134,37 @@ type EmailOTPLoginContext struct {
 	CaptchaValid bool
 }
 
+// OTPVerifyContext carries request attributes used by OTP verification limits.
+type OTPVerifyContext struct {
+	DeviceID string
+	IP       string
+}
+
+// VerifyEmailOTPForPurpose verifies a purpose-bound challenge with the shared
+// device, email, and IP controls used by email login.
+func (s *AuthService) VerifyEmailOTPForPurpose(ctx context.Context, challengeID string, otp string, verifyContext OTPVerifyContext, purpose ChallengePurpose) (string, error) {
+	challengeEmail, err := s.challengeEmail(ctx, challengeID)
+	if err != nil {
+		return "", err
+	}
+	if err := s.guard.allowOTPVerify(ctx, challengeEmail, verifyContext.DeviceID, verifyContext.IP); err != nil {
+		return "", err
+	}
+	email, err := s.verifyChallenge(ctx, challengeID, otp, verifyContext.DeviceID, purpose)
+	if err != nil {
+		if recordErr := s.guard.recordOTPFailure(ctx, challengeEmail, verifyContext.DeviceID, verifyContext.IP); recordErr != nil {
+			return "", recordErr
+		}
+		return "", err
+	}
+	return email, nil
+}
+
 // LoginWithEmailOTP authenticates a login challenge without accepting an email
 // from the client, preventing a challenge/email mix-up.
 func (s *AuthService) LoginWithEmailOTP(ctx context.Context, challengeID string, otp string, loginContext EmailOTPLoginContext) (*model.User, error) {
-	challengeKey, err := s.challengeEmail(ctx, challengeID)
+	email, err := s.VerifyEmailOTPForPurpose(ctx, challengeID, otp, OTPVerifyContext{DeviceID: loginContext.DeviceID, IP: loginContext.IP}, ChallengePurposeLogin)
 	if err != nil {
-		return nil, err
-	}
-	if err := s.guard.allowOTPVerify(ctx, challengeKey, loginContext.DeviceID, loginContext.IP); err != nil {
-		return nil, err
-	}
-	email, err := s.verifyChallenge(ctx, challengeID, otp, loginContext.DeviceID, ChallengePurposeLogin)
-	if err != nil {
-		if recordErr := s.guard.recordOTPFailure(ctx, challengeKey, loginContext.DeviceID, loginContext.IP); recordErr != nil {
-			return nil, recordErr
-		}
 		return nil, err
 	}
 

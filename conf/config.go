@@ -55,11 +55,10 @@ type Config struct {
 
 // PasskeyConfig contains the relying-party and lifetime settings for WebAuthn.
 type PasskeyConfig struct {
-	RPID           string        `mapstructure:"rp_id"`
-	RPOrigins      []string      `mapstructure:"rp_origins"`
-	RPDisplayName  string        `mapstructure:"rp_display_name"`
-	CeremonyTTL    time.Duration `mapstructure:"ceremony_ttl"`
-	ReauthTokenTTL time.Duration `mapstructure:"reauth_token_ttl"`
+	RPID          string        `mapstructure:"rp_id"`
+	RPOrigins     []string      `mapstructure:"rp_origins"`
+	RPDisplayName string        `mapstructure:"rp_display_name"`
+	CeremonyTTL   time.Duration `mapstructure:"ceremony_ttl"`
 }
 
 // ValidatePasskey checks the WebAuthn relying-party configuration.
@@ -88,8 +87,19 @@ func (c *Config) ValidatePasskey() error {
 	if c.Passkey.CeremonyTTL <= 0 {
 		return errors.New("passkey.ceremony_ttl must be positive")
 	}
-	if c.Passkey.ReauthTokenTTL <= 0 {
-		return errors.New("passkey.reauth_token_ttl must be positive")
+	return nil
+}
+
+// ValidateReauth checks the short-lived authorization grant configuration.
+func (c *Config) ValidateReauth() error {
+	if c == nil {
+		return errors.New("configuration is required")
+	}
+	if GetEnv() == EnvLocal {
+		return nil
+	}
+	if c.Auth.ReauthTokenTTL <= 0 {
+		return errors.New("auth.reauth_token_ttl must be positive")
 	}
 	return nil
 }
@@ -207,6 +217,7 @@ type AuthConfig struct {
 	OTPMaxAttempts            int           `mapstructure:"otp_max_attempts"`
 	AccessTokenTTL            time.Duration `mapstructure:"access_token_ttl"`
 	RefreshTokenTTL           time.Duration `mapstructure:"refresh_token_ttl"`
+	ReauthTokenTTL            time.Duration `mapstructure:"reauth_token_ttl"`
 	PasswordMinLength         int           `mapstructure:"password_min_length"`
 	PasswordAccountFailLimit  int           `mapstructure:"password_account_fail_limit"`
 	PasswordDeviceFailLimit   int           `mapstructure:"password_device_fail_limit"`
@@ -290,6 +301,7 @@ func bindEnvs(v *viper.Viper) {
 		"auth.otp_max_attempts",
 		"auth.access_token_ttl",
 		"auth.refresh_token_ttl",
+		"auth.reauth_token_ttl",
 		"auth.password_min_length",
 		"auth.password_account_fail_limit",
 		"auth.password_device_fail_limit",
@@ -321,7 +333,6 @@ func bindEnvs(v *viper.Viper) {
 		"passkey.rp_origins",
 		"passkey.rp_display_name",
 		"passkey.ceremony_ttl",
-		"passkey.reauth_token_ttl",
 	}
 
 	for _, key := range envKeys {
@@ -343,7 +354,7 @@ func bindEnvs(v *viper.Viper) {
 
 func setDefaults(v *viper.Viper, env Environment) {
 	v.SetDefault("passkey.ceremony_ttl", "5m")
-	v.SetDefault("passkey.reauth_token_ttl", "5m")
+	v.SetDefault("auth.reauth_token_ttl", "5m")
 	if env == EnvLocal {
 		v.SetDefault("passkey.rp_id", "localhost")
 		v.SetDefault("passkey.rp_origins", []string{"http://localhost:5173", "http://localhost:8080"})

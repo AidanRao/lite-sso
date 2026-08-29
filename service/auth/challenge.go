@@ -30,6 +30,7 @@ const (
 	ChallengePurposeRegister            ChallengePurpose = "REGISTER"
 	ChallengePurposePasswordReset       ChallengePurpose = "PASSWORD_RESET"
 	ChallengePurposePasskeyRegistration ChallengePurpose = "PASSKEY_REGISTRATION"
+	ChallengePurposeReauth              ChallengePurpose = "REAUTH"
 )
 
 type loginChallenge struct {

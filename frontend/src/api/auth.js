@@ -1,9 +1,10 @@
 import axios from 'axios'
+import { clearReauth, getCachedReauthToken, invalidateReauthToken, requestReauth } from '../utils/reauthCoordinator.js'
 
 let accessToken = ''
 let refreshPromise = null
 
-const api = axios.create({
+export const api = axios.create({
   baseURL: '/api',
   timeout: 10000
 })
@@ -18,6 +19,11 @@ api.interceptors.request.use(config => {
   if (accessToken) {
     config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${accessToken}`
+  }
+  const reauthToken = getCachedReauthToken()
+  if (reauthToken && config.reauth === true && !isReauthEndpoint(config.url)) {
+    config.headers = config.headers || {}
+    config.headers['X-Reauth-Token'] = reauthToken
   }
   config.withCredentials = true
   return config
@@ -38,6 +44,27 @@ api.interceptors.response.use(
         clearAccessToken()
       }
     }
+    const machineCode = error.response?.data?.data?.code
+    const descriptor = error.response?.data?.data?.reauth
+    if (
+      error.response?.status === 403 &&
+      originalRequest &&
+      !originalRequest._reauthRetry &&
+      !isReauthEndpoint(originalRequest.url) &&
+      descriptor &&
+      (machineCode === 'REAUTH_REQUIRED' || machineCode === 'REAUTH_TOKEN_INVALID')
+    ) {
+      if (machineCode === 'REAUTH_TOKEN_INVALID') invalidateReauthToken()
+      try {
+        const token = await requestReauth(descriptor)
+        originalRequest._reauthRetry = true
+        originalRequest.headers = originalRequest.headers || {}
+        originalRequest.headers['X-Reauth-Token'] = token
+        return api(originalRequest)
+      } catch (reauthError) {
+        return Promise.reject(reauthError)
+      }
+    }
     const message = error.response?.data?.message || error.message || '请求失败'
     const apiError = new Error(message)
     apiError.status = error.response?.status
@@ -53,6 +80,7 @@ export const setAccessToken = (token) => {
 
 export const clearAccessToken = () => {
   accessToken = ''
+  clearReauth()
 }
 
 export const refreshAccessToken = async () => {
@@ -131,16 +159,16 @@ export const userAPI = {
     return api.delete(`/user/devices/${encodeURIComponent(deviceID)}`)
   },
 
-  unbindThirdParty: (provider, reauthToken = '') => {
-    return api.delete(`/user/third/${provider}`, { headers: reauthHeaders(reauthToken) })
+  unbindThirdParty: (provider) => {
+    return api.delete(`/user/third/${provider}`, { reauth: true })
   },
 
   getThirdPartyBindingPreview: (bindingID) => {
     return api.get(`/user/third/bindings/${encodeURIComponent(bindingID)}`)
   },
 
-  confirmThirdPartyBinding: (bindingID, reauthToken = '') => {
-    return api.post(`/user/third/bindings/${encodeURIComponent(bindingID)}/confirm`, null, { headers: reauthHeaders(reauthToken) })
+  confirmThirdPartyBinding: (bindingID) => {
+    return api.post(`/user/third/bindings/${encodeURIComponent(bindingID)}/confirm`, null, { reauth: true })
   }
 }
 
@@ -150,12 +178,17 @@ export const passkeyAPI = {
   registrationOptions: (data) => api.post('/user/passkeys/registration/options', data),
   registrationVerify: (data) => api.post('/user/passkeys/registration/verify', data),
   rename: (id, name) => api.patch(`/user/passkeys/${encodeURIComponent(id)}`, { name }),
-  remove: (id, reauthToken = '') => api.delete(`/user/passkeys/${encodeURIComponent(id)}`, { headers: reauthHeaders(reauthToken) }),
-  reauthOptions: () => api.post('/user/reauth/passkey/options'),
-  reauthVerify: (data) => api.post('/user/reauth/passkey/verify', data)
+  remove: (id) => api.delete(`/user/passkeys/${encodeURIComponent(id)}`, { reauth: true })
 }
 
-const reauthHeaders = (token) => token ? { 'X-Reauth-Token': token } : {}
+export const reauthAPI = {
+  passkeyOptions: () => api.post('/user/reauth/passkey/options'),
+  passkeyVerify: (data) => api.post('/user/reauth/passkey/verify', data),
+  sendEmail: (data) => api.post('/user/reauth/email/send', data),
+  verifyEmail: (data) => api.post('/user/reauth/email/verify', data)
+}
+
+const isReauthEndpoint = (url = '') => String(url).includes('/user/reauth/')
 
 export const adminAPI = {
   listUsers: () => {

@@ -29,14 +29,14 @@ func TestService_BeginRegistrationRequiresCurrentEmailOTPAndCannotReplay(t *test
 	require.NoError(t, database.Create(&user).Error)
 	store := kv.NewMemoryStore()
 	config := &conf.Config{
-		Auth: conf.AuthConfig{OTPSecret: "test-secret", OTPExpire: time.Minute, OTPMaxAttempts: 5},
+		Auth: conf.AuthConfig{OTPSecret: "test-secret", OTPExpire: time.Minute, OTPMaxAttempts: 5, ReauthTokenTTL: time.Minute},
 		Dev:  conf.DevConfig{SkipSendMessage: true, FixedEmailOTP: "123456"},
 		Passkey: conf.PasskeyConfig{
-			RPID: "example.com", RPOrigins: []string{"https://example.com"}, RPDisplayName: "Example", CeremonyTTL: time.Minute, ReauthTokenTTL: time.Minute,
+			RPID: "example.com", RPOrigins: []string{"https://example.com"}, RPDisplayName: "Example", CeremonyTTL: time.Minute,
 		},
 	}
 	authService := serviceauth.NewAuthService(config, database, store, nil, nil)
-	service := NewService(config, database, store, authService, reauth.NewService(config, store))
+	service := NewService(config, database, store, authService, reauth.NewService(reauth.Deps{Config: config, DB: database, Store: store, Auth: authService}))
 	require.NoError(t, store.Set(t.Context(), kv.KeyCaptcha("captcha-1"), "4321", time.Minute))
 
 	challenge, err := service.SendRegistrationEmail(t.Context(), user.ID, "captcha-1", "4321", serviceauth.OTPRequestContext{DeviceID: "device-1", IP: "127.0.0.1"})
@@ -58,7 +58,8 @@ func TestService_SendRegistrationEmailRejectsAccountWithoutEmail(t *testing.T) {
 	require.NoError(t, database.Create(&user).Error)
 	store := kv.NewMemoryStore()
 	config := &conf.Config{Passkey: conf.PasskeyConfig{RPID: "example.com"}}
-	service := NewService(config, database, store, serviceauth.NewAuthService(config, database, store, nil, nil), reauth.NewService(config, store))
+	authService := serviceauth.NewAuthService(config, database, store, nil, nil)
+	service := NewService(config, database, store, authService, reauth.NewService(reauth.Deps{Config: config, DB: database, Store: store, Auth: authService}))
 
 	_, err := service.SendRegistrationEmail(t.Context(), user.ID, "captcha", "answer", serviceauth.OTPRequestContext{})
 	require.ErrorIs(t, err, common.ErrEmailRequiredForPasskey)

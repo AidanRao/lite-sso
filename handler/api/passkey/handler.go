@@ -1,4 +1,4 @@
-// Package passkey exposes authenticated Passkey lifecycle and re-authentication APIs.
+// Package passkey exposes authenticated Passkey lifecycle APIs.
 package passkey
 
 import (
@@ -12,19 +12,15 @@ import (
 	"sso-server/common"
 	"sso-server/common/ecode"
 	"sso-server/conf"
-	"sso-server/dal/kv"
 	apiauth "sso-server/handler/api/auth"
 	serviceauth "sso-server/service/auth"
 	servicepasskey "sso-server/service/passkey"
-	"sso-server/service/reauth"
 )
 
 // Deps contains Passkey handler dependencies.
 type Deps struct {
-	Config *conf.Config
-	DB     *gorm.DB
-	KV     kv.Store
-	Auth   *serviceauth.AuthService
+	Config  *conf.Config
+	Service *servicepasskey.Service
 }
 
 // Handler handles Passkey APIs.
@@ -33,10 +29,10 @@ type Handler struct {
 	trustProxyHeaders bool
 }
 
-// NewHandler creates a Passkey handler and its shared re-authentication service.
-func NewHandler(deps Deps, reauthService *reauth.Service) *Handler {
+// NewHandler creates a Passkey lifecycle handler.
+func NewHandler(deps Deps) *Handler {
 	return &Handler{
-		service:           servicepasskey.NewService(deps.Config, deps.DB, deps.KV, deps.Auth, reauthService),
+		service:           deps.Service,
 		trustProxyHeaders: deps.Config != nil && deps.Config.Server.TrustProxyHeaders,
 	}
 }
@@ -138,40 +134,10 @@ func (h *Handler) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"deleted": true}))
 }
 
-// ReauthOptions returns assertion options for a generic Passkey authorization window.
-func (h *Handler) ReauthOptions(c *gin.Context) {
-	result, err := h.service.BeginReauth(c.Request.Context(), c.GetString("user_id"), c.GetString("session_id"), c.GetHeader("Origin"))
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, ecode.OKResponse(result))
-}
-
-// ReauthVerify verifies an assertion and returns an opaque, reusable five-minute token.
-func (h *Handler) ReauthVerify(c *gin.Context) {
-	var req struct {
-		CeremonyID string          `json:"ceremony_id" binding:"required"`
-		Response   json.RawMessage `json:"response" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeBadRequest(c)
-		return
-	}
-	result, err := h.service.FinishReauth(c.Request.Context(), c.GetString("user_id"), c.GetString("session_id"), c.GetHeader("Origin"), req.CeremonyID, req.Response)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, ecode.OKResponse(result))
-}
-
 func writeError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, common.ErrEmailRequiredForPasskey):
 		writeMachineError(c, http.StatusConflict, "EMAIL_REQUIRED_FOR_PASSKEY", "当前账号需要先绑定邮箱")
-	case errors.Is(err, common.ErrPasskeyRequired):
-		writeMachineError(c, http.StatusConflict, "PASSKEY_REQUIRED", "请先注册 Passkey")
 	case errors.Is(err, common.ErrWebAuthnCeremonyInvalid), errors.Is(err, common.ErrPasskeyCloneWarning):
 		writeMachineError(c, http.StatusForbidden, "WEBAUTHN_CEREMONY_INVALID", "Passkey 验证失败或已过期")
 	case errors.Is(err, common.ErrInvalidCaptcha):

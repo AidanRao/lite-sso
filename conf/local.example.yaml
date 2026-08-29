@@ -24,6 +24,7 @@ auth:
   otp_max_attempts: 5
   access_token_ttl: "15m"
   refresh_token_ttl: "720h"
+  reauth_token_ttl: "5m"
   password_min_length: 12
   password_account_fail_limit: 5
   password_device_fail_limit: 20
@@ -39,7 +40,6 @@ passkey:
     - "http://localhost:8080"
   rp_display_name: "SSO"
   ceremony_ttl: "5m"
-  reauth_token_ttl: "5m"
 
 message_center:
   url: "https://message-center.example.com"
