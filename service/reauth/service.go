@@ -56,6 +56,8 @@ type Descriptor struct {
 	Methods   []string `json:"methods"`
 	MaxAge    int      `json:"max_age"`
 	EmailHint string   `json:"email_hint,omitempty"`
+	Username  string   `json:"username,omitempty"`
+	AvatarURL string   `json:"avatar_url,omitempty"`
 }
 
 type emailChallenge struct {
@@ -172,6 +174,12 @@ func (s *Service) Describe(ctx context.Context, userID string) (*Descriptor, err
 	if user.Email != nil && strings.TrimSpace(*user.Email) != "" {
 		descriptor.Methods = append(descriptor.Methods, MethodEmail)
 		descriptor.EmailHint = maskEmail(*user.Email)
+	}
+	if user.Username != nil {
+		descriptor.Username = strings.TrimSpace(*user.Username)
+	}
+	if user.AvatarURL != nil {
+		descriptor.AvatarURL = strings.TrimSpace(*user.AvatarURL)
 	}
 	return descriptor, nil
 }

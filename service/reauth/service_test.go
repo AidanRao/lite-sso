@@ -52,7 +52,9 @@ func TestService_IssuedGrantIsReusableAndSessionBound(t *testing.T) {
 func TestService_DescribeOrdersAvailableMethodsAndMasksEmail(t *testing.T) {
 	database := newReauthTestDB(t)
 	email := "owner@example.com"
-	require.NoError(t, database.Create(&model.User{ID: "user-1", Email: &email, IsActive: true}).Error)
+	username := "owner"
+	avatarURL := "https://example.com/avatar.png"
+	require.NoError(t, database.Create(&model.User{ID: "user-1", Username: &username, Email: &email, AvatarURL: &avatarURL, IsActive: true}).Error)
 	require.NoError(t, database.Create(&model.WebAuthnCredential{
 		ID: "credential-1", RPID: "example.com", UserID: "user-1", CredentialID: []byte("credential"), PublicKey: []byte("key"),
 		AttestationType: "none", AttestationFormat: "none", TransportsJSON: "[]", Attachment: "platform", ExtensionsJSON: "{}", Name: "Passkey",
@@ -67,6 +69,8 @@ func TestService_DescribeOrdersAvailableMethodsAndMasksEmail(t *testing.T) {
 	require.Equal(t, []string{MethodPasskey, MethodEmail}, descriptor.Methods)
 	require.Equal(t, 300, descriptor.MaxAge)
 	require.Equal(t, "o***@example.com", descriptor.EmailHint)
+	require.Equal(t, "owner", descriptor.Username)
+	require.Equal(t, avatarURL, descriptor.AvatarURL)
 }
 
 func TestService_EmailChallengeIsSessionBoundSingleUseAndIssuesGrant(t *testing.T) {

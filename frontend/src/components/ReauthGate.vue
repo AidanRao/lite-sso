@@ -4,68 +4,74 @@
       <section class="reauth-shell">
         <h1 id="reauth-title">Confirm access</h1>
 
-        <div class="account-card">
-          <span class="account-avatar" aria-hidden="true"><UserRound :size="20" /></span>
-          <span>已登录为 <strong>{{ accountLabel }}</strong></span>
-        </div>
+        <section class="account-card" aria-label="当前登录账号">
+          <img v-if="avatarURL" class="account-avatar" :src="avatarURL" alt="" />
+          <span v-else class="account-avatar account-avatar-fallback" aria-hidden="true">{{ avatarInitial }}</span>
+          <p>已登录为 <strong>{{ accountLabel }}</strong></p>
+        </section>
 
-        <section v-if="activeMethod === 'passkey'" class="method-card">
-          <span class="method-icon" aria-hidden="true"><Fingerprint :size="31" /></span>
+        <section class="verification-card passkey-card" :class="{ 'is-unavailable': !hasPasskey }">
+          <span class="verification-icon" aria-hidden="true"><Fingerprint :size="29" /></span>
           <h2>Passkey</h2>
-          <p>准备好后，使用当前设备、安全密钥或其他设备上的 Passkey 完成验证。</p>
-          <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
-          <button class="primary-button" type="button" :disabled="submitting" @click="verifyPasskey">
-            {{ submitting ? '验证中…' : 'Use Passkey' }}
-          </button>
-          <button v-if="hasEmail" class="link-button" type="button" :disabled="submitting" @click="selectEmail">
-            改用邮箱验证码
+          <p v-if="hasPasskey">准备好后，使用当前设备、安全密钥或其他设备上的 Passkey 完成验证。</p>
+          <p v-else>当前账号没有可用的 Passkey，请使用下方的其他验证方式。</p>
+          <p v-if="activeMethod === 'passkey' && errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
+          <button class="primary-button" type="button" :disabled="submitting || !hasPasskey" @click="verifyPasskey">
+            {{ submitting && activeMethod === 'passkey' ? '验证中…' : '使用 Passkey' }}
           </button>
         </section>
 
-        <section v-else-if="activeMethod === 'email'" class="method-card email-card">
-          <span class="method-icon" aria-hidden="true"><Mail :size="29" /></span>
-          <h2>邮箱验证码</h2>
-          <p>验证码将发送到当前账号邮箱 {{ emailHint }}。</p>
-          <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
+        <section class="verification-card alternatives-card">
+          <h2>其他验证方式</h2>
+          <p class="alternatives-description">无法使用 Passkey？请选择以下方式完成验证。</p>
 
-          <template v-if="emailStep === 'captcha'">
-            <label class="field-label" for="reauth-captcha">图形验证码</label>
-            <div class="captcha-row">
-              <input id="reauth-captcha" v-model="captcha" maxlength="4" autocomplete="off" placeholder="输入四位验证码" @keyup.enter="sendEmailCode" />
-              <button class="captcha-button" type="button" title="刷新图形验证码" :disabled="submitting" @click="loadCaptcha">
-                <img v-if="captchaImage" :src="captchaImage" alt="图形验证码" />
-                <span v-else>加载中</span>
-              </button>
+          <template v-if="hasEmail">
+            <button class="email-method" type="button" :disabled="submitting" @click="selectEmail">
+              <span class="email-method-icon" aria-hidden="true"><Mail :size="18" /></span>
+              <span class="email-method-copy">
+                <strong>邮箱验证码</strong>
+                <small>发送验证码至 {{ emailHint }}</small>
+              </span>
+              <span class="email-method-action">{{ activeMethod === 'email' ? '已选择' : '使用' }}</span>
+            </button>
+
+            <div v-if="activeMethod === 'email'" class="email-form">
+              <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
+
+              <template v-if="emailStep === 'captcha'">
+                <label class="field-label" for="reauth-captcha">图形验证码</label>
+                <div class="captcha-row">
+                  <input id="reauth-captcha" v-model="captcha" maxlength="4" autocomplete="off" placeholder="输入四位验证码" @keyup.enter="sendEmailCode" />
+                  <button class="captcha-button" type="button" title="刷新图形验证码" :disabled="submitting" @click="loadCaptcha">
+                    <img v-if="captchaImage" :src="captchaImage" alt="图形验证码" />
+                    <span v-else>加载中</span>
+                  </button>
+                </div>
+                <button class="primary-button" type="button" :disabled="submitting || captcha.length !== 4" @click="sendEmailCode">
+                  {{ submitting ? '发送中…' : '发送验证码' }}
+                </button>
+              </template>
+
+              <template v-else>
+                <label class="field-label" for="reauth-email-code">邮箱验证码</label>
+                <input id="reauth-email-code" v-model="emailCode" class="code-input" maxlength="6" inputmode="numeric" autocomplete="one-time-code" placeholder="输入六位验证码" @keyup.enter="verifyEmailCode" />
+                <button class="primary-button" type="button" :disabled="submitting || emailCode.length !== 6" @click="verifyEmailCode">
+                  {{ submitting ? '验证中…' : '确认访问' }}
+                </button>
+                <button class="link-button" type="button" :disabled="submitting || resendSeconds > 0" @click="restartEmail">
+                  {{ resendSeconds > 0 ? `${resendSeconds} 秒后可重新发送` : '重新发送验证码' }}
+                </button>
+              </template>
             </div>
-            <button class="primary-button" type="button" :disabled="submitting || captcha.length !== 4" @click="sendEmailCode">
-              {{ submitting ? '发送中…' : '发送验证码' }}
-            </button>
           </template>
 
-          <template v-else>
-            <label class="field-label" for="reauth-email-code">邮箱验证码</label>
-            <input id="reauth-email-code" v-model="emailCode" class="code-input" maxlength="6" inputmode="numeric" autocomplete="one-time-code" placeholder="输入六位验证码" @keyup.enter="verifyEmailCode" />
-            <button class="primary-button" type="button" :disabled="submitting || emailCode.length !== 6" @click="verifyEmailCode">
-              {{ submitting ? '验证中…' : '确认访问' }}
-            </button>
-            <button class="link-button" type="button" :disabled="submitting || resendSeconds > 0" @click="restartEmail">
-              {{ resendSeconds > 0 ? `${resendSeconds} 秒后可重新发送` : '重新发送验证码' }}
-            </button>
-          </template>
-
-          <button v-if="hasPasskey" class="link-button secondary-link" type="button" :disabled="submitting" @click="selectPasskey">
-            返回使用 Passkey
-          </button>
+          <p v-else class="empty-methods">当前账号没有其他可用的验证方式。</p>
         </section>
 
-        <section v-else class="method-card unavailable-card">
-          <span class="method-icon" aria-hidden="true"><ShieldAlert :size="29" /></span>
-          <h2>无法确认访问</h2>
-          <p>当前账号没有可用的 Passkey 或绑定邮箱，请先补充安全验证方式。</p>
-        </section>
-
-        <p class="reauth-tip"><ShieldCheck :size="15" /> 验证成功后，当前操作会自动继续。</p>
-        <button class="cancel-button" type="button" :disabled="submitting" @click="cancelReauth">取消并返回</button>
+        <footer class="reauth-footer">
+          <button class="cancel-button" type="button" :disabled="submitting" @click="cancelReauth">取消并返回</button>
+          <p class="reauth-tip"><ShieldCheck :size="15" /> 提示：验证成功后，当前操作会自动继续。</p>
+        </footer>
       </section>
     </main>
   </Teleport>
@@ -74,7 +80,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { startAuthentication } from '@simplewebauthn/browser'
-import { Fingerprint, Mail, ShieldAlert, ShieldCheck, UserRound } from 'lucide-vue-next'
+import { Fingerprint, Mail, ShieldCheck } from 'lucide-vue-next'
 import { authAPI, reauthAPI } from '../api/auth'
 import { cancelReauth, completeReauth, reauthState } from '../utils/reauthCoordinator'
 
@@ -94,7 +100,9 @@ const methods = computed(() => reauthState.descriptor?.methods || [])
 const hasPasskey = computed(() => methods.value.includes('passkey'))
 const hasEmail = computed(() => methods.value.includes('email'))
 const emailHint = computed(() => reauthState.descriptor?.email_hint || '已绑定邮箱')
-const accountLabel = computed(() => reauthState.descriptor?.email_hint || '当前账号')
+const accountLabel = computed(() => reauthState.descriptor?.username || reauthState.descriptor?.email_hint || '当前账号')
+const avatarURL = computed(() => reauthState.descriptor?.avatar_url || '')
+const avatarInitial = computed(() => accountLabel.value.slice(0, 1).toUpperCase())
 
 const reset = () => {
   stopResendTimer()
@@ -112,6 +120,8 @@ const reset = () => {
 }
 
 const verifyPasskey = async () => {
+  if (!hasPasskey.value || submitting.value) return
+  activeMethod.value = 'passkey'
   if (!window.PublicKeyCredential) {
     errorMessage.value = '当前浏览器不支持 Passkey，请改用邮箱验证码。'
     return
@@ -136,15 +146,9 @@ const verifyPasskey = async () => {
 }
 
 const selectEmail = () => {
+  if (submitting.value || activeMethod.value === 'email') return
   activeMethod.value = 'email'
-  errorMessage.value = ''
   restartEmail()
-}
-
-const selectPasskey = () => {
-  stopResendTimer()
-  activeMethod.value = 'passkey'
-  errorMessage.value = ''
 }
 
 const loadCaptcha = async () => {
@@ -222,34 +226,51 @@ onBeforeUnmount(stopResendTimer)
 </script>
 
 <style scoped>
-.reauth-page { position: fixed; inset: 0; z-index: 200; box-sizing: border-box; display: flex; justify-content: center; overflow-y: auto; padding: 72px 24px 40px; background: #f8fafc; color: #172033; }
-.reauth-page::before { position: fixed; inset: 0; z-index: -1; background: radial-gradient(circle at 50% 0, rgba(8, 145, 178, .1), transparent 34%); content: ''; }
-.reauth-shell { width: min(390px, 100%); text-align: center; }
-h1 { margin: 0 0 24px; font-size: 28px; letter-spacing: -.03em; }
-.account-card, .method-card { box-sizing: border-box; border: 1px solid #d8e1eb; border-radius: 12px; background: white; box-shadow: 0 8px 28px rgba(15, 23, 42, .05); }
-.account-card { display: flex; align-items: center; gap: 12px; min-height: 72px; padding: 14px 18px; text-align: left; color: #475569; }
-.account-avatar { display: grid; flex: 0 0 38px; height: 38px; place-items: center; border-radius: 50%; background: #ecfeff; color: #0e7490; }
-.account-card strong { color: #172033; }
-.method-card { display: flex; flex-direction: column; align-items: stretch; margin-top: 18px; padding: 26px 22px 22px; }
-.method-icon { display: grid; width: 54px; height: 54px; margin: 0 auto 12px; place-items: center; border-radius: 15px; background: #ecfeff; color: #0e7490; }
-h2 { margin: 0; font-size: 22px; }
-.method-card > p:not(.error-message) { margin: 13px 0 20px; color: #64748b; font-size: 14px; line-height: 1.65; text-align: left; }
-.primary-button, .cancel-button, .link-button, .captcha-button { font: inherit; cursor: pointer; }
-.primary-button { width: 100%; min-height: 44px; margin-top: 14px; border: 0; border-radius: 9px; background: #0891b2; color: white; font-weight: 700; }
-.primary-button:hover:not(:disabled) { background: #0e7490; }
-.link-button { margin-top: 15px; border: 0; background: transparent; color: #087b9b; font-weight: 650; }
-.secondary-link { padding-top: 14px; border-top: 1px solid #e2e8f0; }
-.cancel-button { margin-top: 14px; border: 0; background: transparent; color: #64748b; font-weight: 600; }
-button:disabled { cursor: not-allowed; opacity: .55; }
-.error-message { margin: -3px 0 4px; padding: 10px 12px; border-radius: 8px; background: #fef2f2; color: #b91c1c; font-size: 13px; line-height: 1.45; text-align: left; }
-.field-label { margin-top: 2px; color: #334155; font-size: 13px; font-weight: 650; text-align: left; }
-input { box-sizing: border-box; min-width: 0; height: 44px; border: 1px solid #cbd5e1; border-radius: 9px; padding: 0 12px; outline: none; font: inherit; }
-input:focus { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8, 145, 178, .13); }
-.captcha-row { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 10px; margin-top: 7px; }
-.captcha-button { display: grid; height: 44px; overflow: hidden; place-items: center; border: 1px solid #cbd5e1; border-radius: 9px; background: #f8fafc; color: #64748b; }
+.reauth-page { position: fixed; inset: 0; z-index: 200; box-sizing: border-box; display: flex; justify-content: center; overflow-y: auto; padding: 48px 24px 40px; background: #fff; color: #1f2328; }
+.reauth-shell { width: min(320px, 100%); }
+h1 { margin: 0 0 20px; font-size: 24px; font-weight: 500; letter-spacing: -.02em; text-align: center; }
+.account-card, .verification-card { box-sizing: border-box; border: 1px solid #d0d7de; border-radius: 6px; background: #fff; box-shadow: 0 1px 0 rgba(31, 35, 40, .04); }
+.account-card { display: flex; align-items: center; gap: 13px; min-height: 74px; padding: 14px 17px; }
+.account-card p { margin: 0; color: #57606a; font-size: 14px; }
+.account-card strong { color: #1f2328; font-weight: 600; }
+.account-avatar { display: block; flex: 0 0 38px; width: 38px; height: 38px; border-radius: 50%; object-fit: cover; }
+.account-avatar-fallback { display: grid; place-items: center; background: #ddf4ff; color: #0969da; font-size: 16px; font-weight: 600; }
+.verification-card { margin-top: 16px; padding: 20px 17px 18px; }
+.passkey-card { background: #f6f8fa; text-align: center; }
+.verification-icon { display: grid; width: 46px; height: 46px; margin: 0 auto 10px; place-items: center; color: #57606a; }
+h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.passkey-card > p:not(.error-message) { margin: 17px 0 15px; color: #24292f; font-size: 14px; line-height: 1.55; text-align: left; }
+.is-unavailable { background: #f6f8fa; }
+.is-unavailable .verification-icon, .is-unavailable > p { color: #6e7781; }
+.primary-button, .cancel-button, .link-button, .captcha-button, .email-method { font: inherit; cursor: pointer; }
+.primary-button { width: 100%; min-height: 36px; border: 1px solid rgba(27, 31, 36, .15); border-radius: 6px; background: #1f883d; box-shadow: 0 1px 0 rgba(31, 35, 40, .1); color: #fff; font-size: 14px; font-weight: 600; }
+.primary-button:hover:not(:disabled) { background: #1a7f37; }
+.alternatives-card { padding: 18px 17px; }
+.alternatives-card h2 { font-size: 16px; }
+.alternatives-description { margin: 8px 0 13px; color: #57606a; font-size: 13px; line-height: 1.5; }
+.email-method { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px 0; border: 0; border-top: 1px solid #d8dee4; background: transparent; color: #0969da; text-align: left; }
+.email-method:hover:not(:disabled) .email-method-copy strong { text-decoration: underline; }
+.email-method-icon { display: grid; flex: 0 0 30px; height: 30px; place-items: center; border-radius: 6px; background: #ddf4ff; color: #0969da; }
+.email-method-copy { display: grid; min-width: 0; gap: 2px; }
+.email-method-copy strong { color: #0969da; font-size: 14px; font-weight: 600; }
+.email-method-copy small { overflow: hidden; color: #57606a; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.email-method-action { margin-left: auto; color: #57606a; font-size: 12px; }
+.email-form { margin-top: 6px; padding-top: 14px; border-top: 1px solid #d8dee4; }
+.field-label { display: block; color: #24292f; font-size: 13px; font-weight: 600; text-align: left; }
+input { box-sizing: border-box; min-width: 0; height: 34px; border: 1px solid #d0d7de; border-radius: 6px; padding: 5px 8px; outline: none; background: #fff; color: #1f2328; font: inherit; font-size: 14px; }
+input:focus { border-color: #0969da; box-shadow: 0 0 0 3px rgba(9, 105, 218, .3); }
+.captcha-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px; gap: 8px; margin-top: 7px; }
+.captcha-button { display: grid; height: 34px; overflow: hidden; place-items: center; border: 1px solid #d0d7de; border-radius: 6px; background: #f6f8fa; color: #57606a; font-size: 12px; }
 .captcha-button img { width: 100%; height: 100%; object-fit: contain; }
+.email-form .primary-button { margin-top: 12px; }
 .code-input { width: 100%; margin-top: 7px; text-align: center; letter-spacing: .22em; }
-.reauth-tip { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 18px 0 0; color: #64748b; font-size: 13px; }
-.unavailable-card p { text-align: center !important; }
-@media (max-width: 520px) { .reauth-page { padding: 34px 16px 28px; } h1 { font-size: 25px; } .method-card { padding: 23px 18px 20px; } }
+.link-button { display: block; width: 100%; margin-top: 12px; border: 0; background: transparent; color: #0969da; font-size: 13px; }
+.error-message { margin: 0 0 12px; padding: 8px 10px; border: 1px solid #ff8182; border-radius: 6px; background: #ffebe9; color: #cf222e; font-size: 13px; line-height: 1.45; text-align: left; }
+.empty-methods { margin: 0; color: #6e7781; font-size: 13px; }
+.reauth-footer { margin-top: 16px; text-align: center; }
+.cancel-button { border: 0; background: transparent; color: #0969da; font-size: 13px; }
+.reauth-tip { display: flex; align-items: flex-start; justify-content: center; gap: 5px; margin: 13px 0 0; color: #6e7781; font-size: 12px; line-height: 1.5; }
+.reauth-tip svg { flex: 0 0 auto; margin-top: 2px; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+@media (max-width: 520px) { .reauth-page { padding: 32px 16px 26px; } }
 </style>
