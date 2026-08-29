@@ -137,7 +137,7 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	profile, err := h.user.GetProfileOverview(c.Request.Context(), userID)
+	profile, err := h.user.GetProfile(c.Request.Context(), userID)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
@@ -148,6 +148,48 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, ecode.OKResponse(profile))
+}
+
+// GetLoginMethods returns sign-in methods available to the current user.
+func (h *UserHandler) GetLoginMethods(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		return
+	}
+
+	methods, err := h.user.GetLoginMethods(c.Request.Context(), userID)
+	if err != nil {
+		if errors.Is(err, common.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "获取登录方式失败", Data: nil})
+		return
+	}
+
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"methods": methods}))
+}
+
+// GetApplications returns OAuth applications used by the current user.
+func (h *UserHandler) GetApplications(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		return
+	}
+
+	applications, err := h.user.GetApplications(c.Request.Context(), userID)
+	if err != nil {
+		if errors.Is(err, common.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "获取应用失败", Data: nil})
+		return
+	}
+
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"applications": applications}))
 }
 
 // GetLoginDevices lists the current user's active browser devices.

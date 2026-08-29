@@ -141,6 +141,14 @@ export const userAPI = {
     return api.get('/user/profile')
   },
 
+  getLoginMethods: () => {
+    return api.get('/user/login-methods')
+  },
+
+  getApplications: () => {
+    return api.get('/user/applications')
+  },
+
   updateProfile: (data) => {
     return api.put('/user/profile', data)
   },

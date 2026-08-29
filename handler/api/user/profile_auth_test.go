@@ -148,16 +148,7 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 			User struct {
 				ID string `json:"id"`
 			} `json:"user"`
-			Applications []struct {
-				ClientID    string  `json:"client_id"`
-				Name        string  `json:"name"`
-				HomepageURL string  `json:"homepage_url"`
-				LogoURL     *string `json:"logo_url"`
-			} `json:"applications"`
-			ThirdPartyProviders []struct {
-				Provider string `json:"provider"`
-				Bound    bool   `json:"bound"`
-			} `json:"third_party_providers"`
+			IsAdmin bool `json:"is_admin"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -166,20 +157,176 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 	if resp.Code != 200 || resp.Data.User.ID != "u1" {
 		t.Fatalf("expected user u1, got %s", w.Body.String())
 	}
-	if len(resp.Data.Applications) != 1 || resp.Data.Applications[0].Name != "demo app" {
-		t.Fatalf("expected demo app, got %s", w.Body.String())
+	var envelope map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("unmarshal envelope: %v", err)
 	}
-	if resp.Data.Applications[0].HomepageURL != "https://demo.example.com" {
-		t.Fatalf("expected homepage url, got %s", w.Body.String())
+	data, ok := envelope["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected object data, got %s", w.Body.String())
 	}
-	if resp.Data.Applications[0].LogoURL == nil || *resp.Data.Applications[0].LogoURL != logoURL {
-		t.Fatalf("expected application logo url, got %s", w.Body.String())
+	if _, exists := data["applications"]; exists {
+		t.Fatalf("profile must not include applications: %s", w.Body.String())
 	}
-	if len(resp.Data.ThirdPartyProviders) != 2 {
-		t.Fatalf("expected two providers, got %s", w.Body.String())
+	if _, exists := data["third_party_providers"]; exists {
+		t.Fatalf("profile must not include third party providers: %s", w.Body.String())
 	}
-	if resp.Data.ThirdPartyProviders[0].Provider != "github" || !resp.Data.ThirdPartyProviders[0].Bound {
-		t.Fatalf("expected github bound, got %s", w.Body.String())
+}
+
+func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	database, err := gorm.Open(sqlite.Open("file:login_methods?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := database.AutoMigrate(&model.User{}, &model.UserThirdParty{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	email := "u1@example.com"
+	passwordHash := "argon2id-hash"
+	if err := database.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &passwordHash, IsActive: true}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := database.Create(&model.UserThirdParty{UserID: "u1", Provider: "github", ProviderUID: "gh-1"}).Error; err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+
+	kvStore := kv.NewMemoryStore()
+	if err := kvStore.Set(context.Background(), kv.KeySession("sid-methods"), "u1", 12*time.Hour); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	handler := apiuser.NewUserHandler(apiuser.UserDeps{
+		Config: &conf.Config{OAuth: conf.ThirdPartyOAuthConfig{
+			GitHub: conf.GitHubOAuthConfig{ClientID: "github-id", ClientSecret: "github-secret"},
+			Feishu: conf.FeishuOAuthConfig{ClientID: "feishu-id"},
+		}},
+		DB: database,
+		KV: kvStore,
+	})
+	router := gin.New()
+	router.GET("/api/user/login-methods", serverhandler.RequireSessionAuth(kvStore), handler.GetLoginMethods)
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/user/login-methods", nil)
+	request.AddCookie(&http.Cookie{Name: "sso_session", Value: "sid-methods"})
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", response.Code, response.Body.String())
+	}
+
+	var payload struct {
+		Data struct {
+			Methods []struct {
+				Type     string `json:"type"`
+				Email    string `json:"email"`
+				Provider string `json:"provider"`
+				Bound    *bool  `json:"bound"`
+			} `json:"methods"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(payload.Data.Methods) != 3 {
+		t.Fatalf("expected email, password and github methods, got %s", response.Body.String())
+	}
+	if payload.Data.Methods[0].Type != "email_otp" || payload.Data.Methods[0].Email != email {
+		t.Fatalf("expected email OTP first, got %s", response.Body.String())
+	}
+	if payload.Data.Methods[1].Type != "password" {
+		t.Fatalf("expected password second, got %s", response.Body.String())
+	}
+	github := payload.Data.Methods[2]
+	if github.Type != "third_party" || github.Provider != "github" || github.Bound == nil || !*github.Bound {
+		t.Fatalf("expected configured bound github method, got %s", response.Body.String())
+	}
+}
+
+func TestUserLoginMethods_ReturnsConfiguredUnboundProviderWithoutCredentials(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	database, err := gorm.Open(sqlite.Open("file:login_methods_unbound?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := database.AutoMigrate(&model.User{}, &model.UserThirdParty{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := database.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	handler := apiuser.NewUserHandler(apiuser.UserDeps{
+		Config: &conf.Config{OAuth: conf.ThirdPartyOAuthConfig{
+			Feishu: conf.FeishuOAuthConfig{ClientID: "feishu-id", ClientSecret: "feishu-secret"},
+		}},
+		DB: database,
+		KV: kv.NewMemoryStore(),
+	})
+	router := gin.New()
+	router.GET("/api/user/login-methods", func(c *gin.Context) { c.Set("user_id", "u1") }, handler.GetLoginMethods)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/user/login-methods", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"provider":"feishu","bound":false`) {
+		t.Fatalf("expected configured unbound feishu method, got %d body=%s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "email_otp") || strings.Contains(response.Body.String(), "password") {
+		t.Fatalf("unexpected unavailable local credential method: %s", response.Body.String())
+	}
+}
+
+func TestUserApplications_ReturnsOnlyApplicationData(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	database, err := gorm.Open(sqlite.Open("file:user_applications?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := database.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserOAuthClient{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := database.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	logoURL := "https://cdn.example.com/demo.png"
+	if err := database.Create(&model.OAuthClient{Name: "Demo", ClientID: "demo", ClientSecret: "secret", HomepageURL: "https://demo.example.com", RedirectURI: "https://demo.example.com/callback", LogoURL: &logoURL}).Error; err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+	if err := database.Create(&model.UserOAuthClient{UserID: "u1", ClientID: "demo", LastLoginAt: time.Now()}).Error; err != nil {
+		t.Fatalf("create user client: %v", err)
+	}
+
+	handler := apiuser.NewUserHandler(apiuser.UserDeps{Config: &conf.Config{}, DB: database, KV: kv.NewMemoryStore()})
+	router := gin.New()
+	router.GET("/api/user/applications", func(c *gin.Context) { c.Set("user_id", "u1") }, handler.GetApplications)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/user/applications", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"client_id":"demo"`) || !strings.Contains(response.Body.String(), logoURL) {
+		t.Fatalf("expected application response, got %d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestUserSeparatedProfileEndpoints_RequireAuthentication(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	database, err := gorm.Open(sqlite.Open("file:profile_endpoint_auth?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	store := kv.NewMemoryStore()
+	handler := apiuser.NewUserHandler(apiuser.UserDeps{Config: &conf.Config{}, DB: database, KV: store})
+	router := gin.New()
+	router.GET("/api/user/login-methods", serverhandler.RequireSessionAuth(store), handler.GetLoginMethods)
+	router.GET("/api/user/applications", serverhandler.RequireSessionAuth(store), handler.GetApplications)
+
+	for _, path := range []string{"/api/user/login-methods", "/api/user/applications"} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("expected %s to require authentication, got %d body=%s", path, response.Code, response.Body.String())
+		}
 	}
 }
 

@@ -182,10 +182,20 @@ type GitHubOAuthConfig struct {
 	RedirectURI  string `mapstructure:"redirect_uri"`
 }
 
+// IsConfigured reports whether GitHub OAuth has the credentials required for use.
+func (c GitHubOAuthConfig) IsConfigured() bool {
+	return strings.TrimSpace(c.ClientID) != "" && strings.TrimSpace(c.ClientSecret) != ""
+}
+
 type FeishuOAuthConfig struct {
 	ClientID     string `mapstructure:"client_id"`
 	ClientSecret string `mapstructure:"client_secret"`
 	RedirectURI  string `mapstructure:"redirect_uri"`
+}
+
+// IsConfigured reports whether Feishu OAuth has the credentials required for use.
+func (c FeishuOAuthConfig) IsConfigured() bool {
+	return strings.TrimSpace(c.ClientID) != "" && strings.TrimSpace(c.ClientSecret) != ""
 }
 
 type ServerConfig struct {

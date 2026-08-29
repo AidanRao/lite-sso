@@ -22,7 +22,7 @@ func newGitHubProvider(cfg conf.GitHubOAuthConfig) *githubOAuthProvider {
 }
 
 func (p *githubOAuthProvider) Configured() bool {
-	return p.cfg.ClientID != "" && p.cfg.ClientSecret != ""
+	return p.cfg.IsConfigured()
 }
 
 func (p *githubOAuthProvider) AuthCodeURL(state string) string {

@@ -56,17 +56,37 @@ func (s *UserService) ResetPasswordWithEmailChallenge(ctx context.Context, email
 	return authService.ResetPasswordWithEmailChallenge(ctx, email, password, challengeID, code, deviceID)
 }
 
-func (s *UserService) GetProfileOverview(ctx context.Context, userID string) (*dto.ProfileResponse, error) {
+// GetProfile returns the current user's account summary.
+func (s *UserService) GetProfile(ctx context.Context, userID string) (*dto.ProfileResponse, error) {
 	userRepo := db.NewUserRepository(s.db)
 	user, err := userRepo.FindByID(ctx, userID)
 	if err != nil {
 		return nil, common.ErrUserNotFound
 	}
 
-	appRepo := db.NewUserOAuthClientRepository(s.db)
-	apps, err := appRepo.ListByUserID(ctx, userID)
+	return &dto.ProfileResponse{
+		User:    dto.ToUserResponse(user),
+		IsAdmin: s.cfg.IsAdminUser(userID),
+	}, nil
+}
+
+// GetLoginMethods returns only sign-in methods that are usable by the current user.
+func (s *UserService) GetLoginMethods(ctx context.Context, userID string) ([]dto.LoginMethodResponse, error) {
+	userRepo := db.NewUserRepository(s.db)
+	user, err := userRepo.FindByID(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, common.ErrUserNotFound
+	}
+
+	methods := make([]dto.LoginMethodResponse, 0, 4)
+	if user.Email != nil && strings.TrimSpace(*user.Email) != "" {
+		methods = append(methods, dto.LoginMethodResponse{
+			Type:  dto.LoginMethodEmailOTP,
+			Email: user.Email,
+		})
+	}
+	if user.PasswordHash != nil && strings.TrimSpace(*user.PasswordHash) != "" {
+		methods = append(methods, dto.LoginMethodResponse{Type: dto.LoginMethodPassword})
 	}
 
 	thirdPartyRepo := db.NewUserThirdPartyRepository(s.db)
@@ -80,9 +100,34 @@ func (s *UserService) GetProfileOverview(ctx context.Context, userID string) (*d
 		boundProviders[binding.Provider] = true
 	}
 
-	appResponses := make([]dto.UserApplicationResponse, 0, len(apps))
+	for _, provider := range supportedThirdPartyProviders {
+		if !s.isThirdPartyProviderConfigured(provider) {
+			continue
+		}
+		bound := boundProviders[provider]
+		methods = append(methods, dto.LoginMethodResponse{
+			Type:     dto.LoginMethodThirdParty,
+			Provider: provider,
+			Bound:    &bound,
+		})
+	}
+	return methods, nil
+}
+
+// GetApplications returns OAuth clients the current user has signed in to.
+func (s *UserService) GetApplications(ctx context.Context, userID string) ([]dto.UserApplicationResponse, error) {
+	if _, err := db.NewUserRepository(s.db).FindByID(ctx, userID); err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	apps, err := db.NewUserOAuthClientRepository(s.db).ListByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	responses := make([]dto.UserApplicationResponse, 0, len(apps))
 	for _, app := range apps {
-		appResponses = append(appResponses, dto.UserApplicationResponse{
+		responses = append(responses, dto.UserApplicationResponse{
 			ClientID:    app.ClientID,
 			Name:        app.Name,
 			HomepageURL: app.HomepageURL,
@@ -90,21 +135,7 @@ func (s *UserService) GetProfileOverview(ctx context.Context, userID string) (*d
 			LastLoginAt: app.LastLoginAt,
 		})
 	}
-
-	providerResponses := make([]dto.ThirdPartyProviderResponse, 0, len(supportedThirdPartyProviders))
-	for _, provider := range supportedThirdPartyProviders {
-		providerResponses = append(providerResponses, dto.ThirdPartyProviderResponse{
-			Provider: provider,
-			Bound:    boundProviders[provider],
-		})
-	}
-
-	return &dto.ProfileResponse{
-		User:                dto.ToUserResponse(user),
-		Applications:        appResponses,
-		ThirdPartyProviders: providerResponses,
-		IsAdmin:             s.cfg.IsAdminUser(userID),
-	}, nil
+	return responses, nil
 }
 
 // UnbindThirdParty removes a third-party login method from the current user.
@@ -226,4 +257,18 @@ func isSupportedThirdPartyProvider(provider string) bool {
 		}
 	}
 	return false
+}
+
+func (s *UserService) isThirdPartyProviderConfigured(provider string) bool {
+	if s.cfg == nil {
+		return false
+	}
+	switch provider {
+	case "github":
+		return s.cfg.OAuth.GitHub.IsConfigured()
+	case "feishu":
+		return s.cfg.OAuth.Feishu.IsConfigured()
+	default:
+		return false
+	}
 }

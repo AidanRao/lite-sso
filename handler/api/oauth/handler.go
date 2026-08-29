@@ -202,14 +202,14 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 				redirectThirdPartyBindingError(c, provider, "该账号已绑定此第三方登录方式")
 				return
 			}
-			c.Redirect(http.StatusTemporaryRedirect, "/profile?bind_error="+url.QueryEscape("该账号已绑定此第三方登录方式"))
+			c.Redirect(http.StatusTemporaryRedirect, "/profile/access/authentication?bind_error="+url.QueryEscape("该账号已绑定此第三方登录方式"))
 		case errors.Is(err, common.ErrThirdPartyBoundToAnother):
 			log.Printf("ThirdPartyCallback: third party bound to another user, provider=%s, has_state=%t, err=%v", provider, state != "", err)
 			if isBindingFlow {
 				redirectThirdPartyBindingError(c, provider, "该第三方账号已被其他账号绑定")
 				return
 			}
-			c.Redirect(http.StatusTemporaryRedirect, "/profile?bind_error="+url.QueryEscape("该第三方账号已被其他账号绑定"))
+			c.Redirect(http.StatusTemporaryRedirect, "/profile/access/authentication?bind_error="+url.QueryEscape("该第三方账号已被其他账号绑定"))
 		case errors.Is(err, common.ErrProviderAuthFailed):
 			log.Printf("ThirdPartyCallback: provider authentication failed, provider=%s, has_state=%t, err=%v", provider, state != "", err)
 			if isBindingFlow {

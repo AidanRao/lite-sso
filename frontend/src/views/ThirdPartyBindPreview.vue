@@ -3,7 +3,7 @@
     <section class="binding-card" aria-labelledby="binding-title">
       <button class="back-button" type="button" :disabled="confirming || startingAuthorization" @click="cancel">
         <ArrowLeft :size="18" />
-        返回账号页
+        返回认证设置
       </button>
 
       <div v-if="loading" class="state-panel">
@@ -16,7 +16,7 @@
         <p>{{ errorMessage }}</p>
         <div class="actions error-actions">
           <button v-if="selectedProvider" class="secondary-button" type="button" @click="retryAuthorization">重新授权</button>
-          <button class="primary-button" type="button" @click="cancel">返回账号页</button>
+          <button class="primary-button" type="button" @click="cancel">返回认证设置</button>
         </div>
       </div>
 
@@ -151,7 +151,7 @@ const accountInitial = computed(() => accountName.value.slice(0, 1).toUpperCase(
 const providerAccountInitial = computed(() => (preview.value?.username || providerName.value).slice(0, 1).toUpperCase())
 
 const cancel = () => {
-  router.replace('/profile')
+  router.replace('/profile/access/authentication')
 }
 
 const loadBindingContext = async () => {
@@ -200,7 +200,7 @@ const startAuthorization = () => {
   }
 
   startingAuthorization.value = true
-  const redirect = encodeURIComponent('/profile?bind=success')
+  const redirect = encodeURIComponent('/profile/access/authentication?bind=success')
   window.location.assign(`/api/user/third/${encodeURIComponent(selectedProvider.value)}/bind?redirect=${redirect}`)
 }
 
@@ -225,7 +225,7 @@ const confirm = async () => {
   confirming.value = true
   try {
     const result = await userAPI.confirmThirdPartyBinding(bindingID.value)
-    router.replace(result?.data?.redirect_url || '/profile?bind=success')
+    router.replace(result?.data?.redirect_url || '/profile/access/authentication?bind=success')
   } catch (error) {
     if (isReauthCancelled(error)) return
     errorMessage.value = error.message || '确认绑定失败，请重新授权。'

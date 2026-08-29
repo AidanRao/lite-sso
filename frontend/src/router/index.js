@@ -31,14 +31,36 @@ const routes = [
     component: OAuthCallback
   },
   {
-    path: '/profile',
-    name: 'Profile',
-    component: Profile
-  },
-  {
     path: '/profile/third-party-bind',
     name: 'ThirdPartyBindPreview',
     component: () => import('../views/ThirdPartyBindPreview.vue')
+  },
+  {
+    path: '/profile',
+    component: Profile,
+    redirect: '/profile/account',
+    children: [
+      {
+        path: 'account',
+        name: 'ProfileAccount',
+        component: () => import('../views/profile/ProfileAccount.vue')
+      },
+      {
+        path: 'access/authentication',
+        name: 'ProfileAuthentication',
+        component: () => import('../views/profile/ProfileAuthentication.vue')
+      },
+      {
+        path: 'access/sessions',
+        name: 'ProfileSessions',
+        component: () => import('../views/profile/ProfileSessions.vue')
+      },
+      {
+        path: 'integrations/applications',
+        name: 'ProfileApplications',
+        component: () => import('../views/profile/ProfileApplications.vue')
+      }
+    ]
   },
   {
     path: '/admin',

@@ -2,7 +2,13 @@ package dto
 
 import "time"
 
-// UserResponse represents user data returned in API responses
+const (
+	LoginMethodEmailOTP   LoginMethodType = "email_otp"
+	LoginMethodPassword   LoginMethodType = "password"
+	LoginMethodThirdParty LoginMethodType = "third_party"
+)
+
+// UserResponse represents user data returned in API responses.
 type UserResponse struct {
 	ID        string  `json:"id"`
 	Email     *string `json:"email"`
@@ -10,13 +16,24 @@ type UserResponse struct {
 	AvatarURL *string `json:"avatar_url"`
 }
 
+// ProfileResponse represents the current user's account summary.
 type ProfileResponse struct {
-	User                *UserResponse                `json:"user"`
-	Applications        []UserApplicationResponse    `json:"applications"`
-	ThirdPartyProviders []ThirdPartyProviderResponse `json:"third_party_providers"`
-	IsAdmin             bool                         `json:"is_admin"`
+	User    *UserResponse `json:"user"`
+	IsAdmin bool          `json:"is_admin"`
 }
 
+// LoginMethodType identifies a supported sign-in method category.
+type LoginMethodType string
+
+// LoginMethodResponse describes one sign-in method available to the current user.
+type LoginMethodResponse struct {
+	Type     LoginMethodType `json:"type"`
+	Email    *string         `json:"email,omitempty"`
+	Provider string          `json:"provider,omitempty"`
+	Bound    *bool           `json:"bound,omitempty"`
+}
+
+// UserApplicationResponse describes an OAuth application used by a user.
 type UserApplicationResponse struct {
 	ClientID    string    `json:"client_id"`
 	Name        string    `json:"name"`
@@ -25,6 +42,7 @@ type UserApplicationResponse struct {
 	LastLoginAt time.Time `json:"last_login_at"`
 }
 
+// ThirdPartyProviderResponse describes an administrator-visible provider binding.
 type ThirdPartyProviderResponse struct {
 	Provider string `json:"provider"`
 	Bound    bool   `json:"bound"`

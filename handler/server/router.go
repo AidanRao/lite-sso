@@ -135,6 +135,8 @@ func (s *Server) registerRoutes() {
 			userProtected.Use(authRequired)
 			userProtected.GET("/profile", userHandler.GetProfile)
 			userProtected.PUT("/profile", userHandler.UpdateProfile)
+			userProtected.GET("/login-methods", userHandler.GetLoginMethods)
+			userProtected.GET("/applications", userHandler.GetApplications)
 			userProtected.POST("/avatar", userHandler.UploadAvatar)
 			userProtected.GET("/devices", userHandler.GetLoginDevices)
 			userProtected.DELETE("/devices/:device_id", userHandler.RevokeLoginDevice)
