@@ -73,8 +73,8 @@ loadProfile()
 .settings-page {
   min-height: 100vh;
   box-sizing: border-box;
-  background: #ffffff;
-  color: #24292f;
+  background: var(--profile-surface);
+  color: var(--profile-text-strong);
   padding: 28px 24px 56px;
 }
 
@@ -97,9 +97,9 @@ loadProfile()
   align-items: center;
   justify-content: center;
   gap: 10px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--profile-border);
   border-radius: 6px;
-  color: #57606a;
+  color: var(--profile-text-muted);
 }
 
 .page-state p {
@@ -108,24 +108,24 @@ loadProfile()
 
 .error-state {
   flex-direction: column;
-  color: #cf222e;
+  color: var(--profile-danger);
 }
 
 .spinner {
   width: 18px;
   height: 18px;
-  border: 2px solid #d0d7de;
-  border-top-color: #0969da;
+  border: 2px solid var(--profile-border);
+  border-top-color: var(--profile-accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
 .button {
   min-height: 32px;
-  border: 1px solid rgba(27, 31, 36, 0.15);
+  border: 1px solid var(--profile-border-muted);
   border-radius: 6px;
-  background: #f6f8fa;
-  color: #24292f;
+  background: var(--profile-surface-subtle);
+  color: var(--profile-text-strong);
   cursor: pointer;
   font: inherit;
   font-size: 14px;

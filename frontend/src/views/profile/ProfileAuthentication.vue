@@ -4,7 +4,6 @@
       title-id="login-methods-title"
       title="登录方式"
       description="展示系统支持的登录方式，以及当前账号是否已配置或可用。"
-      divided
     >
       <div v-if="methodsLoading" class="section-state">
         <span class="spinner" aria-hidden="true"></span>
@@ -96,7 +95,6 @@
       title-id="passkeys-title"
       title="Passkeys"
       description="Passkey 当前用于确认绑定、解绑和其他敏感操作，不作为账号登录方式。"
-      divided
     >
       <template #actions>
         <button class="button primary" type="button" @click="enrollmentOpen = true">
@@ -416,7 +414,7 @@ onMounted(() => {
 
 .settings-list {
   overflow: hidden;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--profile-border);
   border-radius: 6px;
 }
 
@@ -428,7 +426,7 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  border-top: 1px solid #d8dee4;
+  border-top: 1px solid var(--profile-divider);
 }
 
 .settings-row:first-child {
@@ -442,13 +440,13 @@ onMounted(() => {
 }
 
 .password-change-form label {
-  color: #24292f;
+  color: var(--profile-text-strong);
   font-size: 14px;
   font-weight: 600;
 }
 
 .password-change-form .field-label-error {
-  color: #cf222e;
+  color: var(--profile-danger);
 }
 
 .password-input-wrapper {
@@ -461,9 +459,9 @@ onMounted(() => {
   min-height: 34px;
   box-sizing: border-box;
   padding: 6px 10px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--profile-border);
   border-radius: 6px;
-  color: #24292f;
+  color: var(--profile-text-strong);
   font: inherit;
 }
 
@@ -471,24 +469,24 @@ onMounted(() => {
   position: absolute;
   top: 50%;
   right: 10px;
-  color: #cf222e;
+  color: var(--profile-danger);
   pointer-events: none;
   transform: translateY(-50%);
 }
 
 .password-input-wrapper.is-error input {
-  border-color: #cf222e;
+  border-color: var(--profile-danger);
 }
 
 .password-change-form input:focus {
-  border-color: #0969da;
+  border-color: var(--profile-accent);
   outline: none;
-  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15);
+  box-shadow: 0 0 0 3px var(--profile-focus-ring);
 }
 
 .password-input-wrapper.is-error input:focus {
-  border-color: #cf222e;
-  box-shadow: 0 0 0 3px rgba(207, 34, 46, 0.15);
+  border-color: var(--profile-danger);
+  box-shadow: 0 0 0 3px var(--profile-danger-focus-ring);
 }
 
 .password-field-error {
@@ -497,10 +495,10 @@ onMounted(() => {
   box-sizing: border-box;
   margin: 0;
   padding: 9px 12px;
-  border: 1px solid #ffb4b4;
+  border: 1px solid var(--profile-danger-border);
   border-radius: 6px;
-  background: #fff8f8;
-  color: #cf222e;
+  background: var(--profile-danger-soft);
+  color: var(--profile-danger);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -511,9 +509,9 @@ onMounted(() => {
   left: 16px;
   width: 10px;
   height: 10px;
-  border-top: 1px solid #ffb4b4;
-  border-left: 1px solid #ffb4b4;
-  background: #fff8f8;
+  border-top: 1px solid var(--profile-danger-border);
+  border-left: 1px solid var(--profile-danger-border);
+  background: var(--profile-danger-soft);
   content: '';
   transform: rotate(45deg);
 }
@@ -522,16 +520,16 @@ onMounted(() => {
   margin: 4px 0 0;
   font-size: 13px;
   line-height: 1.45;
-  color: #57606a;
+  color: var(--profile-text-muted);
 }
 
 .password-rule .is-valid {
-  color: #1a7f37;
+  color: var(--profile-success);
   font-weight: 600;
 }
 
 .password-rule .is-invalid {
-  color: #cf222e;
+  color: var(--profile-danger);
   font-weight: 600;
 }
 
@@ -543,7 +541,7 @@ onMounted(() => {
 }
 
 .forgot-password-link {
-  color: #0969da;
+  color: var(--profile-accent);
   font-size: 14px;
   text-decoration: none;
 }
@@ -558,7 +556,7 @@ onMounted(() => {
   height: 30px;
   align-items: center;
   justify-content: center;
-  color: #24292f;
+  color: var(--profile-text-strong);
 }
 
 .row-copy {
@@ -572,7 +570,7 @@ onMounted(() => {
 }
 
 .row-copy span {
-  color: #57606a;
+  color: var(--profile-text-muted);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -589,23 +587,23 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--profile-border);
   border-radius: 6px;
-  color: #57606a;
+  color: var(--profile-text-muted);
   font-size: 14px;
   padding: 16px;
 }
 
 .error-state {
   justify-content: space-between;
-  color: #cf222e;
+  color: var(--profile-danger);
 }
 
 .spinner {
   width: 17px;
   height: 17px;
-  border: 2px solid #d0d7de;
-  border-top-color: #0969da;
+  border: 2px solid var(--profile-border);
+  border-top-color: var(--profile-accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -618,10 +616,10 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1px solid rgba(27, 31, 36, 0.15);
+  border: 1px solid var(--profile-border-muted);
   border-radius: 6px;
-  background: #f6f8fa;
-  color: #24292f;
+  background: var(--profile-surface-subtle);
+  color: var(--profile-text-strong);
   cursor: pointer;
   font: inherit;
   font-size: 14px;
@@ -633,23 +631,23 @@ onMounted(() => {
 }
 
 .button.primary {
-  border-color: #1f883d;
-  background: #1f883d;
+  border-color: var(--profile-success-strong);
+  background: var(--profile-success-strong);
   color: #ffffff;
 }
 
 .button.danger,
 .danger-icon {
-  color: #cf222e;
+  color: var(--profile-danger);
 }
 
 .button:hover:not(:disabled),
 .icon-button:hover:not(:disabled) {
-  background: #eaeef2;
+  background: var(--profile-surface-hover);
 }
 
 .button.primary:hover:not(:disabled) {
-  background: #1a7f37;
+  background: var(--profile-success);
 }
 
 .button:disabled,

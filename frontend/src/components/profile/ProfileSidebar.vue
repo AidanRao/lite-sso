@@ -36,7 +36,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { AppWindow, KeyRound, LogOut, Mail, RadioTower, Shield, UserRound } from 'lucide-vue-next'
+import { AppWindow, KeyRound, LogOut, Mail, Paintbrush, RadioTower, Shield, UserRound } from 'lucide-vue-next'
 import ProfileSidebarItem from './ProfileSidebarItem.vue'
 import { submitGlobalLogout } from '../../utils/logout'
 
@@ -56,6 +56,11 @@ const navigation = [
     label: 'Account',
     to: '/profile/account',
     icon: UserRound
+  },
+  {
+    label: '外观',
+    to: '/profile/appearance',
+    icon: Paintbrush
   },
   {
     label: 'Access',
@@ -125,10 +130,10 @@ const logout = () => {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border: 1px solid rgba(27, 31, 36, 0.15);
+  border: 1px solid var(--profile-border-muted);
   border-radius: 50%;
-  background: #f6f8fa;
-  color: #57606a;
+  background: var(--profile-surface-subtle);
+  color: var(--profile-text-muted);
   font-size: 18px;
   font-weight: 600;
 }
@@ -153,12 +158,12 @@ const logout = () => {
 }
 
 .identity-copy strong {
-  color: #24292f;
+  color: var(--profile-text-strong);
   font-size: 16px;
 }
 
 .identity-copy span {
-  color: #57606a;
+  color: var(--profile-text-muted);
   font-size: 13px;
 }
 
@@ -175,7 +180,7 @@ const logout = () => {
   gap: 2px;
   margin: 18px 8px 0;
   padding-top: 12px;
-  border-top: 1px solid #d8dee4;
+  border-top: 1px solid var(--profile-divider);
 }
 
 .sidebar-action {
@@ -187,7 +192,7 @@ const logout = () => {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #24292f;
+  color: var(--profile-text-strong);
   cursor: pointer;
   font: inherit;
   font-size: 14px;
@@ -196,7 +201,7 @@ const logout = () => {
 }
 
 .sidebar-action:hover {
-  background: #f6f8fa;
+  background: var(--profile-surface-subtle);
 }
 
 @media (max-width: 760px) {

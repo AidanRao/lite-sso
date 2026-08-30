@@ -242,8 +242,8 @@ onMounted(loadBindingContext)
 .binding-page {
   align-items: center;
   background:
-    radial-gradient(circle at 50% 5%, rgba(14, 165, 233, 0.12), transparent 30%),
-    #f8fafc;
+    radial-gradient(circle at 50% 5%, var(--profile-binding-glow), transparent 30%),
+    var(--profile-binding-canvas);
   box-sizing: border-box;
   display: flex;
   justify-content: center;
@@ -252,10 +252,10 @@ onMounted(loadBindingContext)
 }
 
 .binding-card {
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid #dbe4ef;
+  background: var(--profile-binding-card);
+  border: 1px solid var(--profile-border);
   border-radius: 18px;
-  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.11);
+  box-shadow: var(--profile-shadow);
   box-sizing: border-box;
   max-width: 1080px;
   min-height: 680px;
@@ -279,14 +279,14 @@ onMounted(loadBindingContext)
 .back-button {
   background: transparent;
   border: 0;
-  color: #334e70;
+  color: var(--profile-text-muted);
   font-size: 16px;
   margin: -6px 0 20px -8px;
   padding: 7px 8px;
 }
 
 .back-button:hover:not(:disabled) {
-  color: #0284c7;
+  color: var(--profile-accent);
 }
 
 .progress {
@@ -298,7 +298,7 @@ onMounted(loadBindingContext)
 
 .progress-step {
   align-items: center;
-  color: #7c8ca5;
+  color: var(--profile-text-faint);
   display: inline-flex;
   font-size: 16px;
   gap: 10px;
@@ -310,7 +310,7 @@ onMounted(loadBindingContext)
 
 .step-number {
   align-items: center;
-  border: 1px solid #c8d5e5;
+  border: 1px solid var(--profile-border);
   border-radius: 50%;
   display: inline-flex;
   font-size: 16px;
@@ -322,19 +322,19 @@ onMounted(loadBindingContext)
 
 .progress-step.active,
 .progress-step.completed {
-  color: #0891b2;
+  color: var(--profile-accent);
 }
 
 .progress-step.active .step-number,
 .progress-step.completed .step-number {
-  background: #0891b2;
-  border-color: #0891b2;
-  box-shadow: 0 5px 13px rgba(8, 145, 178, 0.24);
+  background: var(--profile-accent);
+  border-color: var(--profile-accent);
+  box-shadow: 0 5px 13px var(--profile-focus-ring);
   color: #fff;
 }
 
 .progress-line {
-  background: #9dbbd1;
+  background: var(--profile-divider);
   height: 1px;
   margin: 0 34px;
   width: 48px;
@@ -345,7 +345,7 @@ onMounted(loadBindingContext)
 }
 
 .eyebrow {
-  color: #0f766e;
+  color: var(--profile-success);
   font-size: 14px;
   font-weight: 750;
   letter-spacing: 0.03em;
@@ -353,7 +353,7 @@ onMounted(loadBindingContext)
 }
 
 h1 {
-  color: #12213b;
+  color: var(--profile-text-strong);
   font-size: 30px;
   letter-spacing: -0.02em;
   line-height: 1.22;
@@ -361,7 +361,7 @@ h1 {
 }
 
 .description {
-  color: #536b8b;
+  color: var(--profile-text-muted);
   font-size: 16px;
   line-height: 1.75;
   margin: 13px 0 0;
@@ -376,8 +376,8 @@ h1 {
 }
 
 .identity-card {
-  background: #fff;
-  border: 1px solid #d7e1ed;
+  background: var(--profile-surface);
+  border: 1px solid var(--profile-border);
   border-radius: 12px;
   box-sizing: border-box;
   min-height: 176px;
@@ -395,9 +395,9 @@ h1 {
 }
 
 .identity-label {
-  background: #edf7ff;
+  background: var(--profile-accent-soft);
   border-radius: 5px;
-  color: #1677d2;
+  color: var(--profile-accent);
   display: inline-flex;
   font-size: 13px;
   font-weight: 700;
@@ -415,9 +415,9 @@ h1 {
 
 .avatar {
   align-items: center;
-  background: #dce7f2;
+  background: var(--profile-accent-soft);
   border-radius: 50%;
-  color: #3d5876;
+  color: var(--profile-text-muted);
   display: flex;
   flex: 0 0 62px;
   font-size: 23px;
@@ -435,8 +435,8 @@ h1 {
 }
 
 .provider-avatar {
-  background: #f3f6fa;
-  color: #172033;
+  background: var(--profile-surface-subtle);
+  color: var(--profile-text);
 }
 
 .identity-copy {
@@ -447,7 +447,7 @@ h1 {
 
 .identity-copy strong {
   align-items: center;
-  color: #101d35;
+  color: var(--profile-text-strong);
   display: inline-flex;
   font-size: 19px;
   gap: 8px;
@@ -455,7 +455,7 @@ h1 {
 }
 
 .identity-copy span {
-  color: #58708f;
+  color: var(--profile-text-muted);
   font-size: 15px;
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -463,19 +463,19 @@ h1 {
 
 .binding-connector {
   align-items: center;
-  color: #4b6687;
+  color: var(--profile-text-muted);
   display: flex;
 }
 
 .binding-connector > span {
-  border-top: 1px dashed #b7c8db;
+  border-top: 1px dashed var(--profile-border);
   flex: 1;
 }
 
 .binding-connector > div {
   align-items: center;
-  background: #fff;
-  border: 1px solid #cbd8e6;
+  background: var(--profile-surface);
+  border: 1px solid var(--profile-border);
   border-radius: 50%;
   display: flex;
   height: 56px;
@@ -485,7 +485,7 @@ h1 {
 
 .binding-summary {
   align-items: center;
-  color: #68809f;
+  color: var(--profile-text-muted);
   display: flex;
   font-size: 15px;
   gap: 9px;
@@ -496,10 +496,10 @@ h1 {
 
 .notice {
   align-items: flex-start;
-  background: #eff7ff;
-  border: 1px solid #d4e8ff;
+  background: var(--profile-info-soft);
+  border: 1px solid var(--profile-info-border);
   border-radius: 9px;
-  color: #39709f;
+  color: var(--profile-info);
   display: flex;
   font-size: 15px;
   gap: 13px;
@@ -508,7 +508,7 @@ h1 {
 }
 
 .notice svg {
-  color: #1677d2;
+  color: var(--profile-info-strong);
   flex: 0 0 auto;
   margin-top: 2px;
 }
@@ -533,19 +533,19 @@ h1 {
 }
 
 .secondary-button {
-  background: #fff;
-  border-color: #c7d4e3;
-  color: #263c5c;
+  background: var(--profile-surface-subtle);
+  border-color: var(--profile-border);
+  color: var(--profile-text-strong);
 }
 
 .primary-button {
-  background: linear-gradient(90deg, #0a9ec0, #0784a6);
-  box-shadow: 0 7px 14px rgba(8, 145, 178, 0.18);
+  background: var(--profile-accent);
+  box-shadow: 0 7px 14px var(--profile-focus-ring);
   color: #fff;
 }
 
 .primary-button:hover:not(:disabled) {
-  background: #087b99;
+  background: var(--profile-accent-hover);
 }
 
 button:disabled {
@@ -555,7 +555,7 @@ button:disabled {
 
 .state-panel {
   align-items: center;
-  color: #475569;
+  color: var(--profile-text-muted);
   display: flex;
   flex-direction: column;
   min-height: 460px;
@@ -564,7 +564,7 @@ button:disabled {
 }
 
 .error-panel h1 {
-  color: #b91c1c;
+  color: var(--profile-danger);
   font-size: 25px;
 }
 
@@ -579,9 +579,9 @@ button:disabled {
 
 .loading-spinner {
   animation: spin 0.8s linear infinite;
-  border: 3px solid #bae6fd;
+  border: 3px solid var(--profile-accent-soft);
   border-radius: 50%;
-  border-top-color: #0891b2;
+  border-top-color: var(--profile-accent);
   height: 28px;
   width: 28px;
 }

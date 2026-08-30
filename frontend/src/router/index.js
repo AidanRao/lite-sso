@@ -46,6 +46,11 @@ const routes = [
         component: () => import('../views/profile/ProfileAccount.vue')
       },
       {
+        path: 'appearance',
+        name: 'ProfileAppearance',
+        component: () => import('../views/profile/ProfileAppearance.vue')
+      },
+      {
         path: 'access/authentication',
         name: 'ProfileAuthentication',
         component: () => import('../views/profile/ProfileAuthentication.vue')

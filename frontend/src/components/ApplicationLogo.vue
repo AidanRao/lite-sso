@@ -34,10 +34,10 @@ const sizeClass = computed(() => `application-logo--${props.size}`)
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border: 1px solid #dbe4ee;
+  border: 1px solid var(--profile-border);
   border-radius: 8px;
-  background: #f0fdfa;
-  color: #0f766e;
+  background: var(--profile-success-soft);
+  color: var(--profile-success);
   font-weight: 800;
   line-height: 1;
 }

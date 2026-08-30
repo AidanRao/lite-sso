@@ -4,7 +4,6 @@
       title-id="account-avatar-title"
       title="头像"
       description="支持 JPEG、PNG 或 WebP，文件大小不超过 2MB。"
-      divided
     >
       <div class="avatar-row">
         <div class="avatar-preview" aria-hidden="true">
@@ -195,7 +194,7 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
   align-items: center;
   gap: 18px;
   padding: 16px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--profile-border);
   border-radius: 6px;
 }
 
@@ -207,10 +206,10 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border: 1px solid rgba(27, 31, 36, 0.15);
+  border: 1px solid var(--profile-border-muted);
   border-radius: 50%;
-  background: #f6f8fa;
-  color: #57606a;
+  background: var(--profile-surface-subtle);
+  color: var(--profile-text-muted);
   font-size: 22px;
   font-weight: 600;
 }
@@ -227,7 +226,7 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
 
 .settings-list {
   overflow: hidden;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--profile-border);
   border-radius: 6px;
 }
 
@@ -238,7 +237,7 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
   justify-content: space-between;
   gap: 18px;
   padding: 12px 16px;
-  border-top: 1px solid #d8dee4;
+  border-top: 1px solid var(--profile-divider);
 }
 
 .settings-row:first-child {
@@ -257,7 +256,7 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
 
 .row-copy span {
   overflow: hidden;
-  color: #57606a;
+  color: var(--profile-text-muted);
   font-size: 13px;
   text-overflow: ellipsis;
 }
@@ -269,10 +268,10 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
 .button,
 .icon-button {
   min-height: 32px;
-  border: 1px solid rgba(27, 31, 36, 0.15);
+  border: 1px solid var(--profile-border-muted);
   border-radius: 6px;
-  background: #f6f8fa;
-  color: #24292f;
+  background: var(--profile-surface-subtle);
+  color: var(--profile-text-strong);
   cursor: pointer;
   font: inherit;
   font-size: 14px;
@@ -284,18 +283,18 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
 }
 
 .button.primary {
-  border-color: #0969da;
-  background: #0969da;
+  border-color: var(--profile-accent);
+  background: var(--profile-accent);
   color: #ffffff;
 }
 
 .button:hover:not(:disabled),
 .icon-button:hover:not(:disabled) {
-  background: #eaeef2;
+  background: var(--profile-surface-hover);
 }
 
 .button.primary:hover:not(:disabled) {
-  background: #0860ca;
+  background: var(--profile-accent-hover);
 }
 
 .button:disabled,
@@ -321,7 +320,7 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
   align-items: center;
   justify-content: center;
   padding: 18px;
-  background: rgba(27, 31, 36, 0.48);
+  background: var(--profile-overlay);
 }
 
 .dialog {
@@ -329,10 +328,10 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
   width: min(420px, 100%);
   box-sizing: border-box;
   gap: 18px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--profile-border);
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 16px 40px rgba(27, 31, 36, 0.2);
+  background: var(--profile-surface-subtle);
+  box-shadow: var(--profile-shadow);
   padding: 20px;
 }
 
@@ -352,7 +351,7 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
 .dialog label {
   display: grid;
   gap: 8px;
-  color: #24292f;
+  color: var(--profile-text-strong);
   font-size: 14px;
   font-weight: 600;
 }
@@ -360,16 +359,16 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
 .dialog input {
   height: 34px;
   box-sizing: border-box;
-  border: 1px solid #8c959f;
+  border: 1px solid var(--profile-text-faint);
   border-radius: 6px;
-  color: #24292f;
+  color: var(--profile-text-strong);
   font: inherit;
   padding: 5px 10px;
 }
 
 .dialog input:focus {
-  border-color: #0969da;
-  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15);
+  border-color: var(--profile-accent);
+  box-shadow: 0 0 0 3px var(--profile-focus-ring);
   outline: none;
 }
 

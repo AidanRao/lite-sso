@@ -34,11 +34,11 @@ const handleRegistered = () => {
 </script>
 
 <style scoped>
-.passkey-mask { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 20px; background: rgba(15, 23, 42, .55); backdrop-filter: blur(4px); }
-.passkey-dialog { width: min(440px, 100%); box-sizing: border-box; padding: 26px; border-radius: 18px; background: white; box-shadow: 0 28px 70px rgba(15, 23, 42, .22); color: #1f2328; }
+.passkey-mask { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 20px; background: var(--profile-overlay); backdrop-filter: blur(4px); }
+.passkey-dialog { width: min(440px, 100%); box-sizing: border-box; padding: 26px; border: 1px solid var(--profile-border); border-radius: 18px; background: var(--profile-surface-subtle); box-shadow: var(--profile-shadow); color: var(--profile-text); }
 header { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
-header p { margin: 0 0 4px; color: #0969da; font-size: 12px; font-weight: 700; letter-spacing: .08em; }
+header p { margin: 0 0 4px; color: var(--profile-accent); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
 h2 { margin: 0; font-size: 22px; }
-header button { border: 0; background: transparent; color: #57606a; font-size: 26px; cursor: pointer; }
+header button { border: 0; background: transparent; color: var(--profile-text-muted); font-size: 26px; cursor: pointer; }
 header button:disabled { cursor: not-allowed; opacity: .55; }
 </style>

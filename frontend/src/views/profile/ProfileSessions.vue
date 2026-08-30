@@ -158,9 +158,9 @@ onMounted(loadDevices)
 }
 
 .current-badge {
-  border: 1px solid #2da44e;
+  border: 1px solid var(--profile-success-border);
   border-radius: 999px;
-  color: #1a7f37;
+  color: var(--profile-success);
   font-size: 12px;
   font-weight: 600;
   padding: 2px 8px;
@@ -169,7 +169,7 @@ onMounted(loadDevices)
 
 .sessions-list {
   overflow: hidden;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--profile-border);
   border-radius: 6px;
 }
 
@@ -179,7 +179,7 @@ onMounted(loadDevices)
   align-items: start;
   gap: 14px;
   padding: 16px;
-  border-top: 1px solid #d8dee4;
+  border-top: 1px solid var(--profile-divider);
 }
 
 .session-row:first-child {
@@ -193,8 +193,8 @@ onMounted(loadDevices)
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  background: #f6f8fa;
-  color: #57606a;
+  background: var(--profile-surface-subtle);
+  color: var(--profile-text-muted);
 }
 
 .device-content {
@@ -216,7 +216,7 @@ onMounted(loadDevices)
   display: block;
   overflow: hidden;
   margin-top: 5px;
-  color: #6e7781;
+  color: var(--profile-text-faint);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -241,11 +241,11 @@ onMounted(loadDevices)
 }
 
 .device-meta dt {
-  color: #6e7781;
+  color: var(--profile-text-faint);
 }
 
 .device-meta dd {
-  color: #24292f;
+  color: var(--profile-text-strong);
 }
 
 .section-state {
@@ -255,23 +255,23 @@ onMounted(loadDevices)
   align-items: center;
   justify-content: center;
   gap: 10px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--profile-border);
   border-radius: 6px;
-  color: #57606a;
+  color: var(--profile-text-muted);
   font-size: 14px;
   padding: 16px;
 }
 
 .error-state {
   justify-content: space-between;
-  color: #cf222e;
+  color: var(--profile-danger);
 }
 
 .spinner {
   width: 17px;
   height: 17px;
-  border: 2px solid #d0d7de;
-  border-top-color: #0969da;
+  border: 2px solid var(--profile-border);
+  border-top-color: var(--profile-accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -279,10 +279,10 @@ onMounted(loadDevices)
 .button {
   min-height: 32px;
   box-sizing: border-box;
-  border: 1px solid rgba(27, 31, 36, 0.15);
+  border: 1px solid var(--profile-border-muted);
   border-radius: 6px;
-  background: #f6f8fa;
-  color: #24292f;
+  background: var(--profile-surface-subtle);
+  color: var(--profile-text-strong);
   cursor: pointer;
   font: inherit;
   font-size: 14px;
@@ -291,11 +291,11 @@ onMounted(loadDevices)
 }
 
 .button.danger {
-  color: #cf222e;
+  color: var(--profile-danger);
 }
 
 .button:hover:not(:disabled) {
-  background: #eaeef2;
+  background: var(--profile-surface-hover);
 }
 
 .button:disabled {

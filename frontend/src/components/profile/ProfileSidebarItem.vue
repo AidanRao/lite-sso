@@ -89,7 +89,7 @@ watch(hasActiveChild, (active) => {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #24292f;
+  color: var(--profile-text-strong);
   font: inherit;
   font-size: 14px;
   text-align: left;
@@ -101,11 +101,11 @@ watch(hasActiveChild, (active) => {
 }
 
 .navigation-link:hover {
-  background: #f6f8fa;
+  background: var(--profile-surface-subtle);
 }
 
 .navigation-link.active {
-  background: #eaeef2;
+  background: var(--profile-surface-hover);
   font-weight: 600;
 }
 
@@ -116,7 +116,7 @@ watch(hasActiveChild, (active) => {
   left: -8px;
   width: 4px;
   border-radius: 6px;
-  background: #0969da;
+  background: var(--profile-accent);
   content: '';
 }
 
@@ -124,9 +124,9 @@ watch(hasActiveChild, (active) => {
   justify-content: space-between;
   margin-top: 12px;
   padding: 10px 10px 5px var(--navigation-group-indent);
-  border-top: 1px solid #d8dee4;
+  border-top: 1px solid var(--profile-divider);
   border-radius: 0;
-  color: #57606a;
+  color: var(--profile-text-muted);
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;

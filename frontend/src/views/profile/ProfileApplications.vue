@@ -96,7 +96,7 @@ onMounted(loadApplications)
 
 .applications-list {
   overflow: hidden;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--profile-border);
   border-radius: 6px;
 }
 
@@ -110,15 +110,15 @@ onMounted(loadApplications)
 }
 
 .applications-head {
-  background: #f6f8fa;
-  color: #57606a;
+  background: var(--profile-surface-subtle);
+  color: var(--profile-text-muted);
   font-size: 12px;
   font-weight: 600;
 }
 
 .application-row {
   min-height: 66px;
-  border-top: 1px solid #d8dee4;
+  border-top: 1px solid var(--profile-divider);
 }
 
 .application-identity {
@@ -138,13 +138,13 @@ onMounted(loadApplications)
   min-width: 0;
   align-items: center;
   gap: 5px;
-  color: #24292f;
+  color: var(--profile-text-strong);
   font-size: 14px;
   font-weight: 600;
 }
 
 .application-copy a {
-  color: #0969da;
+  color: var(--profile-accent);
   text-decoration: none;
 }
 
@@ -159,7 +159,7 @@ onMounted(loadApplications)
 .application-field code,
 .application-field time {
   overflow: hidden;
-  color: #57606a;
+  color: var(--profile-text-muted);
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -176,33 +176,33 @@ onMounted(loadApplications)
   align-items: center;
   justify-content: center;
   gap: 10px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--profile-border);
   border-radius: 6px;
-  color: #57606a;
+  color: var(--profile-text-muted);
   font-size: 14px;
   padding: 16px;
 }
 
 .error-state {
   justify-content: space-between;
-  color: #cf222e;
+  color: var(--profile-danger);
 }
 
 .spinner {
   width: 17px;
   height: 17px;
-  border: 2px solid #d0d7de;
-  border-top-color: #0969da;
+  border: 2px solid var(--profile-border);
+  border-top-color: var(--profile-accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
 .button {
   min-height: 32px;
-  border: 1px solid rgba(27, 31, 36, 0.15);
+  border: 1px solid var(--profile-border-muted);
   border-radius: 6px;
-  background: #f6f8fa;
-  color: #24292f;
+  background: var(--profile-surface-subtle);
+  color: var(--profile-text-strong);
   cursor: pointer;
   font: inherit;
   font-size: 14px;
@@ -238,7 +238,7 @@ onMounted(loadApplications)
 
   .mobile-label {
     display: block;
-    color: #6e7781;
+    color: var(--profile-text-faint);
     font-size: 12px;
     font-weight: 600;
   }

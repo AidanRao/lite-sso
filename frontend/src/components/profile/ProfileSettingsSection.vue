@@ -1,6 +1,6 @@
 <template>
   <section class="profile-settings-section" :aria-labelledby="titleId">
-    <header class="profile-section-title" :class="{ divided, 'has-actions': $slots.actions }">
+    <header class="profile-section-title" :class="{ 'has-actions': $slots.actions }">
       <h2 :id="titleId">{{ title }}</h2>
       <div v-if="$slots.actions" class="profile-section-actions">
         <slot name="actions" />
@@ -24,10 +24,6 @@ defineProps({
   description: {
     type: String,
     default: ''
-  },
-  divided: {
-    type: Boolean,
-    default: false
   }
 })
 </script>
@@ -43,16 +39,13 @@ defineProps({
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-}
-
-.profile-section-title.divided {
   padding-bottom: 8px;
-  border-bottom: 1px solid #d8dee4;
+  border-bottom: 1px solid var(--profile-divider);
 }
 
 .profile-section-title h2 {
   margin: 0;
-  color: #24292f;
+  color: var(--profile-text-strong);
   font-size: 20px;
   font-weight: 600;
   line-height: 1.5;
@@ -66,7 +59,7 @@ defineProps({
 
 .profile-section-copy {
   margin: 0;
-  color: #57606a;
+  color: var(--profile-text-muted);
   font-size: 14px;
   line-height: 1.5;
 }

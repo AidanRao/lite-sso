@@ -271,52 +271,52 @@ onBeforeUnmount(stopResendTimer)
 </script>
 
 <style scoped>
-.reauth-page { position: fixed; inset: 0; z-index: 200; box-sizing: border-box; display: flex; justify-content: center; overflow-y: auto; padding: 48px 24px 40px; background: #fff; color: #1f2328; }
+.reauth-page { position: fixed; inset: 0; z-index: 200; box-sizing: border-box; display: flex; justify-content: center; overflow-y: auto; padding: 48px 24px 40px; background: var(--profile-surface); color: var(--profile-text); }
 .reauth-shell { width: min(320px, 100%); }
 h1 { margin: 0 0 20px; font-size: 24px; font-weight: 500; letter-spacing: -.02em; text-align: center; }
-.account-card, .verification-card { box-sizing: border-box; border: 1px solid #d0d7de; border-radius: 6px; background: #fff; box-shadow: 0 1px 0 rgba(31, 35, 40, .04); }
+.account-card, .verification-card { box-sizing: border-box; border: 1px solid var(--profile-border); border-radius: 6px; background: var(--profile-surface); box-shadow: var(--profile-button-shadow); }
 .account-card { display: flex; align-items: center; gap: 13px; min-height: 74px; padding: 14px 17px; }
-.account-card p { margin: 0; color: #57606a; font-size: 14px; }
-.account-card strong { color: #1f2328; font-weight: 600; }
+.account-card p { margin: 0; color: var(--profile-text-muted); font-size: 14px; }
+.account-card strong { color: var(--profile-text); font-weight: 600; }
 .account-avatar { display: block; flex: 0 0 38px; width: 38px; height: 38px; border-radius: 50%; object-fit: cover; }
-.account-avatar-fallback { display: grid; place-items: center; background: #ddf4ff; color: #0969da; font-size: 16px; font-weight: 600; }
+.account-avatar-fallback { display: grid; place-items: center; background: var(--profile-accent-soft); color: var(--profile-accent); font-size: 16px; font-weight: 600; }
 .verification-card { margin-top: 16px; padding: 20px 17px 18px; }
-.passkey-card { background: #f6f8fa; text-align: center; }
-.verification-icon { display: grid; width: 46px; height: 46px; margin: 0 auto 10px; place-items: center; color: #57606a; }
+.passkey-card { background: var(--profile-surface-subtle); text-align: center; }
+.verification-icon { display: grid; width: 46px; height: 46px; margin: 0 auto 10px; place-items: center; color: var(--profile-text-muted); }
 h2 { margin: 0; font-size: 18px; font-weight: 600; }
-.passkey-card > p:not(.error-message) { margin: 17px 0 15px; color: #24292f; font-size: 14px; line-height: 1.55; text-align: left; }
-.is-unavailable { background: #f6f8fa; }
-.is-unavailable .verification-icon { color: #6e7781; }
+.passkey-card > p:not(.error-message) { margin: 17px 0 15px; color: var(--profile-text-strong); font-size: 14px; line-height: 1.55; text-align: left; }
+.is-unavailable { background: var(--profile-surface-subtle); }
+.is-unavailable .verification-icon { color: var(--profile-text-faint); }
 .primary-button, .secondary-action-button, .cancel-button, .link-button, .captcha-button, .email-method { font: inherit; cursor: pointer; }
-.primary-button { width: 100%; min-height: 36px; border: 1px solid rgba(27, 31, 36, .15); border-radius: 6px; background: #1f883d; box-shadow: 0 1px 0 rgba(31, 35, 40, .1); color: #fff; font-size: 14px; font-weight: 600; }
-.primary-button:hover:not(:disabled) { background: #1a7f37; }
-.secondary-action-button { width: 100%; min-height: 36px; border: 1px solid rgba(27, 31, 36, .15); border-radius: 6px; background: #fff; color: #24292f; font-size: 14px; font-weight: 600; }
-.secondary-action-button:hover:not(:disabled) { background: #f6f8fa; }
+.primary-button { width: 100%; min-height: 36px; border: 1px solid var(--profile-border-muted); border-radius: 6px; background: var(--profile-success-strong); box-shadow: var(--profile-button-shadow); color: #fff; font-size: 14px; font-weight: 600; }
+.primary-button:hover:not(:disabled) { background: var(--profile-success); }
+.secondary-action-button { width: 100%; min-height: 36px; border: 1px solid var(--profile-border-muted); border-radius: 6px; background: var(--profile-surface); color: var(--profile-text-strong); font-size: 14px; font-weight: 600; }
+.secondary-action-button:hover:not(:disabled) { background: var(--profile-surface-subtle); }
 .alternatives-card { padding: 18px 17px; }
 .alternatives-card h2 { font-size: 16px; }
-.alternatives-description { margin: 8px 0 13px; color: #57606a; font-size: 13px; line-height: 1.5; }
-.email-method { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px 0; border: 0; border-top: 1px solid #d8dee4; background: transparent; color: #0969da; text-align: left; }
+.alternatives-description { margin: 8px 0 13px; color: var(--profile-text-muted); font-size: 13px; line-height: 1.5; }
+.email-method { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px 0; border: 0; border-top: 1px solid var(--profile-divider); background: transparent; color: var(--profile-accent); text-align: left; }
 .email-method:hover:not(:disabled) .email-method-copy strong { text-decoration: underline; }
-.email-method-icon { display: grid; flex: 0 0 30px; height: 30px; place-items: center; border-radius: 6px; background: #ddf4ff; color: #0969da; }
+.email-method-icon { display: grid; flex: 0 0 30px; height: 30px; place-items: center; border-radius: 6px; background: var(--profile-accent-soft); color: var(--profile-accent); }
 .email-method-copy { display: grid; min-width: 0; gap: 2px; }
-.email-method-copy strong { color: #0969da; font-size: 14px; font-weight: 600; }
-.email-method-copy small { overflow: hidden; color: #57606a; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.email-method-action { margin-left: auto; color: #57606a; font-size: 12px; }
-.email-form { margin-top: 6px; padding-top: 14px; border-top: 1px solid #d8dee4; }
-.field-label { display: block; color: #24292f; font-size: 13px; font-weight: 600; text-align: left; }
-input { box-sizing: border-box; min-width: 0; height: 34px; border: 1px solid #d0d7de; border-radius: 6px; padding: 5px 8px; outline: none; background: #fff; color: #1f2328; font: inherit; font-size: 14px; }
-input:focus { border-color: #0969da; box-shadow: 0 0 0 3px rgba(9, 105, 218, .3); }
+.email-method-copy strong { color: var(--profile-accent); font-size: 14px; font-weight: 600; }
+.email-method-copy small { overflow: hidden; color: var(--profile-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.email-method-action { margin-left: auto; color: var(--profile-text-muted); font-size: 12px; }
+.email-form { margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--profile-divider); }
+.field-label { display: block; color: var(--profile-text-strong); font-size: 13px; font-weight: 600; text-align: left; }
+input { box-sizing: border-box; min-width: 0; height: 34px; border: 1px solid var(--profile-border); border-radius: 6px; padding: 5px 8px; outline: none; background: var(--profile-surface); color: var(--profile-text); font: inherit; font-size: 14px; }
+input:focus { border-color: var(--profile-accent); box-shadow: 0 0 0 3px var(--profile-focus-ring); }
 .captcha-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px; gap: 8px; margin-top: 7px; }
-.captcha-button { display: grid; height: 34px; overflow: hidden; place-items: center; border: 1px solid #d0d7de; border-radius: 6px; background: #f6f8fa; color: #57606a; font-size: 12px; }
+.captcha-button { display: grid; height: 34px; overflow: hidden; place-items: center; border: 1px solid var(--profile-border); border-radius: 6px; background: var(--profile-surface-subtle); color: var(--profile-text-muted); font-size: 12px; }
 .captcha-button img { width: 100%; height: 100%; object-fit: contain; }
 .email-form .primary-button { margin-top: 12px; }
 .code-input { width: 100%; margin-top: 7px; text-align: center; letter-spacing: .22em; }
-.link-button { display: block; width: 100%; margin-top: 12px; border: 0; background: transparent; color: #0969da; font-size: 13px; }
-.error-message { margin: 0 0 12px; padding: 8px 10px; border: 1px solid #ff8182; border-radius: 6px; background: #ffebe9; color: #cf222e; font-size: 13px; line-height: 1.45; text-align: left; }
-.empty-methods { margin: 0; color: #6e7781; font-size: 13px; }
+.link-button { display: block; width: 100%; margin-top: 12px; border: 0; background: transparent; color: var(--profile-accent); font-size: 13px; }
+.error-message { margin: 0 0 12px; padding: 8px 10px; border: 1px solid var(--profile-danger-border); border-radius: 6px; background: var(--profile-danger-soft); color: var(--profile-danger); font-size: 13px; line-height: 1.45; text-align: left; }
+.empty-methods { margin: 0; color: var(--profile-text-faint); font-size: 13px; }
 .reauth-footer { margin-top: 16px; text-align: center; }
-.cancel-button { border: 0; background: transparent; color: #0969da; font-size: 13px; }
-.reauth-tip { display: flex; align-items: flex-start; justify-content: center; gap: 5px; margin: 13px 0 0; color: #6e7781; font-size: 12px; line-height: 1.5; }
+.cancel-button { border: 0; background: transparent; color: var(--profile-accent); font-size: 13px; }
+.reauth-tip { display: flex; align-items: flex-start; justify-content: center; gap: 5px; margin: 13px 0 0; color: var(--profile-text-faint); font-size: 12px; line-height: 1.5; }
 .reauth-tip svg { flex: 0 0 auto; margin-top: 2px; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 @media (max-width: 520px) { .reauth-page { padding: 32px 16px 26px; } }

@@ -119,18 +119,18 @@ onMounted(reset)
 
 <style scoped>
 .passkey-enrollment-form { margin-top: 14px; text-align: left; }
-.description { margin: 0 0 14px; color: #57606a; font-size: 13px; line-height: 1.5; }
-.error-message { margin: 0 0 12px; padding: 8px 10px; border: 1px solid #ff8182; border-radius: 6px; background: #ffebe9; color: #cf222e; font-size: 13px; line-height: 1.45; }
-.field-label { display: block; color: #24292f; font-size: 13px; font-weight: 600; }
-input { box-sizing: border-box; min-width: 0; height: 34px; border: 1px solid #d0d7de; border-radius: 6px; padding: 5px 8px; outline: none; background: #fff; color: #1f2328; font: inherit; font-size: 14px; }
-input:focus { border-color: #0969da; box-shadow: 0 0 0 3px rgba(9, 105, 218, .3); }
+.description { margin: 0 0 14px; color: var(--profile-text-muted); font-size: 13px; line-height: 1.5; }
+.error-message { margin: 0 0 12px; padding: 8px 10px; border: 1px solid var(--profile-danger-border); border-radius: 6px; background: var(--profile-danger-soft); color: var(--profile-danger); font-size: 13px; line-height: 1.45; }
+.field-label { display: block; color: var(--profile-text-strong); font-size: 13px; font-weight: 600; }
+input { box-sizing: border-box; min-width: 0; height: 34px; border: 1px solid var(--profile-border); border-radius: 6px; padding: 5px 8px; outline: none; background: var(--profile-surface); color: var(--profile-text); font: inherit; font-size: 14px; }
+input:focus { border-color: var(--profile-accent); box-shadow: 0 0 0 3px var(--profile-focus-ring); }
 .captcha-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px; gap: 8px; margin-top: 7px; }
-.captcha-button { display: grid; height: 34px; overflow: hidden; place-items: center; border: 1px solid #d0d7de; border-radius: 6px; background: #f6f8fa; color: #57606a; font: inherit; font-size: 12px; cursor: pointer; }
+.captcha-button { display: grid; height: 34px; overflow: hidden; place-items: center; border: 1px solid var(--profile-border); border-radius: 6px; background: var(--profile-surface-subtle); color: var(--profile-text-muted); font: inherit; font-size: 12px; cursor: pointer; }
 .captcha-button img { width: 100%; height: 100%; object-fit: contain; }
 .primary-button, .secondary-button { width: 100%; min-height: 36px; border-radius: 6px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
-.primary-button { margin-top: 12px; border: 1px solid rgba(27, 31, 36, .15); background: #1f883d; box-shadow: 0 1px 0 rgba(31, 35, 40, .1); color: #fff; }
-.primary-button:hover:not(:disabled) { background: #1a7f37; }
-.secondary-button { margin-top: 10px; border: 0; background: transparent; color: #0969da; }
+.primary-button { margin-top: 12px; border: 1px solid var(--profile-border-muted); background: var(--profile-success-strong); box-shadow: var(--profile-button-shadow); color: #fff; }
+.primary-button:hover:not(:disabled) { background: var(--profile-success); }
+.secondary-button { margin-top: 10px; border: 0; background: transparent; color: var(--profile-accent); }
 .code-input { width: 100%; margin-top: 7px; text-align: center; letter-spacing: .22em; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 </style>
