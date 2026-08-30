@@ -31,9 +31,51 @@ const routes = [
     component: OAuthCallback
   },
   {
+    path: '/profile/third-party-bind',
+    name: 'ThirdPartyBindPreview',
+    component: () => import('../views/ThirdPartyBindPreview.vue')
+  },
+  {
     path: '/profile',
-    name: 'Profile',
-    component: Profile
+    component: Profile,
+    redirect: '/profile/account',
+    children: [
+      {
+        path: 'account',
+        name: 'ProfileAccount',
+        component: () => import('../views/profile/ProfileAccount.vue')
+      },
+      {
+        path: 'appearance',
+        name: 'ProfileAppearance',
+        component: () => import('../views/profile/ProfileAppearance.vue')
+      },
+      {
+        path: 'access/authentication',
+        name: 'ProfileAuthentication',
+        component: () => import('../views/profile/ProfileAuthentication.vue')
+      },
+      {
+        path: 'access/emails',
+        name: 'ProfileEmails',
+        component: () => import('../views/profile/ProfileEmails.vue')
+      },
+      {
+        path: 'access/emails/verify',
+        name: 'ProfileEmailVerification',
+        component: () => import('../views/profile/ProfileEmails.vue')
+      },
+      {
+        path: 'access/sessions',
+        name: 'ProfileSessions',
+        component: () => import('../views/profile/ProfileSessions.vue')
+      },
+      {
+        path: 'integrations/applications',
+        name: 'ProfileApplications',
+        component: () => import('../views/profile/ProfileApplications.vue')
+      }
+    ]
   },
   {
     path: '/admin',

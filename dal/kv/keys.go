@@ -53,3 +53,23 @@ func KeySession(sessionID string) string {
 func KeyOAuthState(state string) string {
 	return fmt.Sprintf("oauth:state:%s", state)
 }
+
+func KeyOAuthPendingBinding(bindingID string) string {
+	return fmt.Sprintf("oauth:pending-binding:%s", bindingID)
+}
+
+func KeyWebAuthnCeremony(ceremonyID string) string {
+	return fmt.Sprintf("webauthn:ceremony:%s", ceremonyID)
+}
+
+func KeyReauthGrant(tokenHash string) string {
+	return fmt.Sprintf("reauth:grant:%s", tokenHash)
+}
+
+func KeyReauthSession(sessionID string) string {
+	return fmt.Sprintf("reauth:session:%s", sessionID)
+}
+
+func KeyReauthEmailChallenge(challengeID string) string {
+	return fmt.Sprintf("reauth:email:%s", challengeID)
+}

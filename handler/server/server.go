@@ -8,16 +8,30 @@ import (
 
 	"sso-server/conf"
 	"sso-server/manager/messagecenter"
+	manageross "sso-server/manager/oss"
 )
 
 type Server struct {
 	cfg                 *conf.Config
 	engine              *gin.Engine
 	messageCenterClient *messagecenter.Client
+	imageStore          manageross.ImageStore
 }
 
 func New(cfg *conf.Config) (*Server, error) {
 	if err := cfg.ValidateAuthSecrets(); err != nil {
+		return nil, err
+	}
+	if err := cfg.ValidateOSS(); err != nil {
+		return nil, err
+	}
+	if err := cfg.ValidatePasskey(); err != nil {
+		return nil, err
+	}
+	if err := cfg.ValidateReauth(); err != nil {
+		return nil, err
+	}
+	if err := cfg.ValidateEmail(); err != nil {
 		return nil, err
 	}
 	messageCenterClient, err := newMessageCenterClient(cfg)
@@ -28,10 +42,19 @@ func New(cfg *conf.Config) (*Server, error) {
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 
+	var imageStore manageross.ImageStore
+	if cfg.OSS.IsConfigured() {
+		imageStore, err = manageross.NewAvatarStorage(cfg.OSS)
+		if err != nil {
+			return nil, fmt.Errorf("create avatar store: %w", err)
+		}
+	}
+
 	srv := &Server{
 		cfg:                 cfg,
 		engine:              engine,
 		messageCenterClient: messageCenterClient,
+		imageStore:          imageStore,
 	}
 	srv.registerRoutes()
 	return srv, nil

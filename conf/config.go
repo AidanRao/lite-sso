@@ -2,6 +2,7 @@ package conf
 
 import (
 	"errors"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -48,6 +49,135 @@ type Config struct {
 	Dev           DevConfig             `mapstructure:"dev"`
 	OAuth         ThirdPartyOAuthConfig `mapstructure:"oauth"`
 	Admin         AdminConfig           `mapstructure:"admin"`
+	OSS           OSSConfig             `mapstructure:"oss"`
+	Passkey       PasskeyConfig         `mapstructure:"passkey"`
+	Email         EmailConfig           `mapstructure:"email"`
+}
+
+// EmailConfig contains user email lifecycle limits and the public verification origin.
+type EmailConfig struct {
+	MaxAddresses        int    `mapstructure:"max_addresses"`
+	VerificationBaseURL string `mapstructure:"verification_base_url"`
+}
+
+// ValidateEmail checks the multi-email account configuration.
+func (c *Config) ValidateEmail() error {
+	if c == nil {
+		return errors.New("configuration is required")
+	}
+	if c.Email.MaxAddresses <= 0 {
+		return errors.New("email.max_addresses must be positive")
+	}
+	baseURL := strings.TrimSpace(c.Email.VerificationBaseURL)
+	if baseURL == "" {
+		return errors.New("email.verification_base_url is required")
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("email.verification_base_url must be a valid HTTP origin")
+	}
+	return nil
+}
+
+// PasskeyConfig contains the relying-party and lifetime settings for WebAuthn.
+type PasskeyConfig struct {
+	RPID          string        `mapstructure:"rp_id"`
+	RPOrigins     []string      `mapstructure:"rp_origins"`
+	RPDisplayName string        `mapstructure:"rp_display_name"`
+	CeremonyTTL   time.Duration `mapstructure:"ceremony_ttl"`
+}
+
+// ValidatePasskey checks the WebAuthn relying-party configuration.
+func (c *Config) ValidatePasskey() error {
+	if c == nil {
+		return errors.New("configuration is required")
+	}
+	if GetEnv() == EnvLocal {
+		return nil
+	}
+	if strings.TrimSpace(c.Passkey.RPID) == "" {
+		return errors.New("passkey.rp_id is required")
+	}
+	if len(c.Passkey.RPOrigins) == 0 {
+		return errors.New("passkey.rp_origins is required")
+	}
+	for _, origin := range c.Passkey.RPOrigins {
+		parsed, err := url.Parse(strings.TrimSpace(origin))
+		if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return errors.New("passkey.rp_origins must contain valid origins")
+		}
+	}
+	if strings.TrimSpace(c.Passkey.RPDisplayName) == "" {
+		return errors.New("passkey.rp_display_name is required")
+	}
+	if c.Passkey.CeremonyTTL <= 0 {
+		return errors.New("passkey.ceremony_ttl must be positive")
+	}
+	return nil
+}
+
+// ValidateReauth checks the short-lived authorization grant configuration.
+func (c *Config) ValidateReauth() error {
+	if c == nil {
+		return errors.New("configuration is required")
+	}
+	if GetEnv() == EnvLocal {
+		return nil
+	}
+	if c.Auth.ReauthTokenTTL <= 0 {
+		return errors.New("auth.reauth_token_ttl must be positive")
+	}
+	return nil
+}
+
+// OSSConfig contains the Alibaba Cloud OSS settings used for user avatars.
+type OSSConfig struct {
+	Region          string `mapstructure:"region"`
+	Endpoint        string `mapstructure:"endpoint"`
+	Bucket          string `mapstructure:"bucket"`
+	AccessKeyID     string `mapstructure:"access_key_id"`
+	AccessKeySecret string `mapstructure:"access_key_secret"`
+	AvatarPrefix    string `mapstructure:"avatar_prefix"`
+	PublicBaseURL   string `mapstructure:"public_base_url"`
+}
+
+// IsConfigured reports whether any OSS setting has been provided.
+func (c OSSConfig) IsConfigured() bool {
+	return strings.TrimSpace(c.Region) != "" ||
+		strings.TrimSpace(c.Endpoint) != "" ||
+		strings.TrimSpace(c.Bucket) != "" ||
+		strings.TrimSpace(c.AccessKeyID) != "" ||
+		strings.TrimSpace(c.AccessKeySecret) != "" ||
+		strings.TrimSpace(c.AvatarPrefix) != "" ||
+		strings.TrimSpace(c.PublicBaseURL) != ""
+}
+
+// ValidateOSS checks that all required OSS settings are supplied together.
+func (c *Config) ValidateOSS() error {
+	if c == nil {
+		return errors.New("configuration is required")
+	}
+	if !c.OSS.IsConfigured() {
+		if GetEnv() == EnvProd {
+			return errors.New("oss configuration is required in production")
+		}
+		return nil
+	}
+
+	values := map[string]string{
+		"oss.region":            c.OSS.Region,
+		"oss.bucket":            c.OSS.Bucket,
+		"oss.access_key_id":     c.OSS.AccessKeyID,
+		"oss.access_key_secret": c.OSS.AccessKeySecret,
+		"oss.avatar_prefix":     c.OSS.AvatarPrefix,
+		"oss.public_base_url":   c.OSS.PublicBaseURL,
+	}
+	for name, value := range values {
+		if strings.TrimSpace(value) == "" {
+			return errors.New(name + " is required when OSS is configured")
+		}
+	}
+	return nil
 }
 
 func (c *Config) IsAdminUser(userID string) bool {
@@ -78,10 +208,20 @@ type GitHubOAuthConfig struct {
 	RedirectURI  string `mapstructure:"redirect_uri"`
 }
 
+// IsConfigured reports whether GitHub OAuth has the credentials required for use.
+func (c GitHubOAuthConfig) IsConfigured() bool {
+	return strings.TrimSpace(c.ClientID) != "" && strings.TrimSpace(c.ClientSecret) != ""
+}
+
 type FeishuOAuthConfig struct {
 	ClientID     string `mapstructure:"client_id"`
 	ClientSecret string `mapstructure:"client_secret"`
 	RedirectURI  string `mapstructure:"redirect_uri"`
+}
+
+// IsConfigured reports whether Feishu OAuth has the credentials required for use.
+func (c FeishuOAuthConfig) IsConfigured() bool {
+	return strings.TrimSpace(c.ClientID) != "" && strings.TrimSpace(c.ClientSecret) != ""
 }
 
 type ServerConfig struct {
@@ -113,7 +253,7 @@ type AuthConfig struct {
 	OTPMaxAttempts            int           `mapstructure:"otp_max_attempts"`
 	AccessTokenTTL            time.Duration `mapstructure:"access_token_ttl"`
 	RefreshTokenTTL           time.Duration `mapstructure:"refresh_token_ttl"`
-	PasswordMinLength         int           `mapstructure:"password_min_length"`
+	ReauthTokenTTL            time.Duration `mapstructure:"reauth_token_ttl"`
 	PasswordAccountFailLimit  int           `mapstructure:"password_account_fail_limit"`
 	PasswordDeviceFailLimit   int           `mapstructure:"password_device_fail_limit"`
 	PasswordIPFailLimit       int           `mapstructure:"password_ip_fail_limit"`
@@ -177,6 +317,7 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	cfg.Admin.UserIDs = readStringSlice(v, "admin.user_ids", cfg.Admin.UserIDs)
+	cfg.Passkey.RPOrigins = readStringSlice(v, "passkey.rp_origins", cfg.Passkey.RPOrigins)
 
 	return &cfg, nil
 }
@@ -195,7 +336,7 @@ func bindEnvs(v *viper.Viper) {
 		"auth.otp_max_attempts",
 		"auth.access_token_ttl",
 		"auth.refresh_token_ttl",
-		"auth.password_min_length",
+		"auth.reauth_token_ttl",
 		"auth.password_account_fail_limit",
 		"auth.password_device_fail_limit",
 		"auth.password_ip_fail_limit",
@@ -215,6 +356,19 @@ func bindEnvs(v *viper.Viper) {
 		"oauth.feishu.redirect_uri",
 		"admin.user_ids",
 		"server.trust_proxy_headers",
+		"oss.region",
+		"oss.endpoint",
+		"oss.bucket",
+		"oss.access_key_id",
+		"oss.access_key_secret",
+		"oss.avatar_prefix",
+		"oss.public_base_url",
+		"passkey.rp_id",
+		"passkey.rp_origins",
+		"passkey.rp_display_name",
+		"passkey.ceremony_ttl",
+		"email.max_addresses",
+		"email.verification_base_url",
 	}
 
 	for _, key := range envKeys {
@@ -235,6 +389,15 @@ func bindEnvs(v *viper.Viper) {
 }
 
 func setDefaults(v *viper.Viper, env Environment) {
+	v.SetDefault("passkey.ceremony_ttl", "5m")
+	v.SetDefault("auth.reauth_token_ttl", "5m")
+	v.SetDefault("email.max_addresses", 3)
+	if env == EnvLocal {
+		v.SetDefault("passkey.rp_id", "localhost")
+		v.SetDefault("passkey.rp_origins", []string{"http://localhost:5173", "http://localhost:8080"})
+		v.SetDefault("passkey.rp_display_name", "Lite SSO")
+		v.SetDefault("email.verification_base_url", "http://localhost:5173")
+	}
 	if env != EnvProd {
 		return
 	}
@@ -247,7 +410,6 @@ func setDefaults(v *viper.Viper, env Environment) {
 		"auth.otp_max_attempts":             5,
 		"auth.access_token_ttl":             "15m",
 		"auth.refresh_token_ttl":            "720h",
-		"auth.password_min_length":          12,
 		"auth.password_account_fail_limit":  5,
 		"auth.password_device_fail_limit":   20,
 		"auth.password_ip_fail_limit":       100,

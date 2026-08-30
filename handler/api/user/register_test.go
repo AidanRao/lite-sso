@@ -25,7 +25,7 @@ func TestUserRegister_CreatesUserAndReturnsTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserSession{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	store := kv.NewMemoryStore()
@@ -67,7 +67,7 @@ func TestUserResetPassword_UsesChallengeAndArgon2id(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserSession{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	oldHash, err := serviceauth.HashPassword("old-password-123")
@@ -100,6 +100,50 @@ func TestUserResetPassword_UsesChallengeAndArgon2id(t *testing.T) {
 	matched, err := serviceauth.VerifyPassword("new-password-123", *updated.PasswordHash)
 	if err != nil || !matched {
 		t.Fatalf("expected argon2id password, matched=%t err=%v", matched, err)
+	}
+}
+
+func TestUserChangePassword_UpdatesPasswordAndKeepsCurrentSession(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:user_change_password?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	oldHash, err := serviceauth.HashPassword("old-password-123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	email := "u1@example.com"
+	if err := database.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &oldHash, IsActive: true}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	now := time.Now()
+	if err := database.Create([]model.UserSession{
+		{ID: "ses-current", UserID: "u1", DeviceID: "dev-current", AuthMethod: string(serviceauth.AuthMethodPassword), RefreshTokenHash: strings.Repeat("a", 64), IP: "192.0.2.1", UserAgent: "current", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour)},
+		{ID: "ses-other", UserID: "u1", DeviceID: "dev-other", AuthMethod: string(serviceauth.AuthMethodPassword), RefreshTokenHash: strings.Repeat("b", 64), IP: "192.0.2.2", UserAgent: "other", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour)},
+	}).Error; err != nil {
+		t.Fatalf("create sessions: %v", err)
+	}
+
+	h := user.NewUserHandler(user.UserDeps{Config: &conf.Config{}, DB: database, KV: kv.NewMemoryStore()})
+	r := gin.New()
+	r.PUT("/api/user/password", func(c *gin.Context) {
+		c.Set("user_id", "u1")
+		c.Set("session_id", "ses-current")
+	}, h.ChangePassword)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/user/password", strings.NewReader(`{"old_password":"old-password-123","new_password":"new-password-456"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var other model.UserSession
+	if err := database.First(&other, "id = ?", "ses-other").Error; err != nil || other.RevokedAt == nil {
+		t.Fatalf("expected other session revoked, session=%#v err=%v", other, err)
 	}
 }
 

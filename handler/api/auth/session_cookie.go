@@ -11,17 +11,17 @@ import (
 
 // WriteLoginCookies writes the browser authorization session and refresh token.
 func WriteLoginCookies(c *gin.Context, pair *serviceauth.TokenPair, secure bool, refreshTTL time.Duration) {
-	WriteSessionCookie(c, pair.SessionID, secure)
-	WriteRefreshCookie(c, pair.RefreshToken, secure, refreshTTL)
+	writeSessionCookie(c, pair.SessionID, secure)
+	writeRefreshCookie(c, pair.RefreshToken, secure, refreshTTL)
 }
 
 // ClearLoginCookies removes both browser credentials associated with a login.
 func ClearLoginCookies(c *gin.Context, secure bool) {
-	ClearSessionCookie(c, secure)
-	ClearRefreshCookie(c, secure)
+	clearSessionCookie(c, secure)
+	clearRefreshCookie(c, secure)
 }
 
-func WriteRefreshCookie(c *gin.Context, token string, secure bool, ttl time.Duration) {
+func writeRefreshCookie(c *gin.Context, token string, secure bool, ttl time.Duration) {
 	if ttl <= 0 {
 		ttl = 30 * 24 * time.Hour
 	}
@@ -36,7 +36,7 @@ func WriteRefreshCookie(c *gin.Context, token string, secure bool, ttl time.Dura
 	})
 }
 
-func ClearRefreshCookie(c *gin.Context, secure bool) {
+func clearRefreshCookie(c *gin.Context, secure bool) {
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     serviceauth.RefreshTokenCookieName,
 		Value:    "",
@@ -49,7 +49,7 @@ func ClearRefreshCookie(c *gin.Context, secure bool) {
 	})
 }
 
-func WriteSessionCookie(c *gin.Context, sessionID string, secure bool) {
+func writeSessionCookie(c *gin.Context, sessionID string, secure bool) {
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     serviceauth.SessionCookieName,
 		Value:    sessionID,
@@ -61,7 +61,7 @@ func WriteSessionCookie(c *gin.Context, sessionID string, secure bool) {
 	})
 }
 
-func ClearSessionCookie(c *gin.Context, secure bool) {
+func clearSessionCookie(c *gin.Context, secure bool) {
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     serviceauth.SessionCookieName,
 		Value:    "",

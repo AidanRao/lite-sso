@@ -20,15 +20,15 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}
 	pair, err := h.auth.RefreshTokens(c.Request.Context(), cookie)
 	if err != nil {
-		ClearRefreshCookie(c, conf.GetEnv() == conf.EnvProd)
 		if errors.Is(err, common.ErrRefreshTokenInvalid) {
+			ClearLoginCookies(c, conf.GetEnv() == conf.EnvProd)
 			c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "Refresh Token 无效", Data: gin.H{"code": "REFRESH_TOKEN_INVALID"}})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "刷新失败", Data: nil})
 		return
 	}
-	WriteRefreshCookie(c, pair.RefreshToken, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
+	WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{
 		"access_token": pair.AccessToken,
 		"token_type":   "Bearer",

@@ -36,4 +36,4 @@ ENV ENV=prod GIN_MODE=release SERVER_TRUST_PROXY_HEADERS=true
 
 EXPOSE 80
 
-CMD ["/app/sso-server", "--migrate-after-listen"]
+CMD ["/app/sso-server"]

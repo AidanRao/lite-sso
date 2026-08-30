@@ -3,8 +3,11 @@ package systemadmin
 
 import (
 	"context"
+	"io"
+	"log"
 	"net/url"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -12,6 +15,7 @@ import (
 	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dto"
+	manageross "sso-server/manager/oss"
 	"sso-server/model"
 )
 
@@ -21,16 +25,18 @@ type AdminService struct {
 	clientRepo         *db.OAuthClientRepository
 	userOAuthRepo      *db.UserOAuthClientRepository
 	userThirdPartyRepo *db.UserThirdPartyRepository
+	imageStore         manageross.ImageStore
 }
 
 // NewAdminService creates a service for system administration workflows.
-func NewAdminService(cfg *conf.Config, database *gorm.DB) *AdminService {
+func NewAdminService(cfg *conf.Config, database *gorm.DB, imageStore manageross.ImageStore) *AdminService {
 	return &AdminService{
 		cfg:                cfg,
 		userRepo:           db.NewUserRepository(database),
 		clientRepo:         db.NewOAuthClientRepository(database),
 		userOAuthRepo:      db.NewUserOAuthClientRepository(database),
 		userThirdPartyRepo: db.NewUserThirdPartyRepository(database),
+		imageStore:         imageStore,
 	}
 }
 
@@ -76,6 +82,7 @@ func (s *AdminService) GetUserDetail(ctx context.Context, userID string) (*dto.A
 			ClientID:    app.ClientID,
 			Name:        app.Name,
 			HomepageURL: app.HomepageURL,
+			LogoURL:     app.LogoURL,
 			LastLoginAt: app.LastLoginAt,
 		})
 	}
@@ -90,6 +97,74 @@ func (s *AdminService) GetUserDetail(ctx context.Context, userID string) (*dto.A
 		Applications:        appResponses,
 		ThirdPartyProviders: providerResponses,
 	}, nil
+}
+
+// UploadOAuthClientLogo uploads and assigns a logo for an OAuth client.
+func (s *AdminService) UploadOAuthClientLogo(ctx context.Context, id uint, contentType string, extension string, body io.Reader, size int64) (*dto.OAuthClientResponse, error) {
+	if s.imageStore == nil {
+		return nil, common.ErrLogoStorageUnavailable
+	}
+
+	client, err := s.clientRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, common.ErrOAuthClientNotFound
+	}
+
+	startedAt := time.Now()
+	log.Printf("oauth client logo upload started: client_id=%d content_type=%s size_bytes=%d", id, contentType, size)
+	objectKey, logoURL, err := s.imageStore.UploadImage(ctx, contentType, extension, body, size)
+	if err != nil {
+		log.Printf("oauth client logo upload failed: client_id=%d stage=oss_put duration_ms=%d err=%v", id, time.Since(startedAt).Milliseconds(), err)
+		return nil, err
+	}
+	log.Printf("oauth client logo upload oss completed: client_id=%d duration_ms=%d", id, time.Since(startedAt).Milliseconds())
+
+	previousObjectKey := client.LogoObjectKey
+	client.LogoURL = &logoURL
+	client.LogoObjectKey = &objectKey
+	if err := s.clientRepo.Update(ctx, client); err != nil {
+		cleanupFailed := false
+		if deleteErr := s.imageStore.DeleteImage(ctx, objectKey); deleteErr != nil {
+			cleanupFailed = true
+		}
+		log.Printf("oauth client logo upload failed: client_id=%d stage=database_update duration_ms=%d cleanup_new_object_failed=%t err=%v", id, time.Since(startedAt).Milliseconds(), cleanupFailed, err)
+		return nil, err
+	}
+
+	previousObjectCleanupFailed := false
+	if previousObjectKey != nil && *previousObjectKey != "" && *previousObjectKey != objectKey {
+		if err := s.imageStore.DeleteImage(ctx, *previousObjectKey); err != nil {
+			previousObjectCleanupFailed = true
+		}
+	}
+	log.Printf("oauth client logo upload completed: client_id=%d duration_ms=%d previous_object_cleanup_failed=%t", id, time.Since(startedAt).Milliseconds(), previousObjectCleanupFailed)
+
+	response := toOAuthClientResponse(client)
+	return &response, nil
+}
+
+// ClearOAuthClientLogo removes an OAuth client's logo assignment.
+func (s *AdminService) ClearOAuthClientLogo(ctx context.Context, id uint) (*dto.OAuthClientResponse, error) {
+	client, err := s.clientRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, common.ErrOAuthClientNotFound
+	}
+
+	previousObjectKey := client.LogoObjectKey
+	client.LogoURL = nil
+	client.LogoObjectKey = nil
+	if err := s.clientRepo.Update(ctx, client); err != nil {
+		return nil, err
+	}
+
+	if s.imageStore != nil && previousObjectKey != nil && *previousObjectKey != "" {
+		if err := s.imageStore.DeleteImage(ctx, *previousObjectKey); err != nil {
+			log.Printf("oauth client logo clear cleanup failed: stage=delete_previous")
+		}
+	}
+
+	response := toOAuthClientResponse(client)
+	return &response, nil
 }
 
 // ListOAuthClients returns configured OAuth clients for connected platforms.
@@ -224,6 +299,7 @@ func toOAuthClientResponse(client *model.OAuthClient) dto.OAuthClientResponse {
 		HomepageURL: client.HomepageURL,
 		RedirectURI: client.RedirectURI,
 		LogoutURI:   client.LogoutURI,
+		LogoURL:     client.LogoURL,
 	}
 }
 

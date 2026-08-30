@@ -21,6 +21,8 @@ var dummyPasswordHashOnce sync.Once
 const (
 	passwordLoginFailureLimit = 5
 	passwordLoginLockDuration = 15 * time.Minute
+	passwordMinLength         = 10
+	passwordMaxLength         = 256
 )
 
 func retryAfterSecondsFromDuration(remaining time.Duration) int {
@@ -40,18 +42,68 @@ func VerifyPassword(password string, hash string) (bool, error) {
 	return argon2id.ComparePasswordAndHash(password, hash)
 }
 
-func (s *AuthService) passwordMinLength() int {
-	if s.cfg != nil && s.cfg.Auth.PasswordMinLength > 0 {
-		return s.cfg.Auth.PasswordMinLength
-	}
-	return 12
-}
-
 func (s *AuthService) validatePassword(password string) error {
-	if len([]rune(password)) < s.passwordMinLength() || len([]rune(password)) > 256 {
-		return errors.New("invalid password length")
+	if len([]rune(password)) < passwordMinLength || len([]rune(password)) > passwordMaxLength {
+		return common.ErrPasswordLengthInvalid
+	}
+
+	hasLetter := false
+	hasDigit := false
+	for _, character := range password {
+		if (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') {
+			hasLetter = true
+		}
+		if character >= '0' && character <= '9' {
+			hasDigit = true
+		}
+	}
+	if !hasLetter {
+		return common.ErrPasswordLetterRequired
+	}
+	if !hasDigit {
+		return common.ErrPasswordDigitRequired
 	}
 	return nil
+}
+
+// ChangePassword verifies the current password, updates it, and revokes all other active sessions.
+func (s *AuthService) ChangePassword(ctx context.Context, userID string, sessionID string, currentPassword string, newPassword string) error {
+	if strings.TrimSpace(userID) == "" || strings.TrimSpace(sessionID) == "" {
+		return common.ErrSessionRevoked
+	}
+
+	user, err := db.NewUserRepository(s.db).FindByID(ctx, userID)
+	if err != nil {
+		return common.ErrUserNotFound
+	}
+	if user.PasswordHash == nil || strings.TrimSpace(*user.PasswordHash) == "" {
+		return common.ErrPasswordNotSet
+	}
+
+	matched, err := VerifyPassword(currentPassword, *user.PasswordHash)
+	if err != nil || !matched {
+		return common.ErrCurrentPasswordInvalid
+	}
+	if err := s.validatePassword(newPassword); err != nil {
+		return err
+	}
+
+	hash, err := HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		session, err := db.NewUserSessionRepository(tx).FindActive(ctx, sessionID, time.Now())
+		if err != nil || session.UserID != userID {
+			return common.ErrSessionRevoked
+		}
+		user.PasswordHash = &hash
+		if err := db.NewUserRepository(tx).Update(ctx, user); err != nil {
+			return err
+		}
+		return db.NewUserSessionRepository(tx).RevokeOthers(ctx, userID, sessionID, "password_changed", time.Now())
+	})
 }
 
 // PasswordLoginContext carries request context used by the login guard and

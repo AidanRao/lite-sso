@@ -114,6 +114,39 @@ func Test_MigrationProvider_LockTimeout(t *testing.T) {
 	assert.Less(t, elapsed, 3*time.Second)
 }
 
+func Test_UserEmailsMigration_AllowsUsersWithoutEmail(t *testing.T) {
+	testDatabase := newPostgresTestDatabase(t)
+	database := testDatabase.open(t)
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
+	provider, err := migration.NewProvider(database, os.DirFS("../../migrations"), 1, 10)
+	require.NoError(t, err)
+
+	_, err = provider.UpTo(context.Background(), 7)
+	require.NoError(t, err)
+	_, err = database.ExecContext(context.Background(), `
+		INSERT INTO users (id, email, is_active, created_at, updated_at)
+		VALUES
+			('without-email', NULL, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+			('with-email', ' Owner@Example.COM ', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`)
+	require.NoError(t, err)
+
+	_, err = provider.UpTo(context.Background(), 8)
+	require.NoError(t, err)
+	var withoutEmailCount int
+	require.NoError(t, database.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM user_emails WHERE user_id = 'without-email'").Scan(&withoutEmailCount))
+	assert.Zero(t, withoutEmailCount)
+	var primaryEmail string
+	require.NoError(t, database.QueryRowContext(context.Background(), "SELECT email FROM user_emails WHERE user_id = 'with-email' AND is_primary").Scan(&primaryEmail))
+	assert.Equal(t, "owner@example.com", primaryEmail)
+
+	_, err = provider.Down(context.Background())
+	require.NoError(t, err)
+	var restoredEmail sql.NullString
+	require.NoError(t, database.QueryRowContext(context.Background(), "SELECT email FROM users WHERE id = 'without-email'").Scan(&restoredEmail))
+	assert.False(t, restoredEmail.Valid)
+}
+
 func Test_MigrationLock_ProductionTimeout(t *testing.T) {
 	assert.Equal(t, uint64(5), migration.LockPeriod)
 	assert.Equal(t, uint64(60), migration.LockFailureThreshold)
@@ -179,7 +212,7 @@ func assertMigrationVersionsRecordedOnce(t *testing.T, database *sql.DB) {
 		versions[version] = count
 	}
 	require.NoError(t, rows.Err())
-	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1}, versions)
+	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1}, versions)
 }
 
 func assertFinalDatabaseStructure(t *testing.T, database *sql.DB) {
@@ -188,10 +221,18 @@ func assertFinalDatabaseStructure(t *testing.T, database *sql.DB) {
 	var tableCount int
 	err := database.QueryRowContext(
 		context.Background(),
-		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('users', 'oauth_clients', 'user_third_party', 'user_oauth_clients', 'user_session')",
+		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('users', 'oauth_clients', 'user_third_party', 'user_oauth_clients', 'user_session', 'webauthn_users', 'webauthn_credentials', 'user_emails', 'user_email_sources')",
 	).Scan(&tableCount)
 	require.NoError(t, err)
-	assert.Equal(t, 5, tableCount)
+	assert.Equal(t, 9, tableCount)
+
+	var legacyEmailColumnCount int
+	err = database.QueryRowContext(
+		context.Background(),
+		"SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'users' AND column_name = 'email'",
+	).Scan(&legacyEmailColumnCount)
+	require.NoError(t, err)
+	assert.Zero(t, legacyEmailColumnCount)
 
 	rows, err := database.QueryContext(
 		context.Background(),

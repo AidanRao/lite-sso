@@ -32,7 +32,7 @@ func TestOAuth2_Authorize_RequiresSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}, &model.UserSession{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -78,7 +78,7 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}, &model.UserSession{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -86,6 +86,10 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	email := "u1@example.com"
 	if err := db.Create(&model.User{ID: userID, Email: &email, IsActive: true}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
+	}
+	verifiedAt := time.Now()
+	if err := db.Create(&model.UserEmail{ID: "ue-secondary", UserID: userID, Email: "secondary@example.com", VerifiedAt: &verifiedAt}).Error; err != nil {
+		t.Fatalf("create secondary email: %v", err)
 	}
 
 	redirectURI := "http://localhost:8000/auth/sso/callback"
@@ -197,5 +201,8 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), userID) {
 		t.Fatalf("expected body contains user id, got %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), email) || strings.Contains(w.Body.String(), "secondary@example.com") {
+		t.Fatalf("expected userinfo to expose only primary email, got %s", w.Body.String())
 	}
 }

@@ -1,9 +1,10 @@
 package user
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -14,29 +15,52 @@ import (
 	"sso-server/conf"
 	"sso-server/dal/kv"
 	"sso-server/handler/oauth2"
+	manageross "sso-server/manager/oss"
 	serviceauth "sso-server/service/auth"
 	serviceuser "sso-server/service/user"
 )
 
 type UserDeps struct {
-	Config *conf.Config
-	DB     *gorm.DB
-	KV     kv.Store
-	OAuth2 *oauth2.OAuth2
+	Config        *conf.Config
+	DB            *gorm.DB
+	KV            kv.Store
+	OAuth2        *oauth2.OAuth2
+	ImageStore    manageross.ImageStore
+	MessageSender serviceauth.MessageSender
 }
 
 type UserHandler struct {
 	user              *serviceuser.UserService
 	auth              *serviceauth.AuthService
+	emails            *serviceuser.EmailService
 	trustProxyHeaders bool
 }
 
 func NewUserHandler(deps UserDeps) *UserHandler {
 	trustProxyHeaders := deps.Config != nil && deps.Config.Server.TrustProxyHeaders
 	return &UserHandler{
-		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2),
+		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2, deps.ImageStore),
 		auth:              serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
+		emails:            serviceuser.NewEmailService(serviceuser.EmailDeps{Config: deps.Config, DB: deps.DB, MessageSender: deps.MessageSender}),
 		trustProxyHeaders: trustProxyHeaders,
+	}
+}
+
+const (
+	maxAvatarFileSize      int64 = 2 * 1024 * 1024
+	maxAvatarMultipartSize       = maxAvatarFileSize + 64*1024
+)
+
+func passwordPolicyMessage(err error) string {
+	switch {
+	case errors.Is(err, common.ErrPasswordLengthInvalid):
+		return "需为10至256位"
+	case errors.Is(err, common.ErrPasswordLetterRequired):
+		return "需包含英文字符"
+	case errors.Is(err, common.ErrPasswordDigitRequired):
+		return "需包含数字"
+	default:
+		return ""
 	}
 }
 
@@ -65,8 +89,8 @@ func (h *UserHandler) Register(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "用户名已存在", Data: nil})
 		case errors.Is(err, common.ErrOTPExpired), errors.Is(err, common.ErrOTPAttemptsExceeded):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码无效或已过期", Data: nil})
-		case strings.Contains(err.Error(), "password"):
-			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "密码长度必须为12至256位", Data: nil})
+		case passwordPolicyMessage(err) != "":
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: passwordPolicyMessage(err), Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "注册失败", Data: nil})
 		}
@@ -89,6 +113,45 @@ func (h *UserHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }
 
+// ChangePassword updates the current user's configured password after verifying the old password.
+func (h *UserHandler) ChangePassword(c *gin.Context) {
+	userID := c.GetString("user_id")
+	sessionID := c.GetString("session_id")
+	if userID == "" || sessionID == "" {
+		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		return
+	}
+
+	var req struct {
+		OldPassword string `json:"old_password" binding:"required"`
+		NewPassword string `json:"new_password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
+		return
+	}
+	err := h.auth.ChangePassword(c.Request.Context(), userID, sessionID, req.OldPassword, req.NewPassword)
+	if err != nil {
+		switch {
+		case errors.Is(err, common.ErrCurrentPasswordInvalid):
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "旧密码错误", Data: nil})
+		case errors.Is(err, common.ErrPasswordNotSet):
+			c.JSON(http.StatusConflict, ecode.Response[any]{Code: ecode.Conflict, Message: "当前账号尚未设置密码", Data: nil})
+		case passwordPolicyMessage(err) != "":
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: passwordPolicyMessage(err), Data: nil})
+		case errors.Is(err, common.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+		case errors.Is(err, common.ErrSessionRevoked):
+			c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		default:
+			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "修改密码失败", Data: nil})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"updated": true}))
+}
+
 func (h *UserHandler) ResetPassword(c *gin.Context) {
 	var req struct {
 		Email       string `json:"email" binding:"required,email"`
@@ -108,6 +171,8 @@ func (h *UserHandler) ResetPassword(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码错误", Data: nil})
 		case errors.Is(err, common.ErrUserNotFound):
 			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+		case passwordPolicyMessage(err) != "":
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: passwordPolicyMessage(err), Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "重置失败", Data: nil})
 		}
@@ -128,7 +193,7 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	profile, err := h.user.GetProfileOverview(c.Request.Context(), userID)
+	profile, err := h.user.GetProfile(c.Request.Context(), userID)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
@@ -139,6 +204,48 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, ecode.OKResponse(profile))
+}
+
+// GetLoginMethods returns system-supported sign-in methods and the current user's availability.
+func (h *UserHandler) GetLoginMethods(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		return
+	}
+
+	methods, err := h.user.GetLoginMethods(c.Request.Context(), userID)
+	if err != nil {
+		if errors.Is(err, common.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "获取登录方式失败", Data: nil})
+		return
+	}
+
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"methods": methods}))
+}
+
+// GetApplications returns OAuth applications used by the current user.
+func (h *UserHandler) GetApplications(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		return
+	}
+
+	applications, err := h.user.GetApplications(c.Request.Context(), userID)
+	if err != nil {
+		if errors.Is(err, common.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "获取应用失败", Data: nil})
+		return
+	}
+
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"applications": applications}))
 }
 
 // GetLoginDevices lists the current user's active browser devices.
@@ -193,10 +300,11 @@ func (h *UserHandler) RevokeLoginDevice(c *gin.Context) {
 // UpdateProfile updates user profile
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	var req struct {
-		Username  *string `json:"username"`
-		AvatarURL *string `json:"avatar_url"`
+		Username *string `json:"username"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
 		return
 	}
@@ -207,7 +315,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	user, err := h.user.UpdateProfile(c.Request.Context(), userID, req.Username, req.AvatarURL)
+	user, err := h.user.UpdateProfile(c.Request.Context(), userID, req.Username)
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrUserNotFound):
@@ -223,6 +331,66 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"user": user}))
 }
 
+// UploadAvatar uploads an avatar for the current user.
+func (h *UserHandler) UploadAvatar(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		return
+	}
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxAvatarMultipartSize)
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		writeAvatarUploadFormError(c, err)
+		return
+	}
+	defer file.Close()
+
+	if header.Size > maxAvatarFileSize {
+		writeAvatarTooLarge(c)
+		return
+	}
+
+	contentType, extension, err := manageross.ValidateImage(file)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "仅支持 JPEG、PNG 或 WebP 图片", Data: nil})
+		return
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "头像上传失败", Data: nil})
+		return
+	}
+
+	user, err := h.user.UploadAvatar(c.Request.Context(), userID, contentType, extension, file, header.Size)
+	if err != nil {
+		switch {
+		case errors.Is(err, common.ErrAvatarStorageUnavailable):
+			c.JSON(http.StatusServiceUnavailable, ecode.Response[any]{Code: ecode.ServiceUnavailable, Message: "头像服务暂未配置", Data: nil})
+		case errors.Is(err, common.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+		default:
+			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "头像上传失败", Data: nil})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"user": user}))
+}
+
+func writeAvatarUploadFormError(c *gin.Context, err error) {
+	var maxBytesError *http.MaxBytesError
+	if errors.As(err, &maxBytesError) {
+		writeAvatarTooLarge(c)
+		return
+	}
+	c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "请选择头像图片", Data: nil})
+}
+
+func writeAvatarTooLarge(c *gin.Context) {
+	c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "头像大小不能超过 2MB", Data: nil})
+}
+
 // UnbindThirdParty removes a third-party login method from the current user.
 func (h *UserHandler) UnbindThirdParty(c *gin.Context) {
 	userID := c.GetString("user_id")
@@ -236,8 +404,8 @@ func (h *UserHandler) UnbindThirdParty(c *gin.Context) {
 		switch {
 		case errors.Is(err, common.ErrInvalidProvider):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "不支持的第三方平台", Data: nil})
-		case errors.Is(err, common.ErrEmailRequiredForUnbind):
-			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "请先设置邮箱，再撤销第三方授权", Data: nil})
+		case errors.Is(err, common.ErrLastLoginMethod):
+			c.JSON(http.StatusConflict, ecode.Response[any]{Code: ecode.Conflict, Message: "至少需要保留一种可用登录方式", Data: nil})
 		case errors.Is(err, common.ErrThirdPartyNotBound):
 			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "尚未绑定该第三方平台", Data: nil})
 		case errors.Is(err, common.ErrUserNotFound):

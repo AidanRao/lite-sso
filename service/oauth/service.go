@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -19,10 +20,12 @@ import (
 	"sso-server/dto"
 	"sso-server/model"
 	serviceauth "sso-server/service/auth"
+	serviceuser "sso-server/service/user"
 )
 
 const (
-	stateExpiry = 5 * time.Minute
+	stateExpiry          = 5 * time.Minute
+	pendingBindingExpiry = 5 * time.Minute
 
 	ThirdPartyActionLogin = "login"
 	ThirdPartyActionBind  = "bind"
@@ -30,6 +33,8 @@ const (
 
 // OAuthService 编排第三方登录流程，具体平台差异由 provider 策略实现。
 type OAuthService struct {
+	cfg                *conf.Config
+	database           *gorm.DB
 	kv                 kv.Store
 	providers          map[string]thirdPartyProvider
 	userRepo           *db.UserRepository
@@ -44,11 +49,26 @@ type thirdPartyState struct {
 	DeviceID string `json:"device_id,omitempty"`
 }
 
+type pendingThirdPartyBinding struct {
+	UserID   string            `json:"user_id"`
+	Profile  thirdPartyProfile `json:"profile"`
+	Redirect string            `json:"redirect"`
+}
+
 type ThirdPartyCallbackResult struct {
-	User     *dto.UserResponse
-	Redirect string
-	Action   string
-	DeviceID string
+	User             *dto.UserResponse
+	Redirect         string
+	Action           string
+	DeviceID         string
+	PendingBindingID string
+}
+
+// ThirdPartyBindingPreview contains the provider profile awaiting user confirmation.
+type ThirdPartyBindingPreview struct {
+	Provider  string `json:"provider"`
+	Username  string `json:"username"`
+	Email     string `json:"email"`
+	AvatarURL string `json:"avatar_url"`
 }
 
 func NewOAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, userRepo *db.UserRepository) *OAuthService {
@@ -58,6 +78,8 @@ func NewOAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, user
 	}
 
 	return &OAuthService{
+		cfg:                cfg,
+		database:           database,
 		kv:                 kvStore,
 		providers:          providers,
 		userRepo:           userRepo,
@@ -189,17 +211,23 @@ func (s *OAuthService) HandleThirdPartyCallbackWithState(ctx context.Context, pr
 	}
 
 	if stateData.Action == ThirdPartyActionBind {
-		user, err := s.bindThirdPartyUser(ctx, stateData.UserID, profile)
+		user, err := s.validateThirdPartyBinding(ctx, stateData.UserID, profile)
 		if err != nil {
-			log.Printf("OAuthService: failed to bind third party user, provider=%s, provider_uid=%s, user_id=%s, err=%v", provider, profile.ProviderUID, stateData.UserID, err)
+			log.Printf("OAuthService: failed to prepare third party binding, provider=%s, provider_uid=%s, user_id=%s, err=%v", provider, profile.ProviderUID, stateData.UserID, err)
 			return nil, err
+		}
+		bindingID, err := s.createPendingThirdPartyBinding(ctx, stateData.UserID, profile, stateData.Redirect)
+		if err != nil {
+			log.Printf("OAuthService: failed to save pending third party binding, provider=%s, user_id=%s, err=%v", provider, stateData.UserID, err)
+			return nil, common.ErrProviderAuthFailed
 		}
 
 		return &ThirdPartyCallbackResult{
-			User:     dto.ToUserResponse(user),
-			Redirect: stateData.Redirect,
-			Action:   ThirdPartyActionBind,
-			DeviceID: stateData.DeviceID,
+			User:             dto.ToUserResponse(user),
+			Redirect:         stateData.Redirect,
+			Action:           ThirdPartyActionBind,
+			DeviceID:         stateData.DeviceID,
+			PendingBindingID: bindingID,
 		}, nil
 	}
 
@@ -217,6 +245,38 @@ func (s *OAuthService) HandleThirdPartyCallbackWithState(ctx context.Context, pr
 	}, nil
 }
 
+// GetThirdPartyBindingPreview returns a pending binding owned by userID.
+func (s *OAuthService) GetThirdPartyBindingPreview(ctx context.Context, userID, bindingID string) (*ThirdPartyBindingPreview, error) {
+	pending, err := s.loadPendingThirdPartyBinding(ctx, userID, bindingID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ThirdPartyBindingPreview{
+		Provider:  pending.Profile.Provider,
+		Username:  pending.Profile.Username,
+		Email:     pending.Profile.Email,
+		AvatarURL: pending.Profile.AvatarURL,
+	}, nil
+}
+
+// ConfirmThirdPartyBinding persists a previously previewed third-party binding.
+func (s *OAuthService) ConfirmThirdPartyBinding(ctx context.Context, userID, bindingID string) (string, error) {
+	pending, err := s.loadPendingThirdPartyBinding(ctx, userID, bindingID)
+	if err != nil {
+		return "", err
+	}
+
+	if _, err := s.bindThirdPartyUser(ctx, userID, &pending.Profile); err != nil {
+		return "", err
+	}
+	if err := s.kv.Del(ctx, kv.KeyOAuthPendingBinding(bindingID)); err != nil {
+		log.Printf("OAuthService: failed to delete confirmed third party binding, binding_id=%s, err=%v", bindingID, err)
+	}
+
+	return pending.Redirect, nil
+}
+
 func (s *OAuthService) getProvider(provider string) (thirdPartyProvider, bool) {
 	p, ok := s.providers[provider]
 	if !ok || p == nil {
@@ -226,17 +286,30 @@ func (s *OAuthService) getProvider(provider string) (thirdPartyProvider, bool) {
 }
 
 func (s *OAuthService) validateState(ctx context.Context, state string) (*thirdPartyState, error) {
+	stateData, err := s.loadThirdPartyState(ctx, state)
+	if err != nil || stateData == nil {
+		return stateData, err
+	}
+
+	_ = s.kv.Del(ctx, kv.KeyOAuthState(state))
+	return stateData, nil
+}
+
+// IsThirdPartyBindingState reports whether state belongs to a binding flow without consuming it.
+func (s *OAuthService) IsThirdPartyBindingState(ctx context.Context, provider, state string) bool {
+	stateData, err := s.loadThirdPartyState(ctx, state)
+	return err == nil && stateData != nil && stateData.Provider == provider && stateData.Action == ThirdPartyActionBind
+}
+
+func (s *OAuthService) loadThirdPartyState(ctx context.Context, state string) (*thirdPartyState, error) {
 	if state == "" {
 		return nil, nil
 	}
 
-	key := kv.KeyOAuthState(state)
-	raw, err := s.kv.Get(ctx, key)
+	raw, err := s.kv.Get(ctx, kv.KeyOAuthState(state))
 	if err != nil {
 		return nil, err
 	}
-
-	_ = s.kv.Del(ctx, key)
 
 	var stateData thirdPartyState
 	if err := json.Unmarshal([]byte(raw), &stateData); err != nil {
@@ -244,6 +317,43 @@ func (s *OAuthService) validateState(ctx context.Context, state string) (*thirdP
 	}
 
 	return &stateData, nil
+}
+
+func (s *OAuthService) createPendingThirdPartyBinding(ctx context.Context, userID string, profile *thirdPartyProfile, redirect string) (string, error) {
+	if profile == nil {
+		return "", common.ErrProviderAuthFailed
+	}
+	bindingID, err := generateState()
+	if err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(pendingThirdPartyBinding{
+		UserID:   userID,
+		Profile:  *profile,
+		Redirect: redirect,
+	})
+	if err != nil {
+		return "", err
+	}
+	if err := s.kv.Set(ctx, kv.KeyOAuthPendingBinding(bindingID), string(raw), pendingBindingExpiry); err != nil {
+		return "", err
+	}
+	return bindingID, nil
+}
+
+func (s *OAuthService) loadPendingThirdPartyBinding(ctx context.Context, userID, bindingID string) (*pendingThirdPartyBinding, error) {
+	if userID == "" || bindingID == "" {
+		return nil, common.ErrThirdPartyBindingNotFound
+	}
+	raw, err := s.kv.Get(ctx, kv.KeyOAuthPendingBinding(bindingID))
+	if err != nil {
+		return nil, common.ErrThirdPartyBindingNotFound
+	}
+	var pending pendingThirdPartyBinding
+	if err := json.Unmarshal([]byte(raw), &pending); err != nil || pending.UserID != userID {
+		return nil, common.ErrThirdPartyBindingNotFound
+	}
+	return &pending, nil
 }
 
 func (s *OAuthService) findOrCreateUser(ctx context.Context, profile *thirdPartyProfile) (*model.User, error) {
@@ -263,24 +373,31 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, profile *thirdParty
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-
-	if profile.Email != "" {
-		user, err := s.userRepo.FindByEmail(ctx, profile.Email)
-		if err == nil && user != nil {
-			err = s.createThirdPartyBinding(ctx, user.ID, profile.Provider, profile.ProviderUID)
-			if err != nil {
-				return nil, err
+	var user *model.User
+	if strings.TrimSpace(profile.Email) != "" {
+		user, err = s.userRepo.FindByEmail(ctx, profile.Email)
+	}
+	if err == nil && user != nil {
+		err = s.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			binding := &model.UserThirdParty{UserID: user.ID, Provider: profile.Provider, ProviderUID: profile.ProviderUID}
+			if err := db.NewUserThirdPartyRepository(tx).Create(ctx, binding); err != nil {
+				return err
 			}
-			return user, nil
-		}
-
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			_, err := serviceuser.NewEmailService(serviceuser.EmailDeps{Config: s.cfg, DB: tx}).ImportTrusted(ctx, user.ID, profile.Email, binding.ID)
+			return err
+		})
+		if err != nil {
 			return nil, err
 		}
+		return user, nil
+	}
+
+	if strings.TrimSpace(profile.Email) != "" && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
 	}
 
 	userID := generateUserID()
-	user := &model.User{
+	user = &model.User{
 		ID:        userID,
 		Username:  stringPtr(profile.Username),
 		Email:     stringPtr(profile.Email),
@@ -288,12 +405,20 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, profile *thirdParty
 		IsActive:  true,
 	}
 
-	err = s.userRepo.Create(ctx, user)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.createThirdPartyBinding(ctx, userID, profile.Provider, profile.ProviderUID)
+	err = s.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := db.NewUserRepository(tx).Create(ctx, user); err != nil {
+			return err
+		}
+		binding := &model.UserThirdParty{UserID: userID, Provider: profile.Provider, ProviderUID: profile.ProviderUID}
+		if err := db.NewUserThirdPartyRepository(tx).Create(ctx, binding); err != nil {
+			return err
+		}
+		if strings.TrimSpace(profile.Email) == "" {
+			return nil
+		}
+		_, err := serviceuser.NewEmailService(serviceuser.EmailDeps{Config: s.cfg, DB: tx}).ImportTrusted(ctx, userID, profile.Email, binding.ID)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -301,16 +426,31 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, profile *thirdParty
 	return user, nil
 }
 
-func (s *OAuthService) createThirdPartyBinding(ctx context.Context, userID, provider, providerUID string) error {
-	binding := &model.UserThirdParty{
-		UserID:      userID,
-		Provider:    provider,
-		ProviderUID: providerUID,
+func (s *OAuthService) bindThirdPartyUser(ctx context.Context, userID string, profile *thirdPartyProfile) (*model.User, error) {
+	user, err := s.validateThirdPartyBinding(ctx, userID, profile)
+	if err != nil {
+		return user, err
 	}
-	return s.userThirdPartyRepo.Create(ctx, binding)
+
+	err = s.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		binding := &model.UserThirdParty{UserID: userID, Provider: profile.Provider, ProviderUID: profile.ProviderUID}
+		if err := db.NewUserThirdPartyRepository(tx).Create(ctx, binding); err != nil {
+			return err
+		}
+		if strings.TrimSpace(profile.Email) == "" {
+			return nil
+		}
+		_, err := serviceuser.NewEmailService(serviceuser.EmailDeps{Config: s.cfg, DB: tx}).ImportTrusted(ctx, userID, profile.Email, binding.ID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
 }
 
-func (s *OAuthService) bindThirdPartyUser(ctx context.Context, userID string, profile *thirdPartyProfile) (*model.User, error) {
+func (s *OAuthService) validateThirdPartyBinding(ctx context.Context, userID string, profile *thirdPartyProfile) (*model.User, error) {
 	if userID == "" {
 		return nil, common.ErrUserNotFound
 	}
@@ -339,10 +479,6 @@ func (s *OAuthService) bindThirdPartyUser(ctx context.Context, userID string, pr
 		return user, common.ErrThirdPartyAlreadyBound
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
-
-	if err := s.createThirdPartyBinding(ctx, userID, profile.Provider, profile.ProviderUID); err != nil {
 		return nil, err
 	}
 

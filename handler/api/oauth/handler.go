@@ -81,6 +81,7 @@ func (h *OAuthHandler) ClientInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{
 		"client_id": client.ClientID,
 		"name":      client.Name,
+		"logo_url":  client.LogoURL,
 	}))
 }
 
@@ -142,13 +143,52 @@ func (h *OAuthHandler) ThirdPartyBind(c *gin.Context) {
 	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }
 
+// GetThirdPartyBindingPreview returns the verified provider profile before it is bound.
+func (h *OAuthHandler) GetThirdPartyBindingPreview(c *gin.Context) {
+	preview, err := h.oauthService.GetThirdPartyBindingPreview(c.Request.Context(), c.GetString("user_id"), c.Param("binding_id"))
+	if err != nil {
+		if errors.Is(err, common.ErrThirdPartyBindingNotFound) {
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "绑定预览不存在或已过期", Data: nil})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "获取绑定预览失败", Data: nil})
+		return
+	}
+	c.JSON(http.StatusOK, ecode.OKResponse(preview))
+}
+
+// ConfirmThirdPartyBinding persists a provider binding after the user confirms the preview.
+func (h *OAuthHandler) ConfirmThirdPartyBinding(c *gin.Context) {
+	redirectURL, err := h.oauthService.ConfirmThirdPartyBinding(c.Request.Context(), c.GetString("user_id"), c.Param("binding_id"))
+	if err != nil {
+		switch {
+		case errors.Is(err, common.ErrThirdPartyBindingNotFound):
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "绑定预览不存在或已过期", Data: nil})
+		case errors.Is(err, common.ErrThirdPartyAlreadyBound):
+			c.JSON(http.StatusConflict, ecode.Response[any]{Code: ecode.Conflict, Message: "该账号已绑定此第三方登录方式", Data: nil})
+		case errors.Is(err, common.ErrThirdPartyBoundToAnother):
+			c.JSON(http.StatusConflict, ecode.Response[any]{Code: ecode.Conflict, Message: "该第三方账号已被其他账号绑定", Data: nil})
+		default:
+			log.Printf("ConfirmThirdPartyBinding: failed, binding_id=%s, err=%v", c.Param("binding_id"), err)
+			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "确认绑定失败", Data: nil})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"redirect_url": redirectURL}))
+}
+
 // ThirdPartyCallback handles callback from third-party OAuth
 func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 	provider := c.Param("provider")
 	code := c.Query("code")
 	state := c.Query("state")
+	isBindingFlow := h.oauthService.IsThirdPartyBindingState(c.Request.Context(), provider, state)
 
 	if provider == "" || code == "" {
+		if isBindingFlow {
+			redirectThirdPartyBindingError(c, provider, "第三方授权已取消或未完成")
+			return
+		}
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
 		return
 	}
@@ -158,18 +198,38 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 		switch {
 		case errors.Is(err, common.ErrThirdPartyAlreadyBound):
 			log.Printf("ThirdPartyCallback: third party already bound, provider=%s, has_state=%t, err=%v", provider, state != "", err)
-			c.Redirect(http.StatusTemporaryRedirect, "/profile?bind_error="+url.QueryEscape("该账号已绑定此第三方登录方式"))
+			if isBindingFlow {
+				redirectThirdPartyBindingError(c, provider, "该账号已绑定此第三方登录方式")
+				return
+			}
+			c.Redirect(http.StatusTemporaryRedirect, "/profile/access/authentication?bind_error="+url.QueryEscape("该账号已绑定此第三方登录方式"))
 		case errors.Is(err, common.ErrThirdPartyBoundToAnother):
 			log.Printf("ThirdPartyCallback: third party bound to another user, provider=%s, has_state=%t, err=%v", provider, state != "", err)
-			c.Redirect(http.StatusTemporaryRedirect, "/profile?bind_error="+url.QueryEscape("该第三方账号已被其他账号绑定"))
+			if isBindingFlow {
+				redirectThirdPartyBindingError(c, provider, "该第三方账号已被其他账号绑定")
+				return
+			}
+			c.Redirect(http.StatusTemporaryRedirect, "/profile/access/authentication?bind_error="+url.QueryEscape("该第三方账号已被其他账号绑定"))
 		case errors.Is(err, common.ErrProviderAuthFailed):
 			log.Printf("ThirdPartyCallback: provider authentication failed, provider=%s, has_state=%t, err=%v", provider, state != "", err)
+			if isBindingFlow {
+				redirectThirdPartyBindingError(c, provider, "第三方认证失败，请重新授权")
+				return
+			}
 			c.Redirect(http.StatusTemporaryRedirect, "/oauth/callback?error="+url.QueryEscape("第三方认证失败"))
 		case errors.Is(err, common.ErrInvalidProvider):
 			log.Printf("ThirdPartyCallback: invalid provider, provider=%s, err=%v", provider, err)
+			if isBindingFlow {
+				redirectThirdPartyBindingError(c, provider, "不支持的第三方平台")
+				return
+			}
 			c.Redirect(http.StatusTemporaryRedirect, "/oauth/callback?error="+url.QueryEscape("不支持的第三方平台"))
 		default:
 			log.Printf("ThirdPartyCallback: login failed, provider=%s, has_state=%t, err=%v", provider, state != "", err)
+			if isBindingFlow {
+				redirectThirdPartyBindingError(c, provider, "第三方认证失败，请重新授权")
+				return
+			}
 			c.Redirect(http.StatusTemporaryRedirect, "/oauth/callback?error="+url.QueryEscape("登录失败"))
 		}
 		return
@@ -178,16 +238,20 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
 	if result.DeviceID != "" && result.DeviceID != deviceID {
 		log.Printf("ThirdPartyCallback: device mismatch, provider=%s", provider)
+		if result.Action == oauth.ThirdPartyActionBind {
+			redirectThirdPartyBindingError(c, provider, "登录设备已变化，请重新授权")
+			return
+		}
 		c.Redirect(http.StatusTemporaryRedirect, "/oauth/callback?error="+url.QueryEscape("登录设备已变化"))
 		return
 	}
 
 	if result.Action == oauth.ThirdPartyActionBind {
-		redirectURL := result.Redirect
-		if redirectURL == "" {
-			redirectURL = "/profile"
+		query := url.Values{
+			"binding_id": {result.PendingBindingID},
+			"provider":   {provider},
 		}
-		c.Redirect(http.StatusTemporaryRedirect, redirectURL)
+		c.Redirect(http.StatusTemporaryRedirect, "/profile/third-party-bind?"+query.Encode())
 		return
 	}
 
@@ -207,6 +271,14 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 	}
 	apiauth.WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.authService.RefreshTokenTTL())
 	c.Redirect(http.StatusTemporaryRedirect, result.Redirect)
+}
+
+func redirectThirdPartyBindingError(c *gin.Context, provider, message string) {
+	query := url.Values{
+		"provider": {provider},
+		"error":    {message},
+	}
+	c.Redirect(http.StatusTemporaryRedirect, "/profile/third-party-bind?"+query.Encode())
 }
 
 func providerAuthMethod(provider string) serviceauth.AuthMethod {

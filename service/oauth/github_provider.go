@@ -22,7 +22,7 @@ func newGitHubProvider(cfg conf.GitHubOAuthConfig) *githubOAuthProvider {
 }
 
 func (p *githubOAuthProvider) Configured() bool {
-	return p.cfg.ClientID != "" && p.cfg.ClientSecret != ""
+	return p.cfg.IsConfigured()
 }
 
 func (p *githubOAuthProvider) AuthCodeURL(state string) string {
@@ -81,9 +81,8 @@ func (p *githubOAuthProvider) getUser(ctx context.Context, accessToken string) (
 		return nil, err
 	}
 
-	if user.Email == nil || *user.Email == "" {
-		user.Email = p.getPrimaryEmail(ctx, accessToken)
-	}
+	// Only the primary, provider-verified address is trusted as an account identity.
+	user.Email = p.getPrimaryEmail(ctx, accessToken)
 
 	return &user, nil
 }

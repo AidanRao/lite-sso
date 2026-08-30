@@ -10,7 +10,7 @@ auth:
   otp_max_attempts: 5
   access_token_ttl: "15m"
   refresh_token_ttl: "720h"
-  password_min_length: 12
+  reauth_token_ttl: "5m"
   password_account_fail_limit: 5
   password_device_fail_limit: 20
   password_ip_fail_limit: 100
@@ -18,6 +18,24 @@ auth:
   password_device_fail_window: "10m"
   password_ip_fail_window: "1h"
 
+email:
+  max_addresses: 3
+  verification_base_url: "https://sso-test.aidanrao.top"
+
+passkey:
+  rp_id: "sso-test.aidanrao.top"
+  rp_origins:
+    - "https://sso-test.aidanrao.top"
+  rp_display_name: "SSO Test"
+  ceremony_ttl: "5m"
+
 message_center:
   url: "https://message-api-staging.aidanrao.top"
   sender_key: "sso"
+
+oss:
+  region: "cn-beijing"
+  endpoint: ""
+  bucket: "aidan-space"
+  avatar_prefix: "sso-test/user-assets"
+  public_base_url: "https://aidan-space.oss-cn-beijing.aliyuncs.com"

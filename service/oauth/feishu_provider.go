@@ -25,7 +25,7 @@ func newFeishuProvider(cfg conf.FeishuOAuthConfig) *feishuOAuthProvider {
 }
 
 func (p *feishuOAuthProvider) Configured() bool {
-	return p.cfg.ClientID != "" && p.cfg.ClientSecret != ""
+	return p.cfg.IsConfigured()
 }
 
 func (p *feishuOAuthProvider) AuthCodeURL(state string) string {
