@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -49,6 +50,87 @@ func TestLoginWithPassword_RequiresCaptchaAfterAccountRiskThreshold(t *testing.T
 	user, err := service.LoginWithPasswordContext(context.Background(), email, "password123456", loginContext)
 	if err != nil || user == nil {
 		t.Fatalf("expected successful login after captcha, user=%v err=%v", user, err)
+	}
+}
+
+func TestValidatePassword_RequiresLengthLetterAndDigit(t *testing.T) {
+	service := NewAuthService(nil, nil, nil, nil, nil)
+	testCases := []struct {
+		name     string
+		password string
+		valid    bool
+		expected error
+	}{
+		{name: "valid", password: "password123", valid: true},
+		{name: "too short", password: "pass1234", expected: common.ErrPasswordLengthInvalid},
+		{name: "missing digit", password: "passwordonly", expected: common.ErrPasswordDigitRequired},
+		{name: "missing letter", password: "1234567890", expected: common.ErrPasswordLetterRequired},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := service.validatePassword(testCase.password)
+			if testCase.valid && err != nil {
+				t.Fatalf("expected valid password, got %v", err)
+			}
+			if !testCase.valid && !errors.Is(err, testCase.expected) {
+				t.Fatalf("expected policy error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestChangePassword_UpdatesPasswordAndRevokesOtherSessions(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := database.AutoMigrate(&model.User{}, &model.UserSession{}); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	oldHash, err := HashPassword("old-password-123")
+	if err != nil {
+		t.Fatalf("hash old password: %v", err)
+	}
+	email := "u1@example.com"
+	if err := database.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &oldHash, IsActive: true}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	now := time.Now()
+	sessions := []model.UserSession{
+		{ID: "ses-current", UserID: "u1", DeviceID: "dev-current", AuthMethod: string(AuthMethodPassword), RefreshTokenHash: strings.Repeat("a", 64), IP: "192.0.2.1", UserAgent: "current", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour)},
+		{ID: "ses-other", UserID: "u1", DeviceID: "dev-other", AuthMethod: string(AuthMethodPassword), RefreshTokenHash: strings.Repeat("b", 64), IP: "192.0.2.2", UserAgent: "other", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour)},
+	}
+	if err := database.Create(&sessions).Error; err != nil {
+		t.Fatalf("create sessions: %v", err)
+	}
+
+	service := NewAuthService(nil, database, nil, nil, nil)
+	if err := service.ChangePassword(context.Background(), "u1", "ses-current", "wrong-password", "new-password-456"); !errors.Is(err, common.ErrCurrentPasswordInvalid) {
+		t.Fatalf("expected current password error, got %v", err)
+	}
+	if err := service.ChangePassword(context.Background(), "u1", "ses-current", "old-password-123", "new-password-456"); err != nil {
+		t.Fatalf("change password: %v", err)
+	}
+
+	var updated model.User
+	if err := database.First(&updated, "id = ?", "u1").Error; err != nil || updated.PasswordHash == nil {
+		t.Fatalf("load updated user: %v", err)
+	}
+	matched, err := VerifyPassword("new-password-456", *updated.PasswordHash)
+	if err != nil || !matched {
+		t.Fatalf("expected updated argon2id hash, matched=%t err=%v", matched, err)
+	}
+
+	var storedSessions []model.UserSession
+	if err := database.Order("id").Find(&storedSessions).Error; err != nil {
+		t.Fatalf("load sessions: %v", err)
+	}
+	if storedSessions[0].ID != "ses-current" || storedSessions[0].RevokedAt != nil {
+		t.Fatalf("expected current session preserved, got %#v", storedSessions[0])
+	}
+	if storedSessions[1].ID != "ses-other" || storedSessions[1].RevokedAt == nil || storedSessions[1].RevokeReason == nil || *storedSessions[1].RevokeReason != "password_changed" {
+		t.Fatalf("expected other session revoked after password change, got %#v", storedSessions[1])
 	}
 }
 

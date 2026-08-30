@@ -279,7 +279,7 @@ const emailForm = ref({
 })
 
 const passwordEmailValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(passwordForm.value.email.trim()))
-const passwordValueValid = computed(() => passwordForm.value.password.length >= 12)
+const passwordValueValid = computed(() => Boolean(passwordForm.value.password))
 const passwordFormValid = computed(() => passwordEmailValid.value && passwordValueValid.value)
 const passwordLoginInvalid = computed(() => !passwordFormValid.value && passwordLockSeconds.value <= 0 && !loading.value)
 const passwordLoginDisabled = computed(() => loading.value || passwordLockSeconds.value > 0)
@@ -332,8 +332,7 @@ const passwordRules = {
     { type: 'email', message: '请输入正确的邮箱地址', trigger: ['blur', 'change'] }
   ],
   password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 12, message: '密码长度不能小于12位', trigger: 'blur' }
+    { required: true, message: '请输入密码', trigger: 'blur' }
   ]
 }
 

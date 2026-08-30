@@ -4,7 +4,7 @@
       <header class="section-title section-title-divided">
         <h2 id="login-methods-title">登录方式</h2>
       </header>
-      <p class="section-copy">系统只展示当前账号实际可用或可以绑定的方式。</p>
+      <p class="section-copy">展示系统支持的登录方式，以及当前账号是否已配置或可用。</p>
 
       <div v-if="methodsLoading" class="section-state">
         <span class="spinner" aria-hidden="true"></span>
@@ -15,30 +15,76 @@
         <button class="button" type="button" @click="loadLoginMethods">重新加载</button>
       </div>
       <div v-else-if="loginMethods.length" class="settings-list">
-        <div v-for="method in loginMethods" :key="methodKey(method)" class="settings-row">
-          <div class="method-icon" aria-hidden="true">
-            <Mail v-if="method.type === 'email_otp'" :size="20" />
-            <RectangleEllipsis v-else-if="method.type === 'password'" :size="20" />
-            <ThirdPartyProviderIcon v-else :provider="method.provider" :size="20" />
+        <template v-for="method in loginMethods" :key="methodKey(method)">
+          <div class="settings-row">
+            <div class="method-icon" aria-hidden="true">
+              <Mail v-if="method.type === 'email_otp'" :size="20" />
+              <RectangleEllipsis v-else-if="method.type === 'password'" :size="20" />
+              <QrCode v-else-if="method.type === 'qr_code'" :size="20" />
+              <ThirdPartyProviderIcon v-else :provider="method.provider" :size="20" />
+            </div>
+            <div class="row-copy">
+              <strong>{{ methodTitle(method) }}</strong>
+              <span>{{ methodDescription(method) }}</span>
+            </div>
+            <template v-if="method.type === 'password'">
+              <button
+                v-if="method.available"
+                class="button"
+                type="button"
+                :aria-expanded="passwordExpanded"
+                @click="togglePasswordForm"
+              >
+                {{ passwordExpanded ? '收起' : '修改密码' }}
+              </button>
+              <button v-else class="button" type="button" disabled title="设置密码功能暂未开放">设置密码</button>
+            </template>
+            <template v-else-if="method.type === 'third_party'">
+              <button v-if="!method.bound" class="button" type="button" @click="bindProvider(method.provider)">绑定</button>
+              <button
+                v-else
+                class="button danger"
+                type="button"
+                :disabled="Boolean(unbindingProvider) || !canUnbindThirdParty"
+                :title="canUnbindThirdParty ? `撤销 ${providerName(method.provider)} 授权` : '请先设置邮箱，再撤销第三方授权'"
+                @click="unbindProvider(method)"
+              >
+                {{ unbindingProvider === method.provider ? '撤销中…' : '撤销授权' }}
+              </button>
+            </template>
           </div>
-          <div class="row-copy">
-            <strong>{{ methodTitle(method) }}</strong>
-            <span>{{ methodDescription(method) }}</span>
-          </div>
-          <template v-if="method.type === 'third_party'">
-            <button v-if="!method.bound" class="button" type="button" @click="bindProvider(method.provider)">绑定</button>
-            <button
-              v-else
-              class="button danger"
-              type="button"
-              :disabled="Boolean(unbindingProvider) || !canUnbindThirdParty"
-              :title="canUnbindThirdParty ? `撤销 ${providerName(method.provider)} 授权` : '请先设置邮箱，再撤销第三方授权'"
-              @click="unbindProvider(method)"
-            >
-              {{ unbindingProvider === method.provider ? '撤销中…' : '撤销授权' }}
-            </button>
-          </template>
-        </div>
+
+          <form v-if="method.type === 'password' && method.available && passwordExpanded" class="password-change-form" @submit.prevent="submitPasswordChange">
+            <label for="current-password" :class="{ 'field-label-error': passwordErrorField === 'old' }">旧密码</label>
+            <div class="password-input-wrapper" :class="{ 'is-error': passwordErrorField === 'old' }">
+              <input id="current-password" v-model="passwordForm.oldPassword" type="password" autocomplete="current-password" :aria-describedby="passwordErrorField === 'old' ? 'current-password-error' : undefined" :disabled="passwordSubmitting" @input="clearPasswordError('old')" />
+              <TriangleAlert v-if="passwordErrorField === 'old'" :size="20" aria-hidden="true" />
+            </div>
+            <p v-if="passwordErrorField === 'old'" id="current-password-error" class="password-field-error" role="alert">{{ passwordFormError }}</p>
+
+            <label for="new-password" :class="{ 'field-label-error': passwordErrorField === 'new' }">新密码</label>
+            <div class="password-input-wrapper" :class="{ 'is-error': passwordErrorField === 'new' }">
+              <input id="new-password" v-model="passwordForm.newPassword" type="password" autocomplete="new-password" :aria-describedby="passwordErrorField === 'new' ? 'new-password-error' : undefined" :disabled="passwordSubmitting" @input="clearPasswordError('new')" />
+              <TriangleAlert v-if="passwordErrorField === 'new'" :size="20" aria-hidden="true" />
+            </div>
+            <p v-if="passwordErrorField === 'new'" id="new-password-error" class="password-field-error" role="alert">{{ passwordFormError }}</p>
+
+            <label for="confirm-new-password" :class="{ 'field-label-error': passwordErrorField === 'confirm' }">确认新密码</label>
+            <div class="password-input-wrapper" :class="{ 'is-error': passwordErrorField === 'confirm' }">
+              <input id="confirm-new-password" v-model="passwordForm.confirmPassword" type="password" autocomplete="new-password" :aria-describedby="passwordErrorField === 'confirm' ? 'confirm-new-password-error' : undefined" :disabled="passwordSubmitting" @input="clearPasswordError('confirm')" />
+              <TriangleAlert v-if="passwordErrorField === 'confirm'" :size="20" aria-hidden="true" />
+            </div>
+            <p v-if="passwordErrorField === 'confirm'" id="confirm-new-password-error" class="password-field-error" role="alert">{{ passwordFormError }}</p>
+
+            <p class="password-rule" aria-live="polite">密码需为<span :class="passwordRuleClass(passwordLengthValid)">10至256位</span>，且同时包含<span :class="passwordRuleClass(passwordLetterValid)">英文字符</span>和<span :class="passwordRuleClass(passwordDigitValid)">数字</span></p>
+            <div class="password-form-actions">
+              <button class="button primary" type="submit" :disabled="passwordSubmitting">
+                {{ passwordSubmitting ? '更新中…' : '更新密码' }}
+              </button>
+              <router-link class="forgot-password-link" to="/reset-password">忘记密码？</router-link>
+            </div>
+          </form>
+        </template>
       </div>
       <div v-else class="section-state">当前账号暂无可用登录方式。</div>
     </section>
@@ -93,11 +139,12 @@
 import { computed, inject, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Fingerprint, Mail, Pencil, Plus, RectangleEllipsis, Trash2 } from 'lucide-vue-next'
+import { Fingerprint, Mail, Pencil, Plus, QrCode, RectangleEllipsis, Trash2, TriangleAlert } from 'lucide-vue-next'
 import { passkeyAPI, userAPI } from '../../api/auth'
 import PasskeyEnrollmentDialog from '../../components/PasskeyEnrollmentDialog.vue'
 import ThirdPartyProviderIcon from '../../components/ThirdPartyProviderIcon.vue'
 import { isReauthCancelled } from '../../utils/reauthCoordinator'
+import { passwordPolicyError } from '../../utils/passwordPolicy'
 import { PROFILE_CONTEXT_KEY } from './profileContext'
 
 const route = useRoute()
@@ -110,6 +157,15 @@ const loginMethods = ref([])
 const methodsLoading = ref(true)
 const methodsError = ref('')
 const unbindingProvider = ref('')
+const passwordExpanded = ref(false)
+const passwordSubmitting = ref(false)
+const passwordFormError = ref('')
+const passwordErrorField = ref('')
+const passwordForm = ref({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: ''
+})
 const passkeys = ref([])
 const passkeysLoading = ref(true)
 const passkeysError = ref('')
@@ -121,13 +177,91 @@ const providerNames = {
 }
 
 const canUnbindThirdParty = computed(() => Boolean(user.value?.email?.trim()))
+const passwordLengthValid = computed(() => {
+  const length = [...passwordForm.value.newPassword].length
+  return length >= 10 && length <= 256
+})
+const passwordLetterValid = computed(() => /[A-Za-z]/.test(passwordForm.value.newPassword))
+const passwordDigitValid = computed(() => /[0-9]/.test(passwordForm.value.newPassword))
 const providerName = (provider) => providerNames[provider] || provider
 const methodKey = (method) => method.type === 'third_party' ? `${method.type}:${method.provider}` : method.type
-const methodTitle = (method) => ({ email_otp: '邮箱验证码', password: '密码' })[method.type] || providerName(method.provider)
+const methodTitle = (method) => ({ email_otp: '邮箱验证码', password: '密码', qr_code: '扫码登录' })[method.type] || providerName(method.provider)
 const methodDescription = (method) => {
-  if (method.type === 'email_otp') return `可向 ${method.email} 发送登录验证码`
-  if (method.type === 'password') return '已为当前账号配置密码'
+  if (method.type === 'email_otp') return method.available ? `可向 ${method.email} 发送登录验证码` : '未绑定邮箱，暂不可使用'
+  if (method.type === 'password') return method.available ? '已设置，可使用密码登录' : '未设置'
+  if (method.type === 'qr_code') return '可通过当前已登录设备扫码确认新设备登录'
   return method.bound ? '已绑定，可用于登录当前账号' : '尚未绑定'
+}
+
+const resetPasswordForm = () => {
+  passwordForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+  passwordFormError.value = ''
+  passwordErrorField.value = ''
+}
+
+const setPasswordError = (field, message) => {
+  passwordErrorField.value = field
+  passwordFormError.value = message
+}
+
+const clearPasswordError = (field) => {
+  if (passwordErrorField.value !== field) return
+  passwordErrorField.value = ''
+  passwordFormError.value = ''
+}
+
+const passwordRuleClass = (isValid) => {
+  if (!passwordForm.value.newPassword && passwordErrorField.value !== 'new') return ''
+  return isValid ? 'is-valid' : 'is-invalid'
+}
+
+const togglePasswordForm = () => {
+  passwordExpanded.value = !passwordExpanded.value
+  if (!passwordExpanded.value) resetPasswordForm()
+}
+
+const submitPasswordChange = async () => {
+  if (passwordSubmitting.value) return
+  if (!passwordForm.value.oldPassword) {
+    setPasswordError('old', '请输入旧密码')
+    return
+  }
+  const policyError = passwordPolicyError(passwordForm.value.newPassword)
+  if (policyError) {
+    setPasswordError('new', policyError)
+    return
+  }
+  if (passwordForm.value.newPassword !== passwordForm.value.confirmPassword) {
+    setPasswordError('confirm', '两次输入的新密码不一致')
+    return
+  }
+
+  passwordSubmitting.value = true
+  clearPasswordError(passwordErrorField.value)
+  try {
+    await userAPI.changePassword({
+      old_password: passwordForm.value.oldPassword,
+      new_password: passwordForm.value.newPassword
+    })
+    passwordExpanded.value = false
+    resetPasswordForm()
+    ElMessage.success('密码已更新，其他设备需要重新登录')
+  } catch (error) {
+    if (error.status === 401) {
+      redirectToLogin()
+      return
+    }
+    const message = error.message || '修改密码失败'
+    if (message === '需为10至256位' || message === '需包含英文字符' || message === '需包含数字') {
+      setPasswordError('new', message)
+    } else if (message === '旧密码错误') {
+      setPasswordError('old', message)
+    } else {
+      setPasswordError('confirm', message)
+    }
+  } finally {
+    passwordSubmitting.value = false
+  }
 }
 
 const redirectToLogin = () => {
@@ -191,6 +325,7 @@ const unbindProvider = async (method) => {
   try {
     await userAPI.unbindThirdParty(method.provider)
     method.bound = false
+    method.available = false
     ElMessage.success(`${name} 授权已撤销`)
   } catch (error) {
     if (isReauthCancelled(error)) return
@@ -323,6 +458,123 @@ onMounted(() => {
   border-top: 0;
 }
 
+.password-change-form {
+  display: grid;
+  gap: 8px;
+  padding: 6px 16px 20px 62px;
+}
+
+.password-change-form label {
+  color: #24292f;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.password-change-form .field-label-error {
+  color: #cf222e;
+}
+
+.password-input-wrapper {
+  position: relative;
+  width: min(100%, 420px);
+}
+
+.password-change-form input {
+  width: 100%;
+  min-height: 34px;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  color: #24292f;
+  font: inherit;
+}
+
+.password-input-wrapper > svg {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  color: #cf222e;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.password-input-wrapper.is-error input {
+  border-color: #cf222e;
+}
+
+.password-change-form input:focus {
+  border-color: #0969da;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15);
+}
+
+.password-input-wrapper.is-error input:focus {
+  border-color: #cf222e;
+  box-shadow: 0 0 0 3px rgba(207, 34, 46, 0.15);
+}
+
+.password-field-error {
+  position: relative;
+  width: min(100%, 420px);
+  box-sizing: border-box;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid #ffb4b4;
+  border-radius: 6px;
+  background: #fff8f8;
+  color: #cf222e;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.password-field-error::before {
+  position: absolute;
+  top: -6px;
+  left: 16px;
+  width: 10px;
+  height: 10px;
+  border-top: 1px solid #ffb4b4;
+  border-left: 1px solid #ffb4b4;
+  background: #fff8f8;
+  content: '';
+  transform: rotate(45deg);
+}
+
+.password-rule {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #57606a;
+}
+
+.password-rule .is-valid {
+  color: #1a7f37;
+  font-weight: 600;
+}
+
+.password-rule .is-invalid {
+  color: #cf222e;
+  font-weight: 600;
+}
+
+.password-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 4px;
+}
+
+.forgot-password-link {
+  color: #0969da;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.forgot-password-link:hover {
+  text-decoration: underline;
+}
+
 .method-icon {
   display: flex;
   width: 30px;
@@ -453,6 +705,10 @@ onMounted(() => {
   .row-actions {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .password-change-form {
+    padding-left: 16px;
   }
 }
 </style>

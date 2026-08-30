@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -49,6 +48,19 @@ const (
 	maxAvatarMultipartSize       = maxAvatarFileSize + 64*1024
 )
 
+func passwordPolicyMessage(err error) string {
+	switch {
+	case errors.Is(err, common.ErrPasswordLengthInvalid):
+		return "需为10至256位"
+	case errors.Is(err, common.ErrPasswordLetterRequired):
+		return "需包含英文字符"
+	case errors.Is(err, common.ErrPasswordDigitRequired):
+		return "需包含数字"
+	default:
+		return ""
+	}
+}
+
 // Register handles user registration
 func (h *UserHandler) Register(c *gin.Context) {
 	var req struct {
@@ -74,8 +86,8 @@ func (h *UserHandler) Register(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "用户名已存在", Data: nil})
 		case errors.Is(err, common.ErrOTPExpired), errors.Is(err, common.ErrOTPAttemptsExceeded):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码无效或已过期", Data: nil})
-		case strings.Contains(err.Error(), "password"):
-			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "密码长度必须为12至256位", Data: nil})
+		case passwordPolicyMessage(err) != "":
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: passwordPolicyMessage(err), Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "注册失败", Data: nil})
 		}
@@ -98,6 +110,45 @@ func (h *UserHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }
 
+// ChangePassword updates the current user's configured password after verifying the old password.
+func (h *UserHandler) ChangePassword(c *gin.Context) {
+	userID := c.GetString("user_id")
+	sessionID := c.GetString("session_id")
+	if userID == "" || sessionID == "" {
+		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		return
+	}
+
+	var req struct {
+		OldPassword string `json:"old_password" binding:"required"`
+		NewPassword string `json:"new_password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
+		return
+	}
+	err := h.auth.ChangePassword(c.Request.Context(), userID, sessionID, req.OldPassword, req.NewPassword)
+	if err != nil {
+		switch {
+		case errors.Is(err, common.ErrCurrentPasswordInvalid):
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "旧密码错误", Data: nil})
+		case errors.Is(err, common.ErrPasswordNotSet):
+			c.JSON(http.StatusConflict, ecode.Response[any]{Code: ecode.Conflict, Message: "当前账号尚未设置密码", Data: nil})
+		case passwordPolicyMessage(err) != "":
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: passwordPolicyMessage(err), Data: nil})
+		case errors.Is(err, common.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+		case errors.Is(err, common.ErrSessionRevoked):
+			c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
+		default:
+			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "修改密码失败", Data: nil})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"updated": true}))
+}
+
 func (h *UserHandler) ResetPassword(c *gin.Context) {
 	var req struct {
 		Email       string `json:"email" binding:"required,email"`
@@ -117,6 +168,8 @@ func (h *UserHandler) ResetPassword(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码错误", Data: nil})
 		case errors.Is(err, common.ErrUserNotFound):
 			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
+		case passwordPolicyMessage(err) != "":
+			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: passwordPolicyMessage(err), Data: nil})
 		default:
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "重置失败", Data: nil})
 		}
@@ -150,7 +203,7 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, ecode.OKResponse(profile))
 }
 
-// GetLoginMethods returns sign-in methods available to the current user.
+// GetLoginMethods returns system-supported sign-in methods and the current user's availability.
 func (h *UserHandler) GetLoginMethods(c *gin.Context) {
 	userID := c.GetString("user_id")
 	if userID == "" {

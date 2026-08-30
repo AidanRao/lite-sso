@@ -19,6 +19,7 @@ import (
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
 	serviceauth "sso-server/service/auth"
+	"sso-server/util/mask"
 )
 
 const (
@@ -173,7 +174,7 @@ func (s *Service) Describe(ctx context.Context, userID string) (*Descriptor, err
 	}
 	if user.Email != nil && strings.TrimSpace(*user.Email) != "" {
 		descriptor.Methods = append(descriptor.Methods, MethodEmail)
-		descriptor.EmailHint = maskEmail(*user.Email)
+		descriptor.EmailHint = mask.Email(*user.Email)
 	}
 	if user.Username != nil {
 		descriptor.Username = strings.TrimSpace(*user.Username)
@@ -246,14 +247,4 @@ func (s *Service) FinishEmail(ctx context.Context, userID string, sessionID stri
 func tokenDigest(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
-}
-
-func maskEmail(email string) string {
-	email = strings.TrimSpace(email)
-	at := strings.LastIndex(email, "@")
-	if at <= 0 || at == len(email)-1 {
-		return "***"
-	}
-	local := []rune(email[:at])
-	return string(local[0]) + "***" + email[at:]
 }

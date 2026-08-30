@@ -228,7 +228,6 @@ type AuthConfig struct {
 	AccessTokenTTL            time.Duration `mapstructure:"access_token_ttl"`
 	RefreshTokenTTL           time.Duration `mapstructure:"refresh_token_ttl"`
 	ReauthTokenTTL            time.Duration `mapstructure:"reauth_token_ttl"`
-	PasswordMinLength         int           `mapstructure:"password_min_length"`
 	PasswordAccountFailLimit  int           `mapstructure:"password_account_fail_limit"`
 	PasswordDeviceFailLimit   int           `mapstructure:"password_device_fail_limit"`
 	PasswordIPFailLimit       int           `mapstructure:"password_ip_fail_limit"`
@@ -312,7 +311,6 @@ func bindEnvs(v *viper.Viper) {
 		"auth.access_token_ttl",
 		"auth.refresh_token_ttl",
 		"auth.reauth_token_ttl",
-		"auth.password_min_length",
 		"auth.password_account_fail_limit",
 		"auth.password_device_fail_limit",
 		"auth.password_ip_fail_limit",
@@ -382,7 +380,6 @@ func setDefaults(v *viper.Viper, env Environment) {
 		"auth.otp_max_attempts":             5,
 		"auth.access_token_ttl":             "15m",
 		"auth.refresh_token_ttl":            "720h",
-		"auth.password_min_length":          12,
 		"auth.password_account_fail_limit":  5,
 		"auth.password_device_fail_limit":   20,
 		"auth.password_ip_fail_limit":       100,

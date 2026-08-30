@@ -70,7 +70,7 @@ func (s *UserService) GetProfile(ctx context.Context, userID string) (*dto.Profi
 	}, nil
 }
 
-// GetLoginMethods returns only sign-in methods that are usable by the current user.
+// GetLoginMethods returns every system-supported sign-in method and the current user's availability for each.
 func (s *UserService) GetLoginMethods(ctx context.Context, userID string) ([]dto.LoginMethodResponse, error) {
 	userRepo := db.NewUserRepository(s.db)
 	user, err := userRepo.FindByID(ctx, userID)
@@ -78,15 +78,12 @@ func (s *UserService) GetLoginMethods(ctx context.Context, userID string) ([]dto
 		return nil, common.ErrUserNotFound
 	}
 
-	methods := make([]dto.LoginMethodResponse, 0, 4)
-	if user.Email != nil && strings.TrimSpace(*user.Email) != "" {
-		methods = append(methods, dto.LoginMethodResponse{
-			Type:  dto.LoginMethodEmailOTP,
-			Email: user.Email,
-		})
-	}
-	if user.PasswordHash != nil && strings.TrimSpace(*user.PasswordHash) != "" {
-		methods = append(methods, dto.LoginMethodResponse{Type: dto.LoginMethodPassword})
+	hasEmail := user.Email != nil && strings.TrimSpace(*user.Email) != ""
+	hasPassword := user.PasswordHash != nil && strings.TrimSpace(*user.PasswordHash) != ""
+	methods := []dto.LoginMethodResponse{
+		{Type: dto.LoginMethodEmailOTP, Available: hasEmail, Email: user.Email},
+		{Type: dto.LoginMethodPassword, Available: hasPassword},
+		{Type: dto.LoginMethodQRCode, Available: true},
 	}
 
 	thirdPartyRepo := db.NewUserThirdPartyRepository(s.db)
@@ -106,9 +103,10 @@ func (s *UserService) GetLoginMethods(ctx context.Context, userID string) ([]dto
 		}
 		bound := boundProviders[provider]
 		methods = append(methods, dto.LoginMethodResponse{
-			Type:     dto.LoginMethodThirdParty,
-			Provider: provider,
-			Bound:    &bound,
+			Type:      dto.LoginMethodThirdParty,
+			Available: bound,
+			Provider:  provider,
+			Bound:     &bound,
 		})
 	}
 	return methods, nil

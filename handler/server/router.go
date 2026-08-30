@@ -136,6 +136,7 @@ func (s *Server) registerRoutes() {
 			userProtected.GET("/profile", userHandler.GetProfile)
 			userProtected.PUT("/profile", userHandler.UpdateProfile)
 			userProtected.GET("/login-methods", userHandler.GetLoginMethods)
+			userProtected.PUT("/password", userHandler.ChangePassword)
 			userProtected.GET("/applications", userHandler.GetApplications)
 			userProtected.POST("/avatar", userHandler.UploadAvatar)
 			userProtected.GET("/devices", userHandler.GetLoginDevices)

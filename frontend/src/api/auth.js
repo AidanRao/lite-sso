@@ -145,6 +145,10 @@ export const userAPI = {
     return api.get('/user/login-methods')
   },
 
+  changePassword: (data) => {
+    return api.put('/user/password', data)
+  },
+
   getApplications: () => {
     return api.get('/user/applications')
   },

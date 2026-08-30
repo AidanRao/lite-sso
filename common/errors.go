@@ -14,6 +14,11 @@ var (
 // Authentication related errors
 var (
 	ErrInvalidCredentials      = errors.New("invalid credentials")
+	ErrCurrentPasswordInvalid  = errors.New("current password is invalid")
+	ErrPasswordNotSet          = errors.New("password is not set")
+	ErrPasswordLengthInvalid   = errors.New("password length is invalid")
+	ErrPasswordLetterRequired  = errors.New("password must contain an English letter")
+	ErrPasswordDigitRequired   = errors.New("password must contain a digit")
 	ErrInvalidOTP              = errors.New("invalid otp")
 	ErrOTPExpired              = errors.New("otp challenge expired")
 	ErrOTPAttemptsExceeded     = errors.New("otp challenge attempts exceeded")

@@ -218,27 +218,31 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 	var payload struct {
 		Data struct {
 			Methods []struct {
-				Type     string `json:"type"`
-				Email    string `json:"email"`
-				Provider string `json:"provider"`
-				Bound    *bool  `json:"bound"`
+				Type      string `json:"type"`
+				Available bool   `json:"available"`
+				Email     string `json:"email"`
+				Provider  string `json:"provider"`
+				Bound     *bool  `json:"bound"`
 			} `json:"methods"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(payload.Data.Methods) != 3 {
-		t.Fatalf("expected email, password and github methods, got %s", response.Body.String())
+	if len(payload.Data.Methods) != 4 {
+		t.Fatalf("expected email, password, qr code and github methods, got %s", response.Body.String())
 	}
-	if payload.Data.Methods[0].Type != "email_otp" || payload.Data.Methods[0].Email != email {
+	if payload.Data.Methods[0].Type != "email_otp" || !payload.Data.Methods[0].Available || payload.Data.Methods[0].Email != email {
 		t.Fatalf("expected email OTP first, got %s", response.Body.String())
 	}
-	if payload.Data.Methods[1].Type != "password" {
+	if payload.Data.Methods[1].Type != "password" || !payload.Data.Methods[1].Available {
 		t.Fatalf("expected password second, got %s", response.Body.String())
 	}
-	github := payload.Data.Methods[2]
-	if github.Type != "third_party" || github.Provider != "github" || github.Bound == nil || !*github.Bound {
+	if payload.Data.Methods[2].Type != "qr_code" || !payload.Data.Methods[2].Available {
+		t.Fatalf("expected qr code third, got %s", response.Body.String())
+	}
+	github := payload.Data.Methods[3]
+	if github.Type != "third_party" || !github.Available || github.Provider != "github" || github.Bound == nil || !*github.Bound {
 		t.Fatalf("expected configured bound github method, got %s", response.Body.String())
 	}
 }
@@ -272,8 +276,15 @@ func TestUserLoginMethods_ReturnsConfiguredUnboundProviderWithoutCredentials(t *
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"provider":"feishu","bound":false`) {
 		t.Fatalf("expected configured unbound feishu method, got %d body=%s", response.Code, response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), "email_otp") || strings.Contains(response.Body.String(), "password") {
-		t.Fatalf("unexpected unavailable local credential method: %s", response.Body.String())
+	for _, expected := range []string{
+		`"type":"email_otp","available":false`,
+		`"type":"password","available":false`,
+		`"type":"qr_code","available":true`,
+		`"type":"third_party","available":false,"provider":"feishu","bound":false`,
+	} {
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Fatalf("expected login method %s, got %s", expected, response.Body.String())
+		}
 	}
 }
 

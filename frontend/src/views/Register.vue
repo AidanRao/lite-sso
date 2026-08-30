@@ -40,7 +40,7 @@
               <el-input
                 v-model="form.password"
                 :type="showPassword ? 'text' : 'password'"
-                placeholder="请输入密码（至少12个字符）"
+                placeholder="请输入密码（至少10位，含英文和数字）"
                 :prefix-icon="Lock"
                 class="h-12 password-input"
               >
@@ -131,6 +131,7 @@ import { authAPI, setAccessToken } from '../api/auth'
 import AuthSplashPane from '../components/AuthSplashPane.vue'
 import SendCodeModal from '../components/SendCodeModal.vue'
 import { getLoginRedirect, loadTargetClientName } from '../utils/oauthTarget'
+import { passwordPolicyError } from '../utils/passwordPolicy'
 
 const route = useRoute()
 const redirectUrl = ref(getLoginRedirect(route))
@@ -197,8 +198,9 @@ const handleRegister = async () => {
       return
     }
 
-    if (form.value.password.length < 12) {
-      errorMessage.value = '密码长度至少为12个字符'
+    const policyError = passwordPolicyError(form.value.password)
+    if (policyError) {
+      errorMessage.value = policyError
       return
     }
 

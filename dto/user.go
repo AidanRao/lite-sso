@@ -5,6 +5,7 @@ import "time"
 const (
 	LoginMethodEmailOTP   LoginMethodType = "email_otp"
 	LoginMethodPassword   LoginMethodType = "password"
+	LoginMethodQRCode     LoginMethodType = "qr_code"
 	LoginMethodThirdParty LoginMethodType = "third_party"
 )
 
@@ -25,12 +26,13 @@ type ProfileResponse struct {
 // LoginMethodType identifies a supported sign-in method category.
 type LoginMethodType string
 
-// LoginMethodResponse describes one sign-in method available to the current user.
+// LoginMethodResponse describes one system-supported sign-in method and whether the current user can use it.
 type LoginMethodResponse struct {
-	Type     LoginMethodType `json:"type"`
-	Email    *string         `json:"email,omitempty"`
-	Provider string          `json:"provider,omitempty"`
-	Bound    *bool           `json:"bound,omitempty"`
+	Type      LoginMethodType `json:"type"`
+	Available bool            `json:"available"`
+	Email     *string         `json:"email,omitempty"`
+	Provider  string          `json:"provider,omitempty"`
+	Bound     *bool           `json:"bound,omitempty"`
 }
 
 // UserApplicationResponse describes an OAuth application used by a user.
