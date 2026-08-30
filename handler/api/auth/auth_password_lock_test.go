@@ -24,7 +24,7 @@ func TestLoginWithPassword_RequiresCaptchaAfterRepeatedFailures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	hash, err := serviceauth.HashPassword("password123456")

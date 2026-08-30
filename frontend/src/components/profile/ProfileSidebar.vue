@@ -36,7 +36,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { AppWindow, KeyRound, LogOut, RadioTower, Shield, UserRound } from 'lucide-vue-next'
+import { AppWindow, KeyRound, LogOut, Mail, RadioTower, Shield, UserRound } from 'lucide-vue-next'
 import ProfileSidebarItem from './ProfileSidebarItem.vue'
 import { submitGlobalLogout } from '../../utils/logout'
 
@@ -60,6 +60,11 @@ const navigation = [
   {
     label: 'Access',
     children: [
+      {
+        label: 'Emails',
+        to: '/profile/access/emails',
+        icon: Mail
+      },
       {
         label: '密码与认证',
         to: '/profile/access/authentication',

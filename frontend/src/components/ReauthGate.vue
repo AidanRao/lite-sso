@@ -23,9 +23,9 @@
           </template>
 
           <template v-else-if="!hasEmail">
-            <p>创建 Passkey 需要先绑定邮箱。请前往账号资料页完成绑定后，再重新发起当前操作。</p>
-            <button class="secondary-action-button" type="button" :disabled="submitting || enrollmentSubmitting" @click="goToProfile">
-              前往账号资料
+            <p>当前账号没有邮箱或 Passkey。请重新登录完成身份确认，再继续当前操作。</p>
+            <button class="secondary-action-button" type="button" :disabled="submitting || enrollmentSubmitting" @click="reauthenticate">
+              重新登录
             </button>
           </template>
 
@@ -85,7 +85,7 @@
             </div>
           </template>
 
-          <p v-else class="empty-methods">当前账号没有其他可用的验证方式。</p>
+          <p v-else class="empty-methods">重新登录后，可在短时间内继续当前敏感操作。</p>
         </section>
 
         <footer class="reauth-footer">
@@ -190,10 +190,10 @@ const selectEmail = () => {
   restartEmail()
 }
 
-const goToProfile = () => {
+const reauthenticate = () => {
   if (submitting.value || enrollmentSubmitting.value) return
   cancelReauth()
-  router.push('/profile')
+  window.location.href = `/login?redirect=${encodeURIComponent(router.currentRoute.value.fullPath)}`
 }
 
 const loadCaptcha = async () => {

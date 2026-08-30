@@ -1,10 +1,6 @@
 <template>
   <div class="settings-view">
-    <section class="settings-section" aria-labelledby="sessions-title">
-      <header class="section-title">
-        <h2 id="sessions-title">登录设备</h2>
-      </header>
-
+    <ProfileSettingsSection title-id="sessions-title" title="登录设备">
       <div v-if="loading" class="section-state">
         <span class="spinner" aria-hidden="true"></span>
         正在加载登录设备…
@@ -46,7 +42,7 @@
         </article>
       </div>
       <div v-else class="section-state">暂无登录设备。</div>
-    </section>
+    </ProfileSettingsSection>
   </div>
 </template>
 
@@ -56,6 +52,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Monitor, Smartphone } from 'lucide-vue-next'
 import { userAPI } from '../../api/auth'
+import ProfileSettingsSection from '../../components/profile/ProfileSettingsSection.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -158,18 +155,6 @@ onMounted(loadDevices)
 .settings-view {
   display: grid;
   gap: 22px;
-}
-
-.settings-section {
-  display: grid;
-  gap: 14px;
-}
-
-.section-title h2 {
-  margin: 0;
-  color: #24292f;
-  font-size: 18px;
-  font-weight: 600;
 }
 
 .current-badge {

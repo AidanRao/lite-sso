@@ -49,6 +49,26 @@ func TestService_IssuedGrantIsReusableAndSessionBound(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrReauthRequired)
 }
 
+func TestService_RecentLoginAuthorizesSessionWithoutEmail(t *testing.T) {
+	database := newReauthTestDB(t)
+	require.NoError(t, database.Create(&model.User{ID: "user-1", IsActive: true}).Error)
+	now := time.Now()
+	require.NoError(t, database.Create(&model.UserSession{
+		ID: "session-1", UserID: "user-1", DeviceID: "device-1", AuthMethod: "GITHUB",
+		RefreshTokenHash: "hash", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour),
+	}).Error)
+	service := NewService(Deps{Config: &conf.Config{Auth: conf.AuthConfig{ReauthTokenTTL: 5 * time.Minute}}, DB: database, Store: kv.NewMemoryStore()})
+
+	grant, err := service.AuthorizeSession(t.Context(), "user-1", "session-1")
+	require.NoError(t, err)
+	require.Equal(t, MethodLogin, grant.Method)
+	require.Equal(t, "GITHUB", grant.ProofID)
+
+	require.NoError(t, database.Model(&model.UserSession{}).Where("id = ?", "session-1").Update("created_at", now.Add(-10*time.Minute)).Error)
+	_, err = service.AuthorizeSession(t.Context(), "user-1", "session-1")
+	require.ErrorIs(t, err, common.ErrReauthRequired)
+}
+
 func TestService_DescribeOrdersAvailableMethodsAndMasksEmail(t *testing.T) {
 	database := newReauthTestDB(t)
 	email := "owner@example.com"
@@ -78,6 +98,8 @@ func TestService_EmailChallengeIsSessionBoundSingleUseAndIssuesGrant(t *testing.
 	database := newReauthTestDB(t)
 	email := "owner@example.com"
 	require.NoError(t, database.Create(&model.User{ID: "user-1", Email: &email, IsActive: true}).Error)
+	verifiedAt := time.Now()
+	require.NoError(t, database.Create(&model.UserEmail{ID: "secondary", UserID: "user-1", Email: "secondary@example.com", VerifiedAt: &verifiedAt}).Error)
 	store := kv.NewMemoryStore()
 	config := &conf.Config{
 		Auth: conf.AuthConfig{OTPSecret: "test-secret", OTPExpire: time.Minute, OTPMaxAttempts: 5, ReauthTokenTTL: 5 * time.Minute},
@@ -89,6 +111,7 @@ func TestService_EmailChallengeIsSessionBoundSingleUseAndIssuesGrant(t *testing.
 
 	challenge, err := service.BeginEmail(t.Context(), "user-1", "session-1", "device-1", "captcha-1", "4321", serviceauth.OTPRequestContext{DeviceID: "device-1", IP: "192.0.2.1"})
 	require.NoError(t, err)
+	require.Equal(t, email, challenge.Email)
 
 	_, err = service.FinishEmail(t.Context(), "user-1", "session-2", "device-1", "192.0.2.1", challenge.ChallengeID, "123456")
 	require.ErrorIs(t, err, common.ErrChallengeInvalid)
@@ -122,7 +145,7 @@ func newReauthTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	database, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, database.AutoMigrate(&model.User{}, &model.WebAuthnCredential{}))
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}, &model.WebAuthnCredential{}))
 	return database
 }
 

@@ -53,6 +53,24 @@ func TestLoginWithPassword_RequiresCaptchaAfterAccountRiskThreshold(t *testing.T
 	}
 }
 
+func TestLoginWithPassword_AcceptsOnlyVerifiedSecondaryEmail(t *testing.T) {
+	service, database, _ := newPasswordLoginTestServiceWithDB(t, "password123456")
+	verifiedAt := time.Now()
+	secondary := model.UserEmail{ID: "ue-secondary", UserID: "u1", Email: "secondary@example.com", VerifiedAt: &verifiedAt}
+	unverified := model.UserEmail{ID: "ue-unverified", UserID: "u1", Email: "unverified@example.com"}
+	if err := database.Create(&[]model.UserEmail{secondary, unverified}).Error; err != nil {
+		t.Fatalf("create secondary emails: %v", err)
+	}
+
+	user, err := service.LoginWithPassword(context.Background(), " Secondary@Example.COM ", "password123456")
+	if err != nil || user == nil || user.ID != "u1" {
+		t.Fatalf("expected verified secondary email login, user=%#v err=%v", user, err)
+	}
+	if _, err := service.LoginWithPassword(context.Background(), "unverified@example.com", "password123456"); !errors.Is(err, common.ErrInvalidCredentials) {
+		t.Fatalf("expected unverified email rejection, got %v", err)
+	}
+}
+
 func TestValidatePassword_RequiresLengthLetterAndDigit(t *testing.T) {
 	service := NewAuthService(nil, nil, nil, nil, nil)
 	testCases := []struct {
@@ -85,7 +103,7 @@ func TestChangePassword_UpdatesPasswordAndRevokesOtherSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserSession{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
 	oldHash, err := HashPassword("old-password-123")
@@ -135,12 +153,17 @@ func TestChangePassword_UpdatesPasswordAndRevokesOtherSessions(t *testing.T) {
 }
 
 func newPasswordLoginTestService(t *testing.T, password string) (*AuthService, string) {
+	service, _, email := newPasswordLoginTestServiceWithDB(t, password)
+	return service, email
+}
+
+func newPasswordLoginTestServiceWithDB(t *testing.T, password string) (*AuthService, *gorm.DB, string) {
 	t.Helper()
 	gormDB, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := gormDB.AutoMigrate(&model.User{}); err != nil {
+	if err := gormDB.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	hash, err := HashPassword(password)
@@ -151,5 +174,5 @@ func newPasswordLoginTestService(t *testing.T, password string) (*AuthService, s
 	if err := gormDB.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &hash, IsActive: true}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	return NewAuthService(nil, gormDB, kv.NewMemoryStore(), nil, nil), email
+	return NewAuthService(nil, gormDB, kv.NewMemoryStore(), nil, nil), gormDB, email
 }

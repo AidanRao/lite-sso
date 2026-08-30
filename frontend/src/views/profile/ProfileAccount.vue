@@ -1,10 +1,11 @@
 <template>
   <div class="settings-view">
-    <section class="settings-section" aria-labelledby="account-avatar-title">
-      <header class="section-title section-title-divided">
-        <h2 id="account-avatar-title">头像</h2>
-      </header>
-      <p class="section-copy">支持 JPEG、PNG 或 WebP，文件大小不超过 2MB。</p>
+    <ProfileSettingsSection
+      title-id="account-avatar-title"
+      title="头像"
+      description="支持 JPEG、PNG 或 WebP，文件大小不超过 2MB。"
+      divided
+    >
       <div class="avatar-row">
         <div class="avatar-preview" aria-hidden="true">
           <img v-if="user?.avatar_url" :src="user.avatar_url" alt="" />
@@ -24,13 +25,9 @@
           />
         </div>
       </div>
-    </section>
+    </ProfileSettingsSection>
 
-    <section class="settings-section" aria-labelledby="account-information-title">
-      <header class="section-title">
-        <h2 id="account-information-title">账号信息</h2>
-      </header>
-
+    <ProfileSettingsSection title-id="account-information-title" title="账号信息">
       <div class="settings-list">
         <div class="settings-row">
           <div class="row-copy">
@@ -58,7 +55,7 @@
           </div>
         </div>
       </div>
-    </section>
+    </ProfileSettingsSection>
 
     <div v-if="usernameDialogOpen" class="dialog-mask" @click.self="closeUsernameDialog">
       <form class="dialog" @submit.prevent="saveUsername">
@@ -87,6 +84,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Check, Copy, X } from 'lucide-vue-next'
 import { userAPI } from '../../api/auth'
+import ProfileSettingsSection from '../../components/profile/ProfileSettingsSection.vue'
 import { PROFILE_CONTEXT_KEY } from './profileContext'
 
 const profile = inject(PROFILE_CONTEXT_KEY)
@@ -190,30 +188,6 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
 .settings-view {
   display: grid;
   gap: 30px;
-}
-
-.section-title h2 {
-  margin: 0;
-  color: #24292f;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.settings-section {
-  display: grid;
-  gap: 14px;
-}
-
-.section-title-divided {
-  padding-bottom: 8px;
-  border-bottom: 1px solid #d8dee4;
-}
-
-.section-copy {
-  margin: 0;
-  color: #57606a;
-  font-size: 14px;
-  line-height: 1.5;
 }
 
 .avatar-row {

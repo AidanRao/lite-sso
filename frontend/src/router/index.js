@@ -51,6 +51,16 @@ const routes = [
         component: () => import('../views/profile/ProfileAuthentication.vue')
       },
       {
+        path: 'access/emails',
+        name: 'ProfileEmails',
+        component: () => import('../views/profile/ProfileEmails.vue')
+      },
+      {
+        path: 'access/emails/verify',
+        name: 'ProfileEmailVerification',
+        component: () => import('../views/profile/ProfileEmails.vue')
+      },
+      {
         path: 'access/sessions',
         name: 'ProfileSessions',
         component: () => import('../views/profile/ProfileSessions.vue')

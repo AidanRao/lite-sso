@@ -144,6 +144,7 @@ func Test_OAuthService_ThirdPartyBind_PreviewsBeforeConfirmation(t *testing.T) {
 			Provider:    githubProvider,
 			ProviderUID: "gh_1",
 			Username:    "alice",
+			Email:       "alice@example.com",
 		},
 	}
 
@@ -195,6 +196,17 @@ func Test_OAuthService_ThirdPartyBind_PreviewsBeforeConfirmation(t *testing.T) {
 	}
 	if binding.ProviderUID != "gh_1" {
 		t.Fatalf("expected provider uid gh_1, got %q", binding.ProviderUID)
+	}
+	var imported model.UserEmail
+	if err := gormDB.First(&imported, "user_id = ? AND email = ?", "u1", "alice@example.com").Error; err != nil {
+		t.Fatalf("expected imported email: %v", err)
+	}
+	if imported.VerifiedAt == nil || !imported.IsPrimary {
+		t.Fatalf("expected trusted primary email: %#v", imported)
+	}
+	var sourceCount int64
+	if err := gormDB.Model(&model.UserEmailSource{}).Where("user_email_id = ? AND user_third_party_id = ?", imported.ID, binding.ID).Count(&sourceCount).Error; err != nil || sourceCount != 1 {
+		t.Fatalf("expected provider source, count=%d err=%v", sourceCount, err)
 	}
 	if _, err := service.GetThirdPartyBindingPreview(ctx, "u1", result.PendingBindingID); !errors.Is(err, common.ErrThirdPartyBindingNotFound) {
 		t.Fatalf("expected consumed preview, got %v", err)
@@ -274,6 +286,49 @@ func TestOAuthService_ThirdPartyBind_RejectsAccountBoundToAnotherUser(t *testing
 	}
 }
 
+func Test_FindOrCreateUser_AllowsNewProviderAccountWithoutEmail(t *testing.T) {
+	gormDB := newOAuthTestDB(t)
+	service := NewOAuthService(&conf.Config{}, gormDB, kv.NewMemoryStore(), db.NewUserRepository(gormDB))
+
+	user, err := service.findOrCreateUser(context.Background(), &thirdPartyProfile{Provider: githubProvider, ProviderUID: "gh-new"})
+	if err != nil {
+		t.Fatalf("create provider-only account: %v", err)
+	}
+	if user.Email != nil {
+		t.Fatalf("expected account without email, got %#v", user.Email)
+	}
+	var emailCount int64
+	if err := gormDB.Model(&model.UserEmail{}).Where("user_id = ?", user.ID).Count(&emailCount).Error; err != nil {
+		t.Fatalf("count emails: %v", err)
+	}
+	if emailCount != 0 {
+		t.Fatalf("expected zero emails, got %d", emailCount)
+	}
+}
+
+func Test_FindOrCreateUser_DoesNotResyncEmailForEstablishedBinding(t *testing.T) {
+	gormDB := newOAuthTestDB(t)
+	primary := "primary@example.com"
+	if err := gormDB.Create(&model.User{ID: "u1", Email: &primary, IsActive: true}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := gormDB.Create(&model.UserThirdParty{UserID: "u1", Provider: githubProvider, ProviderUID: "gh-1"}).Error; err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+	service := NewOAuthService(&conf.Config{}, gormDB, kv.NewMemoryStore(), db.NewUserRepository(gormDB))
+
+	if _, err := service.findOrCreateUser(context.Background(), &thirdPartyProfile{Provider: githubProvider, ProviderUID: "gh-1", Email: "changed@example.com"}); err != nil {
+		t.Fatalf("find established user: %v", err)
+	}
+	var count int64
+	if err := gormDB.Model(&model.UserEmail{}).Where("user_id = ?", "u1").Count(&count).Error; err != nil {
+		t.Fatalf("count emails: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected no login-time resync, got %d emails", count)
+	}
+}
+
 func newOAuthTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -282,7 +337,7 @@ func newOAuthTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := gormDB.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := gormDB.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserEmailSource{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return gormDB

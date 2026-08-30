@@ -25,6 +25,7 @@ import (
 const (
 	MethodPasskey = "passkey"
 	MethodEmail   = "email"
+	MethodLogin   = "login"
 )
 
 // Deps contains the dependencies required by the re-authentication service.
@@ -132,7 +133,34 @@ func (s *Service) AuthorizeSession(ctx context.Context, userID string, sessionID
 	if strings.TrimSpace(userID) == "" || strings.TrimSpace(sessionID) == "" {
 		return nil, common.ErrReauthRequired
 	}
-	return s.authorizeGrant(ctx, kv.KeyReauthSession(sessionID), userID, sessionID, common.ErrReauthRequired)
+	grant, err := s.authorizeGrant(ctx, kv.KeyReauthSession(sessionID), userID, sessionID, common.ErrReauthRequired)
+	if err == nil || !errors.Is(err, common.ErrReauthRequired) {
+		return grant, err
+	}
+	return s.authorizeRecentLogin(ctx, userID, sessionID)
+}
+
+func (s *Service) authorizeRecentLogin(ctx context.Context, userID string, sessionID string) (*Grant, error) {
+	if s.database == nil {
+		return nil, common.ErrReauthRequired
+	}
+	now := time.Now()
+	session, err := db.NewUserSessionRepository(s.database).FindActive(ctx, sessionID, now)
+	if err != nil || session.UserID != userID || strings.TrimSpace(session.AuthMethod) == "" {
+		return nil, common.ErrReauthRequired
+	}
+	expiresAt := session.CreatedAt.Add(s.ttl)
+	if !now.Before(expiresAt) {
+		return nil, common.ErrReauthRequired
+	}
+	return &Grant{
+		UserID:    userID,
+		SessionID: sessionID,
+		Method:    MethodLogin,
+		ProofID:   session.AuthMethod,
+		IssuedAt:  session.CreatedAt,
+		ExpiresAt: expiresAt,
+	}, nil
 }
 
 func (s *Service) authorizeGrant(ctx context.Context, key string, userID string, sessionID string, invalidError error) (*Grant, error) {

@@ -78,10 +78,14 @@ func (s *UserService) GetLoginMethods(ctx context.Context, userID string) ([]dto
 		return nil, common.ErrUserNotFound
 	}
 
-	hasEmail := user.Email != nil && strings.TrimSpace(*user.Email) != ""
-	hasPassword := user.PasswordHash != nil && strings.TrimSpace(*user.PasswordHash) != ""
+	verifiedEmailCount, err := db.NewUserEmailRepository(s.db).CountVerifiedByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	hasEmail := verifiedEmailCount > 0
+	hasPassword := hasEmail && user.PasswordHash != nil && strings.TrimSpace(*user.PasswordHash) != ""
 	methods := []dto.LoginMethodResponse{
-		{Type: dto.LoginMethodEmailOTP, Available: hasEmail, Email: user.Email},
+		{Type: dto.LoginMethodEmailOTP, Available: hasEmail, Email: user.Email, VerifiedEmailCount: verifiedEmailCount},
 		{Type: dto.LoginMethodPassword, Available: hasPassword},
 		{Type: dto.LoginMethodQRCode, Available: true},
 	}
@@ -151,10 +155,6 @@ func (s *UserService) UnbindThirdParty(ctx context.Context, userID string, provi
 			}
 			return err
 		}
-		if user.Email == nil || strings.TrimSpace(*user.Email) == "" {
-			return common.ErrEmailRequiredForUnbind
-		}
-
 		thirdPartyRepo := db.NewUserThirdPartyRepository(tx)
 		binding, err := thirdPartyRepo.FindByUserID(ctx, userID, provider)
 		if err != nil {
@@ -162,6 +162,17 @@ func (s *UserService) UnbindThirdParty(ctx context.Context, userID string, provi
 				return common.ErrThirdPartyNotBound
 			}
 			return err
+		}
+		if user.Email == nil || strings.TrimSpace(*user.Email) == "" {
+			var otherBindingCount int64
+			if err := tx.Model(&model.UserThirdParty{}).
+				Where("user_id = ? AND id <> ?", userID, binding.ID).
+				Count(&otherBindingCount).Error; err != nil {
+				return err
+			}
+			if otherBindingCount == 0 {
+				return common.ErrLastLoginMethod
+			}
 		}
 
 		return thirdPartyRepo.Delete(ctx, binding.ID)

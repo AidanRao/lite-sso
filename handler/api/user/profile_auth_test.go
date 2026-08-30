@@ -53,7 +53,7 @@ func TestUserProfile_RequiresSessionCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -82,7 +82,7 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	email := "u1@example.com"
@@ -93,6 +93,10 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 		IsActive: true,
 	}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
+	}
+	verifiedAt := time.Now()
+	if err := db.Create(&model.UserEmail{ID: "ue-secondary", UserID: "u1", Email: "secondary@example.com", VerifiedAt: &verifiedAt}).Error; err != nil {
+		t.Fatalf("create secondary email: %v", err)
 	}
 	if err := db.Create(&model.OAuthClient{
 		Name:         "demo app",
@@ -146,7 +150,8 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 		Code int `json:"code"`
 		Data struct {
 			User struct {
-				ID string `json:"id"`
+				ID    string  `json:"id"`
+				Email *string `json:"email"`
 			} `json:"user"`
 			IsAdmin bool `json:"is_admin"`
 		} `json:"data"`
@@ -154,7 +159,7 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp.Code != 200 || resp.Data.User.ID != "u1" {
+	if resp.Code != 200 || resp.Data.User.ID != "u1" || resp.Data.User.Email == nil || *resp.Data.User.Email != email {
 		t.Fatalf("expected user u1, got %s", w.Body.String())
 	}
 	var envelope map[string]any
@@ -180,13 +185,17 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserThirdParty{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserThirdParty{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	email := "u1@example.com"
 	passwordHash := "argon2id-hash"
 	if err := database.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &passwordHash, IsActive: true}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
+	}
+	verifiedAt := time.Now()
+	if err := database.Create(&model.UserEmail{ID: "ue-secondary", UserID: "u1", Email: "secondary@example.com", VerifiedAt: &verifiedAt}).Error; err != nil {
+		t.Fatalf("create secondary email: %v", err)
 	}
 	if err := database.Create(&model.UserThirdParty{UserID: "u1", Provider: "github", ProviderUID: "gh-1"}).Error; err != nil {
 		t.Fatalf("create binding: %v", err)
@@ -218,11 +227,12 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 	var payload struct {
 		Data struct {
 			Methods []struct {
-				Type      string `json:"type"`
-				Available bool   `json:"available"`
-				Email     string `json:"email"`
-				Provider  string `json:"provider"`
-				Bound     *bool  `json:"bound"`
+				Type               string `json:"type"`
+				Available          bool   `json:"available"`
+				Email              string `json:"email"`
+				VerifiedEmailCount int64  `json:"verified_email_count"`
+				Provider           string `json:"provider"`
+				Bound              *bool  `json:"bound"`
 			} `json:"methods"`
 		} `json:"data"`
 	}
@@ -232,7 +242,7 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 	if len(payload.Data.Methods) != 4 {
 		t.Fatalf("expected email, password, qr code and github methods, got %s", response.Body.String())
 	}
-	if payload.Data.Methods[0].Type != "email_otp" || !payload.Data.Methods[0].Available || payload.Data.Methods[0].Email != email {
+	if payload.Data.Methods[0].Type != "email_otp" || !payload.Data.Methods[0].Available || payload.Data.Methods[0].Email != email || payload.Data.Methods[0].VerifiedEmailCount != 2 {
 		t.Fatalf("expected email OTP first, got %s", response.Body.String())
 	}
 	if payload.Data.Methods[1].Type != "password" || !payload.Data.Methods[1].Available {
@@ -254,10 +264,11 @@ func TestUserLoginMethods_ReturnsConfiguredUnboundProviderWithoutCredentials(t *
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserThirdParty{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserThirdParty{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	if err := database.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {
+	passwordHash := "configured-but-unusable-without-email"
+	if err := database.Create(&model.User{ID: "u1", PasswordHash: &passwordHash, IsActive: true}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 
@@ -295,7 +306,7 @@ func TestUserApplications_ReturnsOnlyApplicationData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserOAuthClient{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	if err := database.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {
@@ -348,7 +359,7 @@ func TestUserProfile_UpdateUsername(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	if err := db.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {
@@ -401,7 +412,7 @@ func TestUserProfile_UpdateUsernameRejectsDuplicate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	username := "bob"
@@ -444,7 +455,7 @@ func TestUserProfile_UpdateProfileRejectsAvatarURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	if err := db.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {
@@ -572,7 +583,7 @@ func newAvatarUploadTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	if err := database.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {

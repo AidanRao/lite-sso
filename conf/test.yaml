@@ -18,6 +18,10 @@ auth:
   password_device_fail_window: "10m"
   password_ip_fail_window: "1h"
 
+email:
+  max_addresses: 3
+  verification_base_url: "https://sso-test.aidanrao.top"
+
 passkey:
   rp_id: "sso-test.aidanrao.top"
   rp_origins:

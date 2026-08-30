@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -19,6 +20,7 @@ import (
 	"sso-server/dto"
 	"sso-server/model"
 	serviceauth "sso-server/service/auth"
+	serviceuser "sso-server/service/user"
 )
 
 const (
@@ -31,6 +33,8 @@ const (
 
 // OAuthService 编排第三方登录流程，具体平台差异由 provider 策略实现。
 type OAuthService struct {
+	cfg                *conf.Config
+	database           *gorm.DB
 	kv                 kv.Store
 	providers          map[string]thirdPartyProvider
 	userRepo           *db.UserRepository
@@ -74,6 +78,8 @@ func NewOAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, user
 	}
 
 	return &OAuthService{
+		cfg:                cfg,
+		database:           database,
 		kv:                 kvStore,
 		providers:          providers,
 		userRepo:           userRepo,
@@ -367,24 +373,31 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, profile *thirdParty
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-
-	if profile.Email != "" {
-		user, err := s.userRepo.FindByEmail(ctx, profile.Email)
-		if err == nil && user != nil {
-			err = s.createThirdPartyBinding(ctx, user.ID, profile.Provider, profile.ProviderUID)
-			if err != nil {
-				return nil, err
+	var user *model.User
+	if strings.TrimSpace(profile.Email) != "" {
+		user, err = s.userRepo.FindByEmail(ctx, profile.Email)
+	}
+	if err == nil && user != nil {
+		err = s.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			binding := &model.UserThirdParty{UserID: user.ID, Provider: profile.Provider, ProviderUID: profile.ProviderUID}
+			if err := db.NewUserThirdPartyRepository(tx).Create(ctx, binding); err != nil {
+				return err
 			}
-			return user, nil
-		}
-
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			_, err := serviceuser.NewEmailService(serviceuser.EmailDeps{Config: s.cfg, DB: tx}).ImportTrusted(ctx, user.ID, profile.Email, binding.ID)
+			return err
+		})
+		if err != nil {
 			return nil, err
 		}
+		return user, nil
+	}
+
+	if strings.TrimSpace(profile.Email) != "" && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
 	}
 
 	userID := generateUserID()
-	user := &model.User{
+	user = &model.User{
 		ID:        userID,
 		Username:  stringPtr(profile.Username),
 		Email:     stringPtr(profile.Email),
@@ -392,26 +405,25 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, profile *thirdParty
 		IsActive:  true,
 	}
 
-	err = s.userRepo.Create(ctx, user)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.createThirdPartyBinding(ctx, userID, profile.Provider, profile.ProviderUID)
+	err = s.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := db.NewUserRepository(tx).Create(ctx, user); err != nil {
+			return err
+		}
+		binding := &model.UserThirdParty{UserID: userID, Provider: profile.Provider, ProviderUID: profile.ProviderUID}
+		if err := db.NewUserThirdPartyRepository(tx).Create(ctx, binding); err != nil {
+			return err
+		}
+		if strings.TrimSpace(profile.Email) == "" {
+			return nil
+		}
+		_, err := serviceuser.NewEmailService(serviceuser.EmailDeps{Config: s.cfg, DB: tx}).ImportTrusted(ctx, userID, profile.Email, binding.ID)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	return user, nil
-}
-
-func (s *OAuthService) createThirdPartyBinding(ctx context.Context, userID, provider, providerUID string) error {
-	binding := &model.UserThirdParty{
-		UserID:      userID,
-		Provider:    provider,
-		ProviderUID: providerUID,
-	}
-	return s.userThirdPartyRepo.Create(ctx, binding)
 }
 
 func (s *OAuthService) bindThirdPartyUser(ctx context.Context, userID string, profile *thirdPartyProfile) (*model.User, error) {
@@ -420,7 +432,18 @@ func (s *OAuthService) bindThirdPartyUser(ctx context.Context, userID string, pr
 		return user, err
 	}
 
-	if err := s.createThirdPartyBinding(ctx, userID, profile.Provider, profile.ProviderUID); err != nil {
+	err = s.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		binding := &model.UserThirdParty{UserID: userID, Provider: profile.Provider, ProviderUID: profile.ProviderUID}
+		if err := db.NewUserThirdPartyRepository(tx).Create(ctx, binding); err != nil {
+			return err
+		}
+		if strings.TrimSpace(profile.Email) == "" {
+			return nil
+		}
+		_, err := serviceuser.NewEmailService(serviceuser.EmailDeps{Config: s.cfg, DB: tx}).ImportTrusted(ctx, userID, profile.Email, binding.ID)
+		return err
+	})
+	if err != nil {
 		return nil, err
 	}
 

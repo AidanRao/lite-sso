@@ -1,11 +1,11 @@
 <template>
   <div class="settings-view">
-    <section class="settings-section" aria-labelledby="login-methods-title">
-      <header class="section-title section-title-divided">
-        <h2 id="login-methods-title">登录方式</h2>
-      </header>
-      <p class="section-copy">展示系统支持的登录方式，以及当前账号是否已配置或可用。</p>
-
+    <ProfileSettingsSection
+      title-id="login-methods-title"
+      title="登录方式"
+      description="展示系统支持的登录方式，以及当前账号是否已配置或可用。"
+      divided
+    >
       <div v-if="methodsLoading" class="section-state">
         <span class="spinner" aria-hidden="true"></span>
         正在加载登录方式…
@@ -27,7 +27,10 @@
               <strong>{{ methodTitle(method) }}</strong>
               <span>{{ methodDescription(method) }}</span>
             </div>
-            <template v-if="method.type === 'password'">
+            <template v-if="method.type === 'email_otp'">
+              <router-link class="button" to="/profile/access/emails">管理邮箱</router-link>
+            </template>
+            <template v-else-if="method.type === 'password'">
               <button
                 v-if="method.available"
                 class="button"
@@ -45,8 +48,8 @@
                 v-else
                 class="button danger"
                 type="button"
-                :disabled="Boolean(unbindingProvider) || !canUnbindThirdParty"
-                :title="canUnbindThirdParty ? `撤销 ${providerName(method.provider)} 授权` : '请先设置邮箱，再撤销第三方授权'"
+				:disabled="Boolean(unbindingProvider) || !canUnbindThirdParty(method.provider)"
+				:title="canUnbindThirdParty(method.provider) ? `撤销 ${providerName(method.provider)} 授权` : '至少需要保留一种可用登录方式'"
                 @click="unbindProvider(method)"
               >
                 {{ unbindingProvider === method.provider ? '撤销中…' : '撤销授权' }}
@@ -87,17 +90,20 @@
         </template>
       </div>
       <div v-else class="section-state">当前账号暂无可用登录方式。</div>
-    </section>
+    </ProfileSettingsSection>
 
-    <section class="settings-section" aria-labelledby="passkeys-title">
-      <header class="section-title section-title-actions section-title-divided">
-        <h2 id="passkeys-title">Passkeys</h2>
+    <ProfileSettingsSection
+      title-id="passkeys-title"
+      title="Passkeys"
+      description="Passkey 当前用于确认绑定、解绑和其他敏感操作，不作为账号登录方式。"
+      divided
+    >
+      <template #actions>
         <button class="button primary" type="button" @click="enrollmentOpen = true">
           <Plus :size="16" />
           注册 Passkey
         </button>
-      </header>
-      <p class="section-copy">Passkey 当前用于确认绑定、解绑和其他敏感操作，不作为账号登录方式。</p>
+      </template>
 
       <div v-if="passkeysLoading" class="section-state">
         <span class="spinner" aria-hidden="true"></span>
@@ -125,7 +131,7 @@
         </div>
       </div>
       <div v-else class="section-state">尚未注册 Passkey。</div>
-    </section>
+    </ProfileSettingsSection>
 
     <PasskeyEnrollmentDialog
       :visible="enrollmentOpen"
@@ -142,6 +148,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Fingerprint, Mail, Pencil, Plus, QrCode, RectangleEllipsis, Trash2, TriangleAlert } from 'lucide-vue-next'
 import { passkeyAPI, userAPI } from '../../api/auth'
 import PasskeyEnrollmentDialog from '../../components/PasskeyEnrollmentDialog.vue'
+import ProfileSettingsSection from '../../components/profile/ProfileSettingsSection.vue'
 import ThirdPartyProviderIcon from '../../components/ThirdPartyProviderIcon.vue'
 import { isReauthCancelled } from '../../utils/reauthCoordinator'
 import { passwordPolicyError } from '../../utils/passwordPolicy'
@@ -176,7 +183,8 @@ const providerNames = {
   feishu: '飞书'
 }
 
-const canUnbindThirdParty = computed(() => Boolean(user.value?.email?.trim()))
+const boundProviderCount = computed(() => loginMethods.value.filter(method => method.type === 'third_party' && method.bound).length)
+const canUnbindThirdParty = () => Boolean(user.value?.email?.trim()) || boundProviderCount.value > 1
 const passwordLengthValid = computed(() => {
   const length = [...passwordForm.value.newPassword].length
   return length >= 10 && length <= 256
@@ -187,7 +195,7 @@ const providerName = (provider) => providerNames[provider] || provider
 const methodKey = (method) => method.type === 'third_party' ? `${method.type}:${method.provider}` : method.type
 const methodTitle = (method) => ({ email_otp: '邮箱验证码', password: '密码', qr_code: '扫码登录' })[method.type] || providerName(method.provider)
 const methodDescription = (method) => {
-  if (method.type === 'email_otp') return method.available ? `可向 ${method.email} 发送登录验证码` : '未绑定邮箱，暂不可使用'
+  if (method.type === 'email_otp') return `已设置 ${Number(method.verified_email_count) || 0} 个验证后的邮箱`
   if (method.type === 'password') return method.available ? '已设置，可使用密码登录' : '未设置'
   if (method.type === 'qr_code') return '可通过当前已登录设备扫码确认新设备登录'
   return method.bound ? '已绑定，可用于登录当前账号' : '尚未绑定'
@@ -309,7 +317,7 @@ const bindProvider = (provider) => {
 }
 
 const unbindProvider = async (method) => {
-  if (unbindingProvider.value || !canUnbindThirdParty.value) return
+  if (unbindingProvider.value || !canUnbindThirdParty(method.provider)) return
   const name = providerName(method.provider)
   try {
     await ElMessageBox.confirm(
@@ -404,37 +412,6 @@ onMounted(() => {
 .settings-view {
   display: grid;
   gap: 34px;
-}
-
-.section-title h2 {
-  margin: 0;
-  color: #24292f;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.settings-section {
-  display: grid;
-  gap: 14px;
-}
-
-.section-title-divided {
-  padding-bottom: 8px;
-  border-bottom: 1px solid #d8dee4;
-}
-
-.section-title-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-}
-
-.section-copy {
-  margin: 0;
-  color: #57606a;
-  font-size: 14px;
-  line-height: 1.5;
 }
 
 .settings-list {
@@ -692,11 +669,6 @@ onMounted(() => {
 }
 
 @media (max-width: 620px) {
-  .section-title-actions {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .settings-row {
     grid-template-columns: 30px minmax(0, 1fr);
   }

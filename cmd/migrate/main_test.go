@@ -5,7 +5,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -150,6 +152,17 @@ func Test_NewMigrationProvider_ProviderInitializationError(t *testing.T) {
 	assert.Nil(t, provider)
 	require.ErrorContains(t, err, "create migration provider")
 	require.ErrorIs(t, err, goose.ErrNoMigrations)
+}
+
+func Test_UserEmailsMigration_WrapsDollarQuotedBlock(t *testing.T) {
+	content, err := os.ReadFile("../../migrations/00008_add_user_emails.sql")
+	require.NoError(t, err)
+
+	migrationSQL := string(content)
+	statementBegin := strings.Index(migrationSQL, "-- +goose StatementBegin\nDO $$")
+	statementEnd := strings.Index(migrationSQL, "END $$;\n-- +goose StatementEnd")
+	require.NotEqual(t, -1, statementBegin)
+	require.Greater(t, statementEnd, statementBegin)
 }
 
 func Test_ExecuteProviderCommand_MigrationError(t *testing.T) {

@@ -21,16 +21,18 @@ import (
 )
 
 type UserDeps struct {
-	Config     *conf.Config
-	DB         *gorm.DB
-	KV         kv.Store
-	OAuth2     *oauth2.OAuth2
-	ImageStore manageross.ImageStore
+	Config        *conf.Config
+	DB            *gorm.DB
+	KV            kv.Store
+	OAuth2        *oauth2.OAuth2
+	ImageStore    manageross.ImageStore
+	MessageSender serviceauth.MessageSender
 }
 
 type UserHandler struct {
 	user              *serviceuser.UserService
 	auth              *serviceauth.AuthService
+	emails            *serviceuser.EmailService
 	trustProxyHeaders bool
 }
 
@@ -39,6 +41,7 @@ func NewUserHandler(deps UserDeps) *UserHandler {
 	return &UserHandler{
 		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2, deps.ImageStore),
 		auth:              serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
+		emails:            serviceuser.NewEmailService(serviceuser.EmailDeps{Config: deps.Config, DB: deps.DB, MessageSender: deps.MessageSender}),
 		trustProxyHeaders: trustProxyHeaders,
 	}
 }
@@ -401,8 +404,8 @@ func (h *UserHandler) UnbindThirdParty(c *gin.Context) {
 		switch {
 		case errors.Is(err, common.ErrInvalidProvider):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "不支持的第三方平台", Data: nil})
-		case errors.Is(err, common.ErrEmailRequiredForUnbind):
-			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "请先设置邮箱，再撤销第三方授权", Data: nil})
+		case errors.Is(err, common.ErrLastLoginMethod):
+			c.JSON(http.StatusConflict, ecode.Response[any]{Code: ecode.Conflict, Message: "至少需要保留一种可用登录方式", Data: nil})
 		case errors.Is(err, common.ErrThirdPartyNotBound):
 			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "尚未绑定该第三方平台", Data: nil})
 		case errors.Is(err, common.ErrUserNotFound):

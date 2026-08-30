@@ -57,6 +57,10 @@ func TestAdminUsers_RequiresConfiguredAdmin(t *testing.T) {
 
 	createAdminTestUser(t, database, "admin-user", "admin@example.com")
 	createAdminTestUser(t, database, "normal-user", "normal@example.com")
+	verifiedAt := time.Now()
+	if err := database.Create(&model.UserEmail{ID: "normal-secondary", UserID: "normal-user", Email: "normal-secondary@example.com", VerifiedAt: &verifiedAt}).Error; err != nil {
+		t.Fatalf("create secondary email: %v", err)
+	}
 	createAdminTestSession(t, kvStore, "sid-admin", "admin-user")
 	createAdminTestSession(t, kvStore, "sid-normal", "normal-user")
 
@@ -78,6 +82,9 @@ func TestAdminUsers_RequiresConfiguredAdmin(t *testing.T) {
 
 			if w.Code != tc.wantStatus {
 				t.Fatalf("expected %d, got %d, body=%s", tc.wantStatus, w.Code, w.Body.String())
+			}
+			if tc.wantStatus == http.StatusOK && (!bytes.Contains(w.Body.Bytes(), []byte(`"email":"normal@example.com"`)) || bytes.Contains(w.Body.Bytes(), []byte("normal-secondary@example.com"))) {
+				t.Fatalf("admin users must expose only primary emails, body=%s", w.Body.String())
 			}
 		})
 	}
@@ -346,7 +353,7 @@ func newAdminTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return database

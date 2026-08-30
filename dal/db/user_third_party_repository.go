@@ -45,5 +45,10 @@ func (r *UserThirdPartyRepository) Create(ctx context.Context, binding *model.Us
 }
 
 func (r *UserThirdPartyRepository) Delete(ctx context.Context, id uint) error {
-	return r.db.WithContext(ctx).Delete(&model.UserThirdParty{}, id).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_third_party_id = ?", id).Delete(&model.UserEmailSource{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&model.UserThirdParty{}, id).Error
+	})
 }

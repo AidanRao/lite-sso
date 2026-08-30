@@ -25,7 +25,7 @@ func TestUserRegister_CreatesUserAndReturnsTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserSession{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	store := kv.NewMemoryStore()
@@ -67,7 +67,7 @@ func TestUserResetPassword_UsesChallengeAndArgon2id(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserSession{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	oldHash, err := serviceauth.HashPassword("old-password-123")
@@ -108,7 +108,7 @@ func TestUserChangePassword_UpdatesPasswordAndKeepsCurrentSession(t *testing.T) 
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserSession{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	oldHash, err := serviceauth.HashPassword("old-password-123")

@@ -81,9 +81,8 @@ func (p *githubOAuthProvider) getUser(ctx context.Context, accessToken string) (
 		return nil, err
 	}
 
-	if user.Email == nil || *user.Email == "" {
-		user.Email = p.getPrimaryEmail(ctx, accessToken)
-	}
+	// Only the primary, provider-verified address is trusted as an account identity.
+	user.Email = p.getPrimaryEmail(ctx, accessToken)
 
 	return &user, nil
 }

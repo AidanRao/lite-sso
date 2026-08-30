@@ -51,6 +51,32 @@ type Config struct {
 	Admin         AdminConfig           `mapstructure:"admin"`
 	OSS           OSSConfig             `mapstructure:"oss"`
 	Passkey       PasskeyConfig         `mapstructure:"passkey"`
+	Email         EmailConfig           `mapstructure:"email"`
+}
+
+// EmailConfig contains user email lifecycle limits and the public verification origin.
+type EmailConfig struct {
+	MaxAddresses        int    `mapstructure:"max_addresses"`
+	VerificationBaseURL string `mapstructure:"verification_base_url"`
+}
+
+// ValidateEmail checks the multi-email account configuration.
+func (c *Config) ValidateEmail() error {
+	if c == nil {
+		return errors.New("configuration is required")
+	}
+	if c.Email.MaxAddresses <= 0 {
+		return errors.New("email.max_addresses must be positive")
+	}
+	baseURL := strings.TrimSpace(c.Email.VerificationBaseURL)
+	if baseURL == "" {
+		return errors.New("email.verification_base_url is required")
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("email.verification_base_url must be a valid HTTP origin")
+	}
+	return nil
 }
 
 // PasskeyConfig contains the relying-party and lifetime settings for WebAuthn.
@@ -341,6 +367,8 @@ func bindEnvs(v *viper.Viper) {
 		"passkey.rp_origins",
 		"passkey.rp_display_name",
 		"passkey.ceremony_ttl",
+		"email.max_addresses",
+		"email.verification_base_url",
 	}
 
 	for _, key := range envKeys {
@@ -363,10 +391,12 @@ func bindEnvs(v *viper.Viper) {
 func setDefaults(v *viper.Viper, env Environment) {
 	v.SetDefault("passkey.ceremony_ttl", "5m")
 	v.SetDefault("auth.reauth_token_ttl", "5m")
+	v.SetDefault("email.max_addresses", 3)
 	if env == EnvLocal {
 		v.SetDefault("passkey.rp_id", "localhost")
 		v.SetDefault("passkey.rp_origins", []string{"http://localhost:5173", "http://localhost:8080"})
 		v.SetDefault("passkey.rp_display_name", "Lite SSO")
+		v.SetDefault("email.verification_base_url", "http://localhost:5173")
 	}
 	if env != EnvProd {
 		return

@@ -68,11 +68,12 @@ func (s *Server) registerRoutes() {
 	})
 
 	userHandler := user.NewUserHandler(user.UserDeps{
-		Config:     s.cfg,
-		DB:         db.DB,
-		KV:         kvStore,
-		OAuth2:     o,
-		ImageStore: s.imageStore,
+		Config:        s.cfg,
+		DB:            db.DB,
+		KV:            kvStore,
+		OAuth2:        o,
+		ImageStore:    s.imageStore,
+		MessageSender: s.messageCenterClient,
 	})
 
 	oauthHandler := oauth.NewOAuthHandler(oauth.OAuthDeps{
@@ -136,6 +137,12 @@ func (s *Server) registerRoutes() {
 			userProtected.GET("/profile", userHandler.GetProfile)
 			userProtected.PUT("/profile", userHandler.UpdateProfile)
 			userProtected.GET("/login-methods", userHandler.GetLoginMethods)
+			userProtected.GET("/emails", userHandler.ListEmails)
+			userProtected.POST("/emails", reauthRequired, userHandler.AddEmail)
+			userProtected.POST("/emails/verification/confirm", userHandler.ConfirmEmailVerification)
+			userProtected.POST("/emails/:id/verification", userHandler.ResendEmailVerification)
+			userProtected.PUT("/emails/:id/primary", reauthRequired, userHandler.SetPrimaryEmail)
+			userProtected.DELETE("/emails/:id", reauthRequired, userHandler.DeleteEmail)
 			userProtected.PUT("/password", userHandler.ChangePassword)
 			userProtected.GET("/applications", userHandler.GetApplications)
 			userProtected.POST("/avatar", userHandler.UploadAvatar)

@@ -173,7 +173,7 @@ func TestAuthPasswordLogin_ReturnsAccessAndRefreshTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserSession{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	hash, err := serviceauth.HashPassword("password123456")
@@ -223,7 +223,7 @@ func TestAuthEmailLogin_ConsumesChallengeAndCreatesSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserSession{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	email := "u1@example.com"

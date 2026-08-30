@@ -1,10 +1,6 @@
 <template>
   <div class="settings-view">
-    <section class="settings-section" aria-labelledby="applications-title">
-      <header class="section-title">
-        <h2 id="applications-title">已登录应用</h2>
-      </header>
-
+    <ProfileSettingsSection title-id="applications-title" title="已登录应用">
       <div v-if="loading" class="section-state">
         <span class="spinner" aria-hidden="true"></span>
         正在加载应用…
@@ -46,7 +42,7 @@
         </article>
       </div>
       <div v-else class="section-state">暂无登录应用。</div>
-    </section>
+    </ProfileSettingsSection>
   </div>
 </template>
 
@@ -56,6 +52,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ExternalLink } from 'lucide-vue-next'
 import { userAPI } from '../../api/auth'
 import ApplicationLogo from '../../components/ApplicationLogo.vue'
+import ProfileSettingsSection from '../../components/profile/ProfileSettingsSection.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -95,18 +92,6 @@ onMounted(loadApplications)
 .settings-view {
   display: grid;
   gap: 22px;
-}
-
-.settings-section {
-  display: grid;
-  gap: 14px;
-}
-
-.section-title h2 {
-  margin: 0;
-  color: #24292f;
-  font-size: 18px;
-  font-weight: 600;
 }
 
 .applications-list {

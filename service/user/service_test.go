@@ -50,7 +50,14 @@ func Test_UnbindThirdParty_SupportedProvider(t *testing.T) {
 				Email:    &email,
 				IsActive: true,
 			})
-			createUnbindTestBinding(t, database, provider)
+			binding := createUnbindTestBinding(t, database, provider)
+			var emailRecord model.UserEmail
+			if err := database.First(&emailRecord, "user_id = ?", "u1").Error; err != nil {
+				t.Fatalf("load email: %v", err)
+			}
+			if err := database.Create(&model.UserEmailSource{UserEmailID: emailRecord.ID, UserThirdPartyID: binding.ID}).Error; err != nil {
+				t.Fatalf("create email source: %v", err)
+			}
 
 			service := NewUserService(&conf.Config{}, database, nil, nil, nil)
 			if err := service.UnbindThirdParty(context.Background(), "u1", provider); err != nil {
@@ -66,11 +73,23 @@ func Test_UnbindThirdParty_SupportedProvider(t *testing.T) {
 			if count != 0 {
 				t.Fatalf("expected binding deleted, got %d", count)
 			}
+			if err := database.Model(&model.UserEmailSource{}).Count(&count).Error; err != nil {
+				t.Fatalf("count email sources: %v", err)
+			}
+			if count != 0 {
+				t.Fatalf("expected source label deleted, got %d", count)
+			}
+			if err := database.Model(&model.UserEmail{}).Where("id = ?", emailRecord.ID).Count(&count).Error; err != nil {
+				t.Fatalf("count retained emails: %v", err)
+			}
+			if count != 1 {
+				t.Fatalf("expected email retained, got %d", count)
+			}
 		})
 	}
 }
 
-func Test_UnbindThirdParty_WithoutEmail(t *testing.T) {
+func Test_UnbindThirdParty_RejectsLastLoginMethodWithoutEmail(t *testing.T) {
 	testCases := []struct {
 		name  string
 		email *string
@@ -91,8 +110,8 @@ func Test_UnbindThirdParty_WithoutEmail(t *testing.T) {
 
 			service := NewUserService(&conf.Config{}, database, nil, nil, nil)
 			err := service.UnbindThirdParty(context.Background(), "u1", "github")
-			if !errors.Is(err, common.ErrEmailRequiredForUnbind) {
-				t.Fatalf("expected ErrEmailRequiredForUnbind, got %v", err)
+			if !errors.Is(err, common.ErrLastLoginMethod) {
+				t.Fatalf("expected ErrLastLoginMethod, got %v", err)
 			}
 
 			var count int64
@@ -105,6 +124,25 @@ func Test_UnbindThirdParty_WithoutEmail(t *testing.T) {
 				t.Fatalf("expected binding preserved, got %d", count)
 			}
 		})
+	}
+}
+
+func Test_UnbindThirdParty_AllowsProviderOnlyAccountToKeepAnotherProvider(t *testing.T) {
+	database := newUnbindTestDB(t)
+	createUnbindTestUser(t, database, &model.User{ID: "u1", IsActive: true})
+	createUnbindTestBinding(t, database, "github")
+	createUnbindTestBinding(t, database, "feishu")
+
+	service := NewUserService(&conf.Config{}, database, nil, nil, nil)
+	if err := service.UnbindThirdParty(context.Background(), "u1", "github"); err != nil {
+		t.Fatalf("unbind one of two providers: %v", err)
+	}
+	var count int64
+	if err := database.Model(&model.UserThirdParty{}).Where("user_id = ?", "u1").Count(&count).Error; err != nil {
+		t.Fatalf("count remaining providers: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one remaining provider, got %d", count)
 	}
 }
 
@@ -256,7 +294,7 @@ func newUnbindTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserThirdParty{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserThirdParty{}, &model.UserEmailSource{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return database
@@ -269,15 +307,17 @@ func createUnbindTestUser(t *testing.T, database *gorm.DB, user *model.User) {
 	}
 }
 
-func createUnbindTestBinding(t *testing.T, database *gorm.DB, provider string) {
+func createUnbindTestBinding(t *testing.T, database *gorm.DB, provider string) *model.UserThirdParty {
 	t.Helper()
-	if err := database.Create(&model.UserThirdParty{
+	binding := &model.UserThirdParty{
 		UserID:      "u1",
 		Provider:    provider,
 		ProviderUID: provider + "-uid",
-	}).Error; err != nil {
+	}
+	if err := database.Create(binding).Error; err != nil {
 		t.Fatalf("create binding: %v", err)
 	}
+	return binding
 }
 
 func stringPointer(value string) *string {

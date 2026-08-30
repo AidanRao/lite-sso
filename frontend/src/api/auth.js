@@ -167,6 +167,18 @@ export const userAPI = {
     return api.get('/user/devices')
   },
 
+  getEmails: () => api.get('/user/emails'),
+
+  addEmail: (email) => api.post('/user/emails', { email }, { reauth: true }),
+
+  resendEmailVerification: (id) => api.post(`/user/emails/${encodeURIComponent(id)}/verification`),
+
+  confirmEmailVerification: (token) => api.post('/user/emails/verification/confirm', { token }),
+
+  setPrimaryEmail: (id) => api.put(`/user/emails/${encodeURIComponent(id)}/primary`, null, { reauth: true }),
+
+  deleteEmail: (id) => api.delete(`/user/emails/${encodeURIComponent(id)}`, { reauth: true }),
+
   revokeDevice: (deviceID) => {
     return api.delete(`/user/devices/${encodeURIComponent(deviceID)}`)
   },
