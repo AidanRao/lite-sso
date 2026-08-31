@@ -51,7 +51,7 @@ func (s *UserService) CreateSession(ctx context.Context, userID string) (string,
 	return authService.CreateSession(ctx, userID)
 }
 
-func (s *UserService) ResetPasswordWithEmailChallenge(ctx context.Context, email string, password string, challengeID string, code string, deviceID string) error {
+func (s *UserService) ResetPasswordWithEmailChallenge(ctx context.Context, email string, password string, challengeID string, code string, deviceID string) (*serviceauth.PasswordResetResult, error) {
 	authService := serviceauth.NewAuthService(s.cfg, s.db, s.kv, nil, s.oauth2)
 	return authService.ResetPasswordWithEmailChallenge(ctx, email, password, challengeID, code, deviceID)
 }

@@ -137,6 +137,8 @@ export const authAPI = {
 }
 
 export const userAPI = {
+  getAuditLogs: (params, signal) => api.get('/user/audit-logs', { params, signal }),
+
   getProfile: () => {
     return api.get('/user/profile')
   },

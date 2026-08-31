@@ -40,6 +40,7 @@ func GetEnvironmentName() string {
 }
 
 type Config struct {
+	Audit         AuditConfig           `mapstructure:"audit"`
 	Server        ServerConfig          `mapstructure:"server"`
 	Database      DatabaseConfig        `mapstructure:"database"`
 	Cache         CacheConfig           `mapstructure:"cache"`
@@ -324,6 +325,7 @@ func Load() (*Config, error) {
 
 func bindEnvs(v *viper.Viper) {
 	envKeys := []string{
+		"audit.queue_capacity", "audit.batch_size", "audit.flush_interval", "audit.write_timeout",
 		"database.host",
 		"database.port",
 		"database.user",
@@ -389,6 +391,10 @@ func bindEnvs(v *viper.Viper) {
 }
 
 func setDefaults(v *viper.Viper, env Environment) {
+	v.SetDefault("audit.queue_capacity", 1024)
+	v.SetDefault("audit.batch_size", 50)
+	v.SetDefault("audit.flush_interval", "1s")
+	v.SetDefault("audit.write_timeout", "2s")
 	v.SetDefault("passkey.ceremony_ttl", "5m")
 	v.SetDefault("auth.reauth_token_ttl", "5m")
 	v.SetDefault("email.max_addresses", 3)

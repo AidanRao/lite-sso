@@ -212,7 +212,7 @@ func assertMigrationVersionsRecordedOnce(t *testing.T, database *sql.DB) {
 		versions[version] = count
 	}
 	require.NoError(t, rows.Err())
-	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1}, versions)
+	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1}, versions)
 }
 
 func assertFinalDatabaseStructure(t *testing.T, database *sql.DB) {
@@ -221,10 +221,10 @@ func assertFinalDatabaseStructure(t *testing.T, database *sql.DB) {
 	var tableCount int
 	err := database.QueryRowContext(
 		context.Background(),
-		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('users', 'oauth_clients', 'user_third_party', 'user_oauth_clients', 'user_session', 'webauthn_users', 'webauthn_credentials', 'user_emails', 'user_email_sources')",
+		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('users', 'oauth_clients', 'user_third_party', 'user_oauth_clients', 'user_session', 'webauthn_users', 'webauthn_credentials', 'user_emails', 'user_email_sources', 'audit_logs')",
 	).Scan(&tableCount)
 	require.NoError(t, err)
-	assert.Equal(t, 9, tableCount)
+	assert.Equal(t, 10, tableCount)
 
 	var legacyEmailColumnCount int
 	err = database.QueryRowContext(

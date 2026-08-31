@@ -14,6 +14,7 @@ import (
 	"sso-server/common/ecode"
 	"sso-server/conf"
 	"sso-server/dal/kv"
+	"sso-server/handler/audit"
 	"sso-server/handler/oauth2"
 	"sso-server/service/auth"
 	"sso-server/util/captcha"
@@ -83,6 +84,7 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 		return
 	}
 
+	audit.Email(c, req.Email)
 	deviceID, isNewDevice := auth.EnsureDeviceID(c.Request)
 	if isNewDevice {
 		WriteDeviceCookie(c, deviceID)
@@ -97,6 +99,7 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 		IP:       auth.RequestIP(c.Request, h.trustProxyHeaders),
 	}, purpose)
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrInvalidCaptcha):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码错误", Data: nil})
@@ -115,10 +118,12 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 		"expires_in":   challenge.ExpiresIn,
 		"resend_after": challenge.ResendAfter,
 	}
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(data))
 }
 
 func WriteDeviceCookie(c *gin.Context, deviceID string) {
+	audit.Device(c, deviceID)
 	auth.WriteDeviceCookie(c.Writer, deviceID, conf.GetEnv() == conf.EnvProd)
 }
 

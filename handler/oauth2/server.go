@@ -18,6 +18,7 @@ import (
 	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
+	"sso-server/handler/audit"
 )
 
 type OAuth2 struct {
@@ -125,6 +126,8 @@ func (o *OAuth2) HandleAuthorize(c *gin.Context) {
 		return
 	}
 
+	audit.Client(c, req.ClientID)
+	audit.Target(c, "oauth_client", req.ClientID)
 	finalRedirectURI, err := ResolveRedirectURI(client.GetDomain(), req.RedirectURI)
 	if err != nil {
 		o.redirectOrWriteAuthorizeError(c, req, err)
@@ -156,6 +159,8 @@ func (o *OAuth2) HandleAuthorize(c *gin.Context) {
 		o.writeTokenError(c, oauth2errors.ErrServerError)
 		return
 	}
+	audit.Completed(c, "authorization_code_issued")
+	audit.Success(c)
 	c.Redirect(http.StatusFound, redirectTo)
 }
 
@@ -172,6 +177,7 @@ func (o *OAuth2) ValidateToken(r *http.Request) (gooauth2.TokenInfo, error) {
 }
 
 func (o *OAuth2) redirectOrWriteAuthorizeError(c *gin.Context, req *oauth2server.AuthorizeRequest, err error) {
+	audit.Failure(c, "OAUTH_AUTHORIZATION_FAILED")
 	data, _, _ := o.server.GetErrorData(err)
 	if req != nil && req.RedirectURI != "" {
 		redirectTo, e := o.server.GetRedirectURI(req, data)
@@ -184,6 +190,7 @@ func (o *OAuth2) redirectOrWriteAuthorizeError(c *gin.Context, req *oauth2server
 }
 
 func (o *OAuth2) writeTokenError(c *gin.Context, err error) {
+	audit.Failure(c, "OAUTH_AUTHORIZATION_FAILED")
 	data, status, header := o.server.GetErrorData(err)
 	for k, vals := range header {
 		for _, v := range vals {

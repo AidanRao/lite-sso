@@ -9,6 +9,7 @@ import (
 	"sso-server/common"
 	"sso-server/common/ecode"
 	"sso-server/dto"
+	"sso-server/handler/audit"
 )
 
 // ListEmails returns all email identities owned by the current user.
@@ -30,11 +31,19 @@ func (h *UserHandler) AddEmail(c *gin.Context) {
 		writeEmailBadRequest(c)
 		return
 	}
+	audit.Email(c, req.Email)
 	email, err := h.emails.Add(c.Request.Context(), c.GetString("user_id"), req.Email)
+	if email != nil {
+		audit.Target(c, "email", email.ID)
+		audit.Changed(c, "email")
+		audit.Completed(c, "email_created")
+	}
 	if err != nil {
 		writeEmailError(c, err, email)
 		return
 	}
+	audit.Completed(c, "verification_sent")
+	audit.Success(c)
 	c.JSON(http.StatusCreated, ecode.OKResponse(gin.H{"email": email, "verification_sent": true}))
 }
 
@@ -44,6 +53,7 @@ func (h *UserHandler) ResendEmailVerification(c *gin.Context) {
 		writeEmailError(c, err, nil)
 		return
 	}
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"verification_sent": true}))
 }
 
@@ -61,6 +71,11 @@ func (h *UserHandler) ConfirmEmailVerification(c *gin.Context) {
 		writeEmailError(c, err, nil)
 		return
 	}
+	audit.Target(c, "email", email.ID)
+	audit.Email(c, email.Email)
+	audit.Changed(c, "verified")
+	audit.Completed(c, "email_verified")
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"email": email, "verified": true}))
 }
 
@@ -70,6 +85,8 @@ func (h *UserHandler) SetPrimaryEmail(c *gin.Context) {
 		writeEmailError(c, err, nil)
 		return
 	}
+	audit.Changed(c, "is_primary")
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"updated": true}))
 }
 
@@ -79,10 +96,13 @@ func (h *UserHandler) DeleteEmail(c *gin.Context) {
 		writeEmailError(c, err, nil)
 		return
 	}
+	audit.Changed(c, "email")
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"deleted": true}))
 }
 
 func writeEmailError(c *gin.Context, err error, email *dto.UserEmailResponse) {
+	audit.Error(c, err)
 	data := gin.H{}
 	if email != nil {
 		data["email"] = email

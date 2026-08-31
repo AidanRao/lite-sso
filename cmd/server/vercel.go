@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -16,8 +15,6 @@ import (
 	"sso-server/dal/kv"
 	"sso-server/handler/server"
 )
-
-const startupShutdownTimeout = time.Second
 
 type vercelDependencies struct {
 	runMigrations func(context.Context, *conf.Config) error
@@ -100,42 +97,33 @@ func serveDuringInitialization(
 	httpServer := &http.Server{
 		Handler: gate,
 	}
+	serveCtx, cancelServe := context.WithCancel(ctx)
+	defer cancelServe()
 	serveErrors := make(chan error, 1)
-	watchDone := make(chan struct{})
-
-	go func() {
-		serveErrors <- httpServer.Serve(listener)
-	}()
-	go func() {
-		select {
-		case <-ctx.Done():
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), startupShutdownTimeout)
-			defer cancel()
-			_ = httpServer.Shutdown(shutdownCtx)
-		case <-watchDone:
-		}
-	}()
-	defer close(watchDone)
+	go func() { serveErrors <- server.Serve(serveCtx, httpServer, listener) }()
 
 	startedAt := time.Now()
 	log.Printf("HTTP listener ready on %s", listener.Addr())
 	handler, err := initialize(ctx)
 	if err != nil {
 		gate.Fail()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), startupShutdownTimeout)
-		defer cancel()
-		_ = httpServer.Shutdown(shutdownCtx)
+		cancelServe()
 		<-serveErrors
 		return err
 	}
 
+	if shutdown, ok := handler.(interface{ Shutdown(context.Context) error }); ok {
+		defer func() {
+			drainCtx, cancel := context.WithTimeout(context.Background(), server.ShutdownTimeout)
+			defer cancel()
+			if err := shutdown.Shutdown(drainCtx); err != nil {
+				log.Print("audit shutdown deadline exceeded")
+			}
+		}()
+	}
 	gate.Ready(handler)
 	log.Printf("Application ready in %s", time.Since(startedAt).Round(time.Millisecond))
-	serveErr := <-serveErrors
-	if errors.Is(serveErr, http.ErrServerClosed) {
-		return nil
-	}
-	return serveErr
+	return <-serveErrors
 }
 
 func initializeVercelApplication(

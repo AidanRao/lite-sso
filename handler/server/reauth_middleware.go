@@ -9,6 +9,7 @@ import (
 
 	"sso-server/common"
 	"sso-server/common/ecode"
+	"sso-server/handler/audit"
 	"sso-server/service/reauth"
 )
 
@@ -26,6 +27,7 @@ func RequireReauth(authorizer reauth.ReauthAuthorizer) gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		audit.Error(c, err)
 		if !errors.Is(err, common.ErrReauthRequired) && !errors.Is(err, common.ErrReauthTokenInvalid) {
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "重新验证检查失败", Data: nil})
 			c.Abort()
@@ -41,6 +43,7 @@ func RequireReauth(authorizer reauth.ReauthAuthorizer) gin.HandlerFunc {
 		if errors.Is(err, common.ErrReauthTokenInvalid) {
 			machineCode = "REAUTH_TOKEN_INVALID"
 		}
+		audit.Denied(c, machineCode)
 		c.JSON(http.StatusForbidden, ecode.Response[any]{
 			Code:    ecode.Forbidden,
 			Message: "需要重新验证",

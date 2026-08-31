@@ -39,6 +39,13 @@ type OAuthTokenIssuer interface {
 	IssueTokenForUser(ctx context.Context, request *http.Request, userID string) (map[string]interface{}, error)
 }
 
+// PasswordResetResult preserves verified identity and committed reset steps.
+type PasswordResetResult struct {
+	UserID          string
+	PasswordUpdated bool
+	SessionsRevoked bool
+}
+
 func NewAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, messageSender MessageSender, oauth2Impl OAuthTokenIssuer) *AuthService {
 	if kvStore == nil {
 		kvStore = kv.NewMemoryStore()
@@ -235,25 +242,29 @@ func (s *AuthService) RegisterWithEmailChallenge(ctx context.Context, email stri
 }
 
 // ResetPasswordWithEmailChallenge changes a password and revokes all sessions.
-func (s *AuthService) ResetPasswordWithEmailChallenge(ctx context.Context, email string, password string, challengeID string, code string, deviceID string) error {
+func (s *AuthService) ResetPasswordWithEmailChallenge(ctx context.Context, email string, password string, challengeID string, code string, deviceID string) (*PasswordResetResult, error) {
 	if err := s.validatePassword(password); err != nil {
-		return err
+		return nil, err
 	}
 	challengeEmail, err := s.verifyChallenge(ctx, challengeID, code, deviceID, ChallengePurposePasswordReset)
 	if err != nil || challengeEmail != normalizeEmail(email) {
-		return common.ErrInvalidOTP
+		return nil, common.ErrInvalidOTP
 	}
 	user, err := db.NewUserRepository(s.db).FindByEmail(ctx, normalizeEmail(email))
 	if err != nil {
-		return common.ErrUserNotFound
+		return nil, common.ErrUserNotFound
 	}
+	result := &PasswordResetResult{UserID: user.ID}
 	hash, err := HashPassword(password)
 	if err != nil {
-		return err
+		return result, err
 	}
 	user.PasswordHash = &hash
 	if err := db.NewUserRepository(s.db).Update(ctx, user); err != nil {
-		return err
+		return result, err
 	}
-	return s.InvalidateAllSessions(ctx, user.ID, "password_reset")
+	result.PasswordUpdated = true
+	err = s.InvalidateAllSessions(ctx, user.ID, "password_reset")
+	result.SessionsRevoked = err == nil
+	return result, err
 }

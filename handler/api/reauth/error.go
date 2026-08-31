@@ -9,9 +9,11 @@ import (
 
 	"sso-server/common"
 	"sso-server/common/ecode"
+	"sso-server/handler/audit"
 )
 
 func writeError(c *gin.Context, err error) {
+	audit.Error(c, err)
 	switch {
 	case errors.Is(err, common.ErrInvalidCaptcha):
 		writeMachineError(c, http.StatusBadRequest, "CAPTCHA_INVALID", "验证码错误")

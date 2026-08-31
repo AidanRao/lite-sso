@@ -7,6 +7,7 @@ import (
 
 	"sso-server/common/ecode"
 	apiauth "sso-server/handler/api/auth"
+	"sso-server/handler/audit"
 	serviceauth "sso-server/service/auth"
 )
 
@@ -32,6 +33,7 @@ func (h *Handler) SendEmail(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{
 		"sent":         true,
 		"challenge_id": result.ChallengeID,
@@ -60,5 +62,6 @@ func (h *Handler) VerifyEmail(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }

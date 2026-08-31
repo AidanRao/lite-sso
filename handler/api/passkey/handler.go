@@ -13,6 +13,7 @@ import (
 	"sso-server/common/ecode"
 	"sso-server/conf"
 	apiauth "sso-server/handler/api/auth"
+	"sso-server/handler/audit"
 	serviceauth "sso-server/service/auth"
 	servicepasskey "sso-server/service/passkey"
 )
@@ -69,6 +70,7 @@ func (h *Handler) SendRegistrationEmail(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"sent": true, "challenge_id": result.ChallengeID, "expires_in": result.ExpiresIn, "resend_after": result.ResendAfter}))
 }
 
@@ -88,6 +90,7 @@ func (h *Handler) RegistrationOptions(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }
 
@@ -106,6 +109,9 @@ func (h *Handler) RegistrationVerify(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	audit.Target(c, "passkey", credential.ID)
+	audit.Changed(c, "passkey")
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"passkey": credential}))
 }
 
@@ -122,6 +128,8 @@ func (h *Handler) Rename(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	audit.Changed(c, "name")
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"updated": true}))
 }
 
@@ -131,10 +139,13 @@ func (h *Handler) Delete(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	audit.Changed(c, "passkey")
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"deleted": true}))
 }
 
 func writeError(c *gin.Context, err error) {
+	audit.Error(c, err)
 	switch {
 	case errors.Is(err, common.ErrEmailRequiredForPasskey):
 		writeMachineError(c, http.StatusConflict, "EMAIL_REQUIRED_FOR_PASSKEY", "当前账号需要先绑定邮箱")

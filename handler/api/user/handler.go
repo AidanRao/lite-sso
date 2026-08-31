@@ -14,6 +14,7 @@ import (
 	"sso-server/common/ecode"
 	"sso-server/conf"
 	"sso-server/dal/kv"
+	"sso-server/handler/audit"
 	"sso-server/handler/oauth2"
 	manageross "sso-server/manager/oss"
 	serviceauth "sso-server/service/auth"
@@ -77,9 +78,12 @@ func (h *UserHandler) Register(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
 		return
 	}
+	audit.Email(c, req.Email)
 	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
+	audit.Device(c, deviceID)
 	user, err := h.user.RegisterWithEmailChallenge(c.Request.Context(), req.Email, req.Password, req.Username, req.ChallengeID, req.Code, deviceID)
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrInvalidOTP):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码错误", Data: nil})
@@ -97,19 +101,26 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 
+	audit.Actor(c, user.ID, "")
+	audit.Completed(c, "user_created")
 	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, "", serviceauth.LoginMetadata{
 		DeviceID:  deviceID,
 		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
 		UserAgent: c.Request.UserAgent(),
 	}, serviceauth.AuthMethodPassword)
 	if err != nil {
+		audit.Error(c, err)
 		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "注册失败", Data: nil})
 		return
 	}
 	if isNewDevice {
 		apiauth.WriteDeviceCookie(c, deviceID)
 	}
+	audit.Actor(c, user.ID, pair.SessionID)
+	audit.AuthMethod(c, "password")
+	audit.Completed(c, "session_created")
 	apiauth.WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }
 
@@ -132,6 +143,7 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 	}
 	err := h.auth.ChangePassword(c.Request.Context(), userID, sessionID, req.OldPassword, req.NewPassword)
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrCurrentPasswordInvalid):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "旧密码错误", Data: nil})
@@ -149,6 +161,9 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
+	audit.Changed(c, "password")
+	audit.Completed(c, "password_updated", "sessions_revoked")
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"updated": true}))
 }
 
@@ -163,9 +178,22 @@ func (h *UserHandler) ResetPassword(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
 		return
 	}
+	audit.Email(c, req.Email)
 	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
-	err := h.user.ResetPasswordWithEmailChallenge(c.Request.Context(), req.Email, req.Password, req.ChallengeID, req.Code, deviceID)
+	audit.Device(c, deviceID)
+	result, err := h.user.ResetPasswordWithEmailChallenge(c.Request.Context(), req.Email, req.Password, req.ChallengeID, req.Code, deviceID)
+	if result != nil {
+		audit.Actor(c, result.UserID, "")
+		if result.PasswordUpdated {
+			audit.Changed(c, "password")
+			audit.Completed(c, "password_updated")
+		}
+		if result.SessionsRevoked {
+			audit.Completed(c, "sessions_revoked")
+		}
+	}
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrInvalidOTP), errors.Is(err, common.ErrChallengeInvalid), errors.Is(err, common.ErrOTPExpired), errors.Is(err, common.ErrOTPAttemptsExceeded):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "验证码错误", Data: nil})
@@ -182,6 +210,7 @@ func (h *UserHandler) ResetPassword(c *gin.Context) {
 	if isNewDevice {
 		apiauth.WriteDeviceCookie(c, deviceID)
 	}
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"reset": true}))
 }
 
@@ -281,6 +310,7 @@ func (h *UserHandler) RevokeLoginDevice(c *gin.Context) {
 
 	err := h.auth.RevokeLoginDevice(c.Request.Context(), userID, sessionID, c.Param("device_id"))
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrCurrentDevice):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "当前设备请使用退出登录", Data: nil})
@@ -294,6 +324,8 @@ func (h *UserHandler) RevokeLoginDevice(c *gin.Context) {
 		return
 	}
 
+	audit.Changed(c, "session")
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"revoked": true}))
 }
 
@@ -317,6 +349,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 
 	user, err := h.user.UpdateProfile(c.Request.Context(), userID, req.Username)
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrUserNotFound):
 			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "用户不存在", Data: nil})
@@ -328,6 +361,10 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
+	if req.Username != nil {
+		audit.Changed(c, "username")
+	}
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"user": user}))
 }
 
@@ -354,6 +391,7 @@ func (h *UserHandler) UploadAvatar(c *gin.Context) {
 
 	contentType, extension, err := manageross.ValidateImage(file)
 	if err != nil {
+		audit.Error(c, err)
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "仅支持 JPEG、PNG 或 WebP 图片", Data: nil})
 		return
 	}
@@ -364,6 +402,7 @@ func (h *UserHandler) UploadAvatar(c *gin.Context) {
 
 	user, err := h.user.UploadAvatar(c.Request.Context(), userID, contentType, extension, file, header.Size)
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrAvatarStorageUnavailable):
 			c.JSON(http.StatusServiceUnavailable, ecode.Response[any]{Code: ecode.ServiceUnavailable, Message: "头像服务暂未配置", Data: nil})
@@ -375,10 +414,13 @@ func (h *UserHandler) UploadAvatar(c *gin.Context) {
 		return
 	}
 
+	audit.Changed(c, "avatar")
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"user": user}))
 }
 
 func writeAvatarUploadFormError(c *gin.Context, err error) {
+	audit.Error(c, err)
 	var maxBytesError *http.MaxBytesError
 	if errors.As(err, &maxBytesError) {
 		writeAvatarTooLarge(c)
@@ -401,6 +443,7 @@ func (h *UserHandler) UnbindThirdParty(c *gin.Context) {
 
 	err := h.user.UnbindThirdParty(c.Request.Context(), userID, c.Param("provider"))
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrInvalidProvider):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "不支持的第三方平台", Data: nil})
@@ -416,5 +459,7 @@ func (h *UserHandler) UnbindThirdParty(c *gin.Context) {
 		return
 	}
 
+	audit.Changed(c, "provider")
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"unbound": true}))
 }
