@@ -1,8 +1,10 @@
 package db
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -10,7 +12,10 @@ import (
 	"sso-server/conf"
 )
 
-const defaultSSLMode = "disable"
+const (
+	defaultSSLMode  = "disable"
+	connMaxIdleTime = 30 * time.Second
+)
 
 var DB *gorm.DB
 
@@ -26,7 +31,7 @@ func Open(cfg *conf.Config) (*gorm.DB, error) {
 
 	database, err := gorm.Open(postgres.New(postgres.Config{
 		DSN: dsn,
-	}), &gorm.Config{})
+	}), &gorm.Config{DisableAutomaticPing: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect database: %w", err)
 	}
@@ -35,12 +40,20 @@ func Open(cfg *conf.Config) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sql.DB: %w", err)
 	}
+	configureConnectionPool(sqlDB, cfg.Database)
 
 	if err := sqlDB.Ping(); err != nil {
+		_ = sqlDB.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
 	return database, nil
+}
+
+func configureConnectionPool(sqlDB *sql.DB, cfg conf.DatabaseConfig) {
+	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
+	sqlDB.SetConnMaxIdleTime(connMaxIdleTime)
 }
 
 func buildDSN(cfg *conf.Config) string {

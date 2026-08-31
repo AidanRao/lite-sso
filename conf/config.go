@@ -231,12 +231,14 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	Host     string `mapstructure:"host"`
-	Port     string `mapstructure:"port"`
-	User     string `mapstructure:"user"`
-	Password string `mapstructure:"password"`
-	Name     string `mapstructure:"name"`
-	SSLMode  string `mapstructure:"sslmode"`
+	Host         string `mapstructure:"host"`
+	Port         string `mapstructure:"port"`
+	User         string `mapstructure:"user"`
+	Password     string `mapstructure:"password"`
+	Name         string `mapstructure:"name"`
+	SSLMode      string `mapstructure:"sslmode"`
+	MaxOpenConns int    `mapstructure:"max_open_conns"`
+	MaxIdleConns int    `mapstructure:"max_idle_conns"`
 }
 
 type CacheConfig struct {
@@ -331,6 +333,8 @@ func bindEnvs(v *viper.Viper) {
 		"database.user",
 		"database.password",
 		"database.name",
+		"database.max_open_conns",
+		"database.max_idle_conns",
 		"security.access_token_expire",
 		"auth.otp_secret",
 		"auth.jwt_secret",
@@ -391,6 +395,8 @@ func bindEnvs(v *viper.Viper) {
 }
 
 func setDefaults(v *viper.Viper, env Environment) {
+	v.SetDefault("database.max_open_conns", 2)
+	v.SetDefault("database.max_idle_conns", 1)
 	v.SetDefault("audit.queue_capacity", 1024)
 	v.SetDefault("audit.batch_size", 50)
 	v.SetDefault("audit.flush_interval", "1s")
