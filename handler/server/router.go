@@ -135,6 +135,7 @@ func (s *Server) registerRoutes() {
 			userProtected := userGroup.Group("")
 			userProtected.Use(authRequired)
 			userProtected.GET("/profile", userHandler.GetProfile)
+			userProtected.GET("/audit-logs", userHandler.ListAuditLogs)
 			userProtected.PUT("/profile", userHandler.UpdateProfile)
 			userProtected.GET("/login-methods", userHandler.GetLoginMethods)
 			userProtected.GET("/emails", userHandler.ListEmails)

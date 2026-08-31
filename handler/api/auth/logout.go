@@ -16,6 +16,7 @@ import (
 	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
+	"sso-server/handler/audit"
 	"sso-server/model"
 	serviceauth "sso-server/service/auth"
 )
@@ -87,6 +88,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
 		return
 	}
+	audit.Actor(c, c.GetString("user_id"), sessionID)
 	if c.GetBool("fixture_session") {
 		_ = h.kv.Del(c.Request.Context(), kv.KeySession(sessionID))
 	} else if !refreshTokenRevoked {
@@ -96,6 +98,8 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		}
 	}
 
+	audit.Completed(c, "sessions_revoked")
+	audit.Success(c)
 	clients := h.getLogoutClients(c)
 	logoutURIs := getLogoutURIs(clients)
 	redirectURI := c.Query("redirect")

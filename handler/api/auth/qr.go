@@ -9,6 +9,7 @@ import (
 	"sso-server/common"
 	"sso-server/common/ecode"
 	"sso-server/conf"
+	"sso-server/handler/audit"
 	serviceauth "sso-server/service/auth"
 )
 
@@ -81,6 +82,7 @@ func (h *AuthHandler) ScanQRCode(c *gin.Context) {
 	}
 	err := h.auth.ScanQRCode(c.Request.Context(), req.Code, userID)
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrQRCodeExpired):
 			c.JSON(http.StatusGone, ecode.Response[any]{Code: ecode.InternalServer, Message: "二维码已过期", Data: nil})
@@ -92,6 +94,7 @@ func (h *AuthHandler) ScanQRCode(c *gin.Context) {
 		return
 	}
 
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{
 		"scanned": true,
 	}))
@@ -114,6 +117,7 @@ func (h *AuthHandler) ConfirmQRCode(c *gin.Context) {
 	}
 	err := h.auth.ConfirmQRCode(c.Request.Context(), req.Code, userID)
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrQRCodeExpired):
 			c.JSON(http.StatusGone, ecode.Response[any]{Code: ecode.InternalServer, Message: "二维码已过期", Data: nil})
@@ -127,6 +131,7 @@ func (h *AuthHandler) ConfirmQRCode(c *gin.Context) {
 		return
 	}
 
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{
 		"confirmed": true,
 	}))
@@ -149,6 +154,7 @@ func (h *AuthHandler) CompleteQRCode(c *gin.Context) {
 		UserAgent: c.Request.UserAgent(),
 	})
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrQRCodeExpired):
 			c.JSON(http.StatusGone, ecode.Response[any]{Code: ecode.InternalServer, Message: "二维码已过期", Data: nil})
@@ -165,6 +171,10 @@ func (h *AuthHandler) CompleteQRCode(c *gin.Context) {
 	if isNewDevice {
 		WriteDeviceCookie(c, deviceID)
 	}
+	audit.Actor(c, result.User.ID, pair.SessionID)
+	audit.Device(c, deviceID)
+	audit.Completed(c, "session_created")
 	WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }

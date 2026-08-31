@@ -36,7 +36,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { AppWindow, KeyRound, LogOut, Mail, Paintbrush, RadioTower, Shield, UserRound } from 'lucide-vue-next'
+import { AppWindow, KeyRound, LogOut, Mail, Paintbrush, RadioTower, ScrollText, Shield, UserRound } from 'lucide-vue-next'
 import ProfileSidebarItem from './ProfileSidebarItem.vue'
 import { submitGlobalLogout } from '../../utils/logout'
 
@@ -90,6 +90,12 @@ const navigation = [
         to: '/profile/integrations/applications',
         icon: AppWindow
       }
+    ]
+  },
+  {
+    label: 'Archived',
+    children: [
+      { label: '操作日志', to: '/profile/archived/audit-logs', icon: ScrollText }
     ]
   }
 ]

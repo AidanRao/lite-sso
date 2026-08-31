@@ -1,0 +1,247 @@
+name: Clean Vercel Container Registry
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      DRY_RUN:
+        description: 'Only show deletion candidates without deleting them'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sso-vercel-main
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Clean Vercel Container Registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.DRY_RUN && 'true' || 'false' }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TEAM_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+    steps:
+      - name: Clean obsolete registry images
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          registry="vcr.vercel.com"
+          repository="chenxuanrao06-2037s-projects/lite-sso/dockerfile"
+          keep_count=10
+          keep_days=3
+
+          : "${VERCEL_TOKEN:?VERCEL_TOKEN is not configured for the production environment}"
+          : "${VERCEL_TEAM_ID:?VERCEL_ORG_ID is not configured for the production environment}"
+          : "${VERCEL_PROJECT_ID:?VERCEL_PROJECT_ID is not configured for the production environment}"
+
+          registry_auth="$(printf '%s:%s' "$VERCEL_TEAM_ID" "$VERCEL_TOKEN" | base64 | tr -d '\n')"
+          registry_auth_headers=(
+            -H "Authorization: Basic ${registry_auth}"
+          )
+          manifest_accept_headers=(
+            -H 'Accept: application/vnd.oci.image.manifest.v1+json'
+            -H 'Accept: application/vnd.docker.distribution.manifest.v2+json'
+          )
+
+          get_manifest_digest() {
+            local ref="$1"
+
+            curl -fsSI \
+              "${registry_auth_headers[@]}" \
+              "${manifest_accept_headers[@]}" \
+              "https://${registry}/v2/${repository}/manifests/${ref}" \
+              | tr -d '\r' \
+              | awk -F': ' '
+                  tolower($1) == "docker-content-digest" {
+                    print $2
+                  }
+                '
+          }
+
+          tag_exists() {
+            local tag="$1"
+
+            curl -fsSI \
+              "${registry_auth_headers[@]}" \
+              "${manifest_accept_headers[@]}" \
+              "https://${registry}/v2/${repository}/manifests/${tag}" \
+              >/dev/null 2>&1
+          }
+
+          echo "Finding current Production deployment..."
+          production_response="$(
+            curl -fsSL \
+              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=1&teamId=${VERCEL_TEAM_ID}"
+          )"
+          production_deployment_id="$(jq -r '.deployments[0].uid // empty' <<< "$production_response")"
+
+          if [[ -z "$production_deployment_id" ]]; then
+            echo "ERROR: unable to find Production deployment"
+            exit 1
+          fi
+
+          echo "Production deployment: ${production_deployment_id}"
+
+          deployment_response="$(
+            curl -fsSL \
+              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v13/deployments/${production_deployment_id}?teamId=${VERCEL_TEAM_ID}"
+          )"
+          production_commit="$(
+            jq -r '
+              .meta.githubCommitSha
+              // .meta.gitlabCommitSha
+              // .meta.bitbucketCommitSha
+              // empty
+            ' <<< "$deployment_response"
+          )"
+
+          if [[ -z "$production_commit" ]]; then
+            echo "ERROR: Production deployment has no Git commit SHA. Cleanup is aborted."
+            exit 1
+          fi
+
+          production_tag="${production_commit:0:12}"
+          echo "Expected Production VCR tag: ${production_tag}"
+
+          if ! tag_exists "$production_tag"; then
+            echo "ERROR: cannot find VCR tag matching Production commit: ${production_tag}"
+            echo "Cleanup is aborted to avoid deleting the Production image."
+            exit 1
+          fi
+
+          production_digest="$(get_manifest_digest "$production_tag")"
+          if [[ -z "$production_digest" ]]; then
+            echo "ERROR: unable to determine Production image digest"
+            exit 1
+          fi
+
+          echo "Production image digest: ${production_digest}"
+
+          latest_digest=""
+          if tag_exists latest; then
+            latest_digest="$(get_manifest_digest latest)"
+            echo "latest digest: ${latest_digest}"
+          else
+            echo "No latest tag exists."
+          fi
+
+          echo "Fetching VCR tags..."
+          tags="$(
+            curl -fsSL \
+              "${registry_auth_headers[@]}" \
+              "https://${registry}/v2/${repository}/tags/list" \
+              | jq -r '.tags[]?'
+          )"
+
+          if [[ -z "$tags" ]]; then
+            echo "No tags found."
+            exit 0
+          fi
+
+          temporary_directory="$(mktemp -d)"
+          metadata_file="${temporary_directory}/metadata"
+          sorted_metadata_file="${temporary_directory}/metadata.sorted"
+          trap 'rm -rf "$temporary_directory"' EXIT
+
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] && continue
+
+            echo "Inspecting: ${tag}"
+            manifest="$(
+              curl -fsSL \
+                "${registry_auth_headers[@]}" \
+                "${manifest_accept_headers[@]}" \
+                "https://${registry}/v2/${repository}/manifests/${tag}"
+            )"
+            config_digest="$(jq -r '.config.digest // empty' <<< "$manifest")"
+
+            if [[ -z "$config_digest" ]]; then
+              echo "  SKIP: no config digest"
+              continue
+            fi
+
+            config="$(
+              curl -fsSL \
+                "${registry_auth_headers[@]}" \
+                "https://${registry}/v2/${repository}/blobs/${config_digest}"
+            )"
+            created="$(jq -r '.created // empty' <<< "$config")"
+
+            if [[ -z "$created" ]]; then
+              echo "  SKIP: no created timestamp"
+              continue
+            fi
+
+            manifest_digest="$(get_manifest_digest "$tag")"
+            if [[ -z "$manifest_digest" ]]; then
+              echo "  SKIP: no manifest digest"
+              continue
+            fi
+
+            printf '%s\t%s\t%s\n' "$created" "$tag" "$manifest_digest" >> "$metadata_file"
+          done <<< "$tags"
+
+          sort -r "$metadata_file" > "$sorted_metadata_file"
+          cutoff="$(date -u -d "${keep_days} days ago" +%s)"
+
+          echo "============================================================"
+          echo "Cleanup (dry run: ${DRY_RUN})"
+          echo "============================================================"
+
+          index=0
+          while IFS=$'\t' read -r created tag digest; do
+            index=$((index + 1))
+
+            echo "[${index}] tag=${tag} created=${created} digest=${digest}"
+
+            if (( index <= keep_count )); then
+              echo "KEEP: newest ${keep_count}"
+              continue
+            fi
+
+            if [[ "$tag" == "latest" ]]; then
+              echo "KEEP: latest tag"
+              continue
+            fi
+
+            if [[ -n "$latest_digest" && "$digest" == "$latest_digest" ]]; then
+              echo "KEEP: same digest as latest"
+              continue
+            fi
+
+            if [[ "$digest" == "$production_digest" ]]; then
+              echo "KEEP: currently used by Production"
+              continue
+            fi
+
+            created_timestamp="$(date -u -d "$created" +%s)"
+            if (( created_timestamp >= cutoff )); then
+              echo "KEEP: newer than ${keep_days} days"
+              continue
+            fi
+
+            echo "DELETE candidate"
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "DRY RUN: skip deletion"
+              continue
+            fi
+
+            curl -fsS \
+              -X DELETE \
+              "${registry_auth_headers[@]}" \
+              "https://${registry}/v2/${repository}/manifests/${digest}"
+            echo "DELETED"
+          done < "$sorted_metadata_file"

@@ -10,6 +10,7 @@ import (
 	"sso-server/common"
 	"sso-server/common/ecode"
 	"sso-server/conf"
+	"sso-server/handler/audit"
 	serviceauth "sso-server/service/auth"
 )
 
@@ -27,6 +28,7 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 		return
 	}
 
+	audit.Email(c, req.Email)
 	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
 	captchaValid := false
 	if req.CaptchaID != "" || req.Captcha != "" {
@@ -52,6 +54,7 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 		return
 	}
 
+	audit.Actor(c, user.ID, "")
 	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, req.Redirect, serviceauth.LoginMetadata{
 		DeviceID:  deviceID,
 		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
@@ -64,11 +67,16 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 	if isNewDevice {
 		WriteDeviceCookie(c, deviceID)
 	}
+	audit.Actor(c, user.ID, pair.SessionID)
+	audit.Device(c, deviceID)
+	audit.Completed(c, "session_created")
 	WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }
 
 func writeAuthError(c *gin.Context, err error) {
+	audit.Error(c, err)
 	switch {
 	case errors.Is(err, common.ErrInvalidCredentials):
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "邮箱或密码错误", Data: gin.H{"code": "INVALID_CREDENTIALS"}})

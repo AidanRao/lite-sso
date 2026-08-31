@@ -71,6 +71,12 @@ type ThirdPartyBindingPreview struct {
 	AvatarURL string `json:"avatar_url"`
 }
 
+// ThirdPartyBindingResult describes the committed binding without its pending token.
+type ThirdPartyBindingResult struct {
+	Redirect string
+	Provider string
+}
+
 func NewOAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, userRepo *db.UserRepository) *OAuthService {
 	providers := map[string]thirdPartyProvider{
 		githubProvider: newGitHubProvider(cfg.OAuth.GitHub),
@@ -261,20 +267,20 @@ func (s *OAuthService) GetThirdPartyBindingPreview(ctx context.Context, userID, 
 }
 
 // ConfirmThirdPartyBinding persists a previously previewed third-party binding.
-func (s *OAuthService) ConfirmThirdPartyBinding(ctx context.Context, userID, bindingID string) (string, error) {
+func (s *OAuthService) ConfirmThirdPartyBinding(ctx context.Context, userID, bindingID string) (*ThirdPartyBindingResult, error) {
 	pending, err := s.loadPendingThirdPartyBinding(ctx, userID, bindingID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if _, err := s.bindThirdPartyUser(ctx, userID, &pending.Profile); err != nil {
-		return "", err
+		return nil, err
 	}
 	if err := s.kv.Del(ctx, kv.KeyOAuthPendingBinding(bindingID)); err != nil {
 		log.Printf("OAuthService: failed to delete confirmed third party binding, binding_id=%s, err=%v", bindingID, err)
 	}
 
-	return pending.Redirect, nil
+	return &ThirdPartyBindingResult{Redirect: pending.Redirect, Provider: pending.Profile.Provider}, nil
 }
 
 func (s *OAuthService) getProvider(provider string) (thirdPartyProvider, bool) {

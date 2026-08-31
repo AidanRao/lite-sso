@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"sso-server/conf"
 	"sso-server/dal/db"
@@ -14,7 +16,9 @@ import (
 const migrateAfterListenArgument = "--migrate-after-listen"
 
 func main() {
-	if err := run(context.Background(), os.Args[1:]); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx, os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -42,7 +46,7 @@ func run(ctx context.Context, arguments []string) error {
 		return err
 	}
 	log.Printf("Starting sso-server on %s", cfg.Server.Port)
-	return srv.Start()
+	return srv.Start(ctx)
 }
 
 func containsArgument(arguments []string, expected string) bool {

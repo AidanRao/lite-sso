@@ -14,6 +14,7 @@ import (
 	"sso-server/common/ecode"
 	"sso-server/conf"
 	"sso-server/dto"
+	"sso-server/handler/audit"
 	manageross "sso-server/manager/oss"
 	"sso-server/service/systemadmin"
 )
@@ -99,6 +100,8 @@ func (h *AdminHandler) GetOAuthClientSecret(c *gin.Context) {
 		return
 	}
 
+	audit.Client(c, secret.ClientID)
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"secret": secret}))
 }
 
@@ -116,6 +119,10 @@ func (h *AdminHandler) CreateOAuthClient(c *gin.Context) {
 		return
 	}
 
+	audit.Target(c, "oauth_client", strconv.FormatUint(uint64(client.ID), 10))
+	audit.Client(c, client.ClientID)
+	audit.Changed(c, "name", "client_secret", "homepage_url", "redirect_uri", "logout_uri")
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"client": client}))
 }
 
@@ -139,6 +146,13 @@ func (h *AdminHandler) UpdateOAuthClient(c *gin.Context) {
 		return
 	}
 
+	audit.Target(c, "oauth_client", strconv.FormatUint(uint64(client.ID), 10))
+	audit.Client(c, client.ClientID)
+	audit.Changed(c, "name", "homepage_url", "redirect_uri", "logout_uri")
+	if req.ClientSecret != nil {
+		audit.Changed(c, "client_secret")
+	}
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"client": client}))
 }
 
@@ -164,6 +178,7 @@ func (h *AdminHandler) UploadOAuthClientLogo(c *gin.Context) {
 
 	contentType, extension, err := manageross.ValidateImage(file)
 	if err != nil {
+		audit.Error(c, err)
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "仅支持 JPEG、PNG 或 WebP 图片", Data: nil})
 		return
 	}
@@ -178,6 +193,10 @@ func (h *AdminHandler) UploadOAuthClientLogo(c *gin.Context) {
 		return
 	}
 
+	audit.Target(c, "oauth_client", strconv.FormatUint(uint64(client.ID), 10))
+	audit.Client(c, client.ClientID)
+	audit.Changed(c, "logo")
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"client": client}))
 }
 
@@ -194,6 +213,10 @@ func (h *AdminHandler) ClearOAuthClientLogo(c *gin.Context) {
 		return
 	}
 
+	audit.Target(c, "oauth_client", strconv.FormatUint(uint64(client.ID), 10))
+	audit.Client(c, client.ClientID)
+	audit.Changed(c, "logo")
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"client": client}))
 }
 
@@ -207,6 +230,7 @@ func parseOAuthClientID(c *gin.Context) (uint, bool) {
 }
 
 func writeOAuthClientLogoFormError(c *gin.Context, err error) {
+	audit.Error(c, err)
 	var maxBytesError *http.MaxBytesError
 	if errors.As(err, &maxBytesError) {
 		writeOAuthClientLogoTooLarge(c)
@@ -220,6 +244,7 @@ func writeOAuthClientLogoTooLarge(c *gin.Context) {
 }
 
 func writeOAuthClientLogoError(c *gin.Context, err error, fallback string) {
+	audit.Error(c, err)
 	switch {
 	case errors.Is(err, common.ErrOAuthClientNotFound):
 		c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "平台不存在", Data: nil})
@@ -231,6 +256,7 @@ func writeOAuthClientLogoError(c *gin.Context, err error, fallback string) {
 }
 
 func writeOAuthClientError(c *gin.Context, err error, fallback string) {
+	audit.Error(c, err)
 	switch {
 	case errors.Is(err, common.ErrInvalidOAuthClient):
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "平台参数无效", Data: nil})

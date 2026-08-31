@@ -10,6 +10,7 @@ import (
 
 	"sso-server/common/ecode"
 	"sso-server/conf"
+	"sso-server/handler/audit"
 	serviceauth "sso-server/service/auth"
 )
 
@@ -35,21 +36,28 @@ func (h *AuthHandler) LoginWithEmailOTP(c *gin.Context) {
 		IP:       serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
 	})
 	if err != nil {
+		audit.Error(c, err)
 		log.Printf("auth email login failed: stage=challenge_verify challenge_id_hash=%s ip=%s error=%v", hashIdentifier(req.ChallengeID), serviceauth.RequestIP(c.Request, h.trustProxyHeaders), err)
 		writeAuthError(c, err)
 		return
 	}
+	audit.Actor(c, user.ID, "")
 	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, req.Redirect, serviceauth.LoginMetadata{
 		DeviceID:  deviceID,
 		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
 		UserAgent: c.Request.UserAgent(),
 	}, serviceauth.AuthMethodEmailOTP)
 	if err != nil {
+		audit.Error(c, err)
 		log.Printf("auth email login failed: stage=session_create user_id=%s ip=%s error=%v", user.ID, serviceauth.RequestIP(c.Request, h.trustProxyHeaders), err)
 		writeAuthError(c, err)
 		return
 	}
+	audit.Actor(c, user.ID, pair.SessionID)
+	audit.Device(c, deviceID)
+	audit.Completed(c, "session_created")
 	WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }
 

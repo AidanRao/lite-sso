@@ -15,6 +15,7 @@ import (
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
 	apiauth "sso-server/handler/api/auth"
+	"sso-server/handler/audit"
 	"sso-server/handler/oauth2"
 	serviceauth "sso-server/service/auth"
 	"sso-server/service/oauth"
@@ -96,6 +97,7 @@ func (h *OAuthHandler) ThirdPartyLogin(c *gin.Context) {
 	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
 	redirectURL, err := h.oauthService.HandleThirdPartyLoginWithDevice(c.Request.Context(), provider, c.Query("redirect"), deviceID)
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrInvalidProvider):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "不支持的第三方平台", Data: nil})
@@ -110,6 +112,7 @@ func (h *OAuthHandler) ThirdPartyLogin(c *gin.Context) {
 		apiauth.WriteDeviceCookie(c, deviceID)
 	}
 
+	audit.Success(c)
 	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }
 
@@ -124,6 +127,7 @@ func (h *OAuthHandler) ThirdPartyBind(c *gin.Context) {
 	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
 	redirectURL, err := h.oauthService.HandleThirdPartyBindWithDevice(c.Request.Context(), userID, provider, c.Query("redirect"), deviceID)
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrInvalidProvider):
 			c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "不支持的第三方平台", Data: nil})
@@ -140,6 +144,7 @@ func (h *OAuthHandler) ThirdPartyBind(c *gin.Context) {
 		apiauth.WriteDeviceCookie(c, deviceID)
 	}
 
+	audit.Success(c)
 	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }
 
@@ -159,8 +164,9 @@ func (h *OAuthHandler) GetThirdPartyBindingPreview(c *gin.Context) {
 
 // ConfirmThirdPartyBinding persists a provider binding after the user confirms the preview.
 func (h *OAuthHandler) ConfirmThirdPartyBinding(c *gin.Context) {
-	redirectURL, err := h.oauthService.ConfirmThirdPartyBinding(c.Request.Context(), c.GetString("user_id"), c.Param("binding_id"))
+	binding, err := h.oauthService.ConfirmThirdPartyBinding(c.Request.Context(), c.GetString("user_id"), c.Param("binding_id"))
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrThirdPartyBindingNotFound):
 			c.JSON(http.StatusNotFound, ecode.Response[any]{Code: ecode.NotFound, Message: "绑定预览不存在或已过期", Data: nil})
@@ -174,7 +180,12 @@ func (h *OAuthHandler) ConfirmThirdPartyBinding(c *gin.Context) {
 		}
 		return
 	}
-	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"redirect_url": redirectURL}))
+	audit.Provider(c, binding.Provider)
+	audit.Target(c, "provider", binding.Provider)
+	audit.Changed(c, "provider")
+	audit.Completed(c, "binding_created")
+	audit.Success(c)
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"redirect_url": binding.Redirect}))
 }
 
 // ThirdPartyCallback handles callback from third-party OAuth
@@ -183,8 +194,12 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 	code := c.Query("code")
 	state := c.Query("state")
 	isBindingFlow := h.oauthService.IsThirdPartyBindingState(c.Request.Context(), provider, state)
+	if isBindingFlow {
+		audit.BindingCallback(c)
+	}
 
 	if provider == "" || code == "" {
+		audit.Failure(c, "AUTHORIZATION_INCOMPLETE")
 		if isBindingFlow {
 			redirectThirdPartyBindingError(c, provider, "第三方授权已取消或未完成")
 			return
@@ -195,6 +210,7 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 
 	result, err := h.oauthService.HandleThirdPartyCallbackWithState(c.Request.Context(), provider, code, state)
 	if err != nil {
+		audit.Error(c, err)
 		switch {
 		case errors.Is(err, common.ErrThirdPartyAlreadyBound):
 			log.Printf("ThirdPartyCallback: third party already bound, provider=%s, has_state=%t, err=%v", provider, state != "", err)
@@ -237,6 +253,7 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 
 	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
 	if result.DeviceID != "" && result.DeviceID != deviceID {
+		audit.Denied(c, "DEVICE_MISMATCH")
 		log.Printf("ThirdPartyCallback: device mismatch, provider=%s", provider)
 		if result.Action == oauth.ThirdPartyActionBind {
 			redirectThirdPartyBindingError(c, provider, "登录设备已变化，请重新授权")
@@ -246,7 +263,12 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 		return
 	}
 
+	audit.Actor(c, result.User.ID, "")
+	audit.Device(c, deviceID)
 	if result.Action == oauth.ThirdPartyActionBind {
+		audit.BindingCallback(c)
+		audit.Completed(c, "binding_prepared")
+		audit.Success(c)
 		query := url.Values{
 			"binding_id": {result.PendingBindingID},
 			"provider":   {provider},
@@ -261,6 +283,7 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 		UserAgent: c.Request.UserAgent(),
 	}, providerAuthMethod(provider))
 	if err != nil {
+		audit.Error(c, err)
 		log.Printf("ThirdPartyCallback: complete login failed, provider=%s, user_id=%s, err=%v", provider, result.User.ID, err)
 		c.Redirect(http.StatusTemporaryRedirect, "/oauth/callback?error="+url.QueryEscape("登录失败"))
 		return
@@ -269,6 +292,10 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 	if isNewDevice {
 		apiauth.WriteDeviceCookie(c, deviceID)
 	}
+	audit.Actor(c, result.User.ID, pair.SessionID)
+	audit.AuthMethod(c, string(providerAuthMethod(provider)))
+	audit.Completed(c, "session_created")
+	audit.Success(c)
 	apiauth.WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.authService.RefreshTokenTTL())
 	c.Redirect(http.StatusTemporaryRedirect, result.Redirect)
 }

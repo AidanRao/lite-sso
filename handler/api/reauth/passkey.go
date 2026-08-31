@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"sso-server/common/ecode"
+	"sso-server/handler/audit"
 )
 
 // PasskeyOptions returns assertion options for a Passkey re-authentication ceremony.
@@ -16,6 +17,7 @@ func (h *Handler) PasskeyOptions(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }
 
@@ -34,5 +36,6 @@ func (h *Handler) VerifyPasskey(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }

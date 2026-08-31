@@ -41,6 +41,11 @@ const routes = [
     redirect: '/profile/account',
     children: [
       {
+        path: 'archived/audit-logs',
+        name: 'ProfileAuditLogs',
+        component: () => import('../views/profile/ProfileAuditLogs.vue')
+      },
+      {
         path: 'account',
         name: 'ProfileAccount',
         component: () => import('../views/profile/ProfileAccount.vue')

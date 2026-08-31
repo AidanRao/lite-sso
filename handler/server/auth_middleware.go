@@ -11,6 +11,7 @@ import (
 	"sso-server/common/ecode"
 	"sso-server/conf"
 	"sso-server/dal/kv"
+	"sso-server/handler/audit"
 	serviceauth "sso-server/service/auth"
 )
 
@@ -124,6 +125,7 @@ func RequireAdmin(cfg *conf.Config) gin.HandlerFunc {
 			return
 		}
 		if !cfg.IsAdminUser(userID) {
+			audit.Denied(c, "ADMIN_REQUIRED")
 			c.JSON(http.StatusForbidden, ecode.Response[any]{Code: ecode.Forbidden, Message: "无管理员权限", Data: nil})
 			c.Abort()
 			return
@@ -133,11 +135,13 @@ func RequireAdmin(cfg *conf.Config) gin.HandlerFunc {
 }
 
 func writeUnauthorized(c *gin.Context) {
+	audit.Denied(c, "UNAUTHORIZED")
 	c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
 	c.Abort()
 }
 
 func redirectToLogin(c *gin.Context) {
+	audit.Denied(c, "AUTHENTICATION_REQUIRED")
 	currentURL := c.Request.URL.String()
 	loginURL := "/login?redirect=" + url.QueryEscape(currentURL)
 	c.Redirect(http.StatusFound, loginURL)
