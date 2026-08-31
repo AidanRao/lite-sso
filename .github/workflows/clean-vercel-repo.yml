@@ -128,7 +128,7 @@ jobs:
             [[ -z "$next_cursor" ]] && break
           done
 
-          jq -s 'sort_by(.createdAt) | reverse | .[]' "$image_records_file" > "$sorted_images_file"
+          jq -sc 'sort_by(.createdAt) | reverse | .[]' "$image_records_file" > "$sorted_images_file"
           printf 'VCR_IMAGES_FILE=%s\n' "$sorted_images_file" >> "$GITHUB_ENV"
 
       - name: Clean obsolete registry images

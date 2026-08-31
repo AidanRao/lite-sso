@@ -5,6 +5,8 @@ on:
     branches:
       - dev
       - main
+    paths-ignore:
+      - .github/workflows/clean-vercel-repo.yml
 
 permissions:
   contents: read
