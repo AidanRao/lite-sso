@@ -26,86 +26,59 @@ jobs:
     environment: production
     env:
       DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.DRY_RUN && 'true' || 'false' }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      VERCEL_TEAM_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
     steps:
-      - name: Clean obsolete registry images
+      - name: Install Vercel CLI
+        run: npm install --global vercel@59.6.2
+
+      - name: Validate Vercel configuration
         shell: bash
         run: |
           set -euo pipefail
 
-          registry="vcr.vercel.com"
-          repository="chenxuanrao06-2037s-projects/lite-sso/dockerfile"
-          keep_count=10
-          keep_days=3
-
           : "${VERCEL_TOKEN:?VERCEL_TOKEN is not configured for the production environment}"
-          : "${VERCEL_TEAM_ID:?VERCEL_ORG_ID is not configured for the production environment}"
+          : "${VERCEL_ORG_ID:?VERCEL_ORG_ID is not configured for the production environment}"
           : "${VERCEL_PROJECT_ID:?VERCEL_PROJECT_ID is not configured for the production environment}"
 
-          registry_auth="$(printf '%s:%s' "$VERCEL_TEAM_ID" "$VERCEL_TOKEN" | base64 | tr -d '\n')"
-          registry_auth_headers=(
-            -H "Authorization: Basic ${registry_auth}"
-          )
-          manifest_accept_headers=(
-            -H 'Accept: application/vnd.oci.image.manifest.v1+json'
-            -H 'Accept: application/vnd.docker.distribution.manifest.v2+json'
-          )
-
-          get_manifest_digest() {
-            local ref="$1"
-
-            curl -fsSI \
-              "${registry_auth_headers[@]}" \
-              "${manifest_accept_headers[@]}" \
-              "https://${registry}/v2/${repository}/manifests/${ref}" \
-              | tr -d '\r' \
-              | awk -F': ' '
-                  tolower($1) == "docker-content-digest" {
-                    print $2
-                  }
-                '
-          }
-
-          tag_exists() {
-            local tag="$1"
-
-            curl -fsSI \
-              "${registry_auth_headers[@]}" \
-              "${manifest_accept_headers[@]}" \
-              "https://${registry}/v2/${repository}/manifests/${tag}" \
-              >/dev/null 2>&1
-          }
-
-          echo "Finding current Production deployment..."
-          production_response="$(
-            curl -fsSL \
-              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
-              "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=1&teamId=${VERCEL_TEAM_ID}"
-          )"
-          production_deployment_id="$(jq -r '.deployments[0].uid // empty' <<< "$production_response")"
-
-          if [[ -z "$production_deployment_id" ]]; then
-            echo "ERROR: unable to find Production deployment"
+          if ! vercel whoami --non-interactive --no-color >/dev/null 2>&1; then
+            echo "::error title=Unsupported Vercel token scope::VERCEL_TOKEN must be a valid team-scoped token."
             exit 1
           fi
 
-          echo "Production deployment: ${production_deployment_id}"
+          if ! vercel project inspect "$VERCEL_PROJECT_ID" \
+            --scope="$VERCEL_ORG_ID" \
+            --non-interactive \
+            --no-color >/dev/null 2>&1; then
+            echo "::error title=Vercel project access failed::VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID do not resolve to an accessible project."
+            exit 1
+          fi
 
-          deployment_response="$(
-            curl -fsSL \
-              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
-              "https://api.vercel.com/v13/deployments/${production_deployment_id}?teamId=${VERCEL_TEAM_ID}"
+      - name: Resolve current Production image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          production_deployments="$(
+            vercel ls "$VERCEL_PROJECT_ID" \
+              --prod \
+              --status=READY \
+              --limit=1 \
+              --json \
+              --scope="$VERCEL_ORG_ID" \
+              --non-interactive \
+              --no-color
           )"
           production_commit="$(
             jq -r '
-              .meta.githubCommitSha
-              // .meta.gitlabCommitSha
-              // .meta.bitbucketCommitSha
+              (if type == "array" then . else .deployments // [] end)
+              | .[0].meta.githubCommitSha
+              // .[0].meta.gitlabCommitSha
+              // .[0].meta.bitbucketCommitSha
               // empty
-            ' <<< "$deployment_response"
+            ' <<< "$production_deployments"
           )"
 
           if [[ -z "$production_commit" ]]; then
@@ -114,87 +87,92 @@ jobs:
           fi
 
           production_tag="${production_commit:0:12}"
+          printf 'PRODUCTION_TAG=%s\n' "$production_tag" >> "$GITHUB_ENV"
           echo "Expected Production VCR tag: ${production_tag}"
 
-          if ! tag_exists "$production_tag"; then
-            echo "ERROR: cannot find VCR tag matching Production commit: ${production_tag}"
+      - name: Fetch VCR images
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repository="dockerfile"
+          image_records_file="${RUNNER_TEMP}/vercel-vcr-images.jsonl"
+          sorted_images_file="${RUNNER_TEMP}/vercel-vcr-images.sorted.jsonl"
+          : > "$image_records_file"
+
+          vcr_arguments=(
+            --project="$VERCEL_PROJECT_ID"
+            --scope="$VERCEL_ORG_ID"
+            --non-interactive
+            --no-color
+          )
+
+          echo "Fetching VCR images..."
+          next_cursor=""
+          while :; do
+            list_arguments=(
+              vcr image ls "$repository"
+              "${vcr_arguments[@]}"
+              --limit=100
+              --json
+            )
+            if [[ -n "$next_cursor" ]]; then
+              list_arguments+=(--next="$next_cursor")
+            fi
+
+            image_page="$(vercel "${list_arguments[@]}")"
+            jq -e '.images | type == "array"' >/dev/null <<< "$image_page"
+            jq -c '.images[]' <<< "$image_page" >> "$image_records_file"
+
+            next_cursor="$(jq -r '.nextCursor // empty' <<< "$image_page")"
+            [[ -z "$next_cursor" ]] && break
+          done
+
+          jq -sc 'sort_by(.createdAt) | reverse | .[]' "$image_records_file" > "$sorted_images_file"
+          printf 'VCR_IMAGES_FILE=%s\n' "$sorted_images_file" >> "$GITHUB_ENV"
+
+      - name: Clean obsolete registry images
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repository="dockerfile"
+          keep_count=10
+          keep_days=3
+
+          : "${PRODUCTION_TAG:?PRODUCTION_TAG was not resolved}"
+          : "${VCR_IMAGES_FILE:?VCR_IMAGES_FILE was not created}"
+
+          production_image_id="$(
+            jq -rs --arg tag "$PRODUCTION_TAG" '
+              map(select(.tags | index($tag)))
+              | .[0].id // empty
+            ' "$VCR_IMAGES_FILE"
+          )"
+          if [[ -z "$production_image_id" ]]; then
+            echo "ERROR: cannot find the VCR image for the Production tag: ${PRODUCTION_TAG}"
             echo "Cleanup is aborted to avoid deleting the Production image."
             exit 1
           fi
 
-          production_digest="$(get_manifest_digest "$production_tag")"
-          if [[ -z "$production_digest" ]]; then
-            echo "ERROR: unable to determine Production image digest"
-            exit 1
-          fi
-
-          echo "Production image digest: ${production_digest}"
-
-          latest_digest=""
-          if tag_exists latest; then
-            latest_digest="$(get_manifest_digest latest)"
-            echo "latest digest: ${latest_digest}"
+          latest_image_id="$(
+            jq -rs --arg tag latest '
+              map(select(.tags | index($tag)))
+              | .[0].id // empty
+            ' "$VCR_IMAGES_FILE"
+          )"
+          if [[ -n "$latest_image_id" ]]; then
+            echo "latest image: ${latest_image_id}"
           else
             echo "No latest tag exists."
           fi
 
-          echo "Fetching VCR tags..."
-          tags="$(
-            curl -fsSL \
-              "${registry_auth_headers[@]}" \
-              "https://${registry}/v2/${repository}/tags/list" \
-              | jq -r '.tags[]?'
-          )"
-
-          if [[ -z "$tags" ]]; then
-            echo "No tags found."
-            exit 0
-          fi
-
-          temporary_directory="$(mktemp -d)"
-          metadata_file="${temporary_directory}/metadata"
-          sorted_metadata_file="${temporary_directory}/metadata.sorted"
-          trap 'rm -rf "$temporary_directory"' EXIT
-
-          while IFS= read -r tag; do
-            [[ -z "$tag" ]] && continue
-
-            echo "Inspecting: ${tag}"
-            manifest="$(
-              curl -fsSL \
-                "${registry_auth_headers[@]}" \
-                "${manifest_accept_headers[@]}" \
-                "https://${registry}/v2/${repository}/manifests/${tag}"
-            )"
-            config_digest="$(jq -r '.config.digest // empty' <<< "$manifest")"
-
-            if [[ -z "$config_digest" ]]; then
-              echo "  SKIP: no config digest"
-              continue
-            fi
-
-            config="$(
-              curl -fsSL \
-                "${registry_auth_headers[@]}" \
-                "https://${registry}/v2/${repository}/blobs/${config_digest}"
-            )"
-            created="$(jq -r '.created // empty' <<< "$config")"
-
-            if [[ -z "$created" ]]; then
-              echo "  SKIP: no created timestamp"
-              continue
-            fi
-
-            manifest_digest="$(get_manifest_digest "$tag")"
-            if [[ -z "$manifest_digest" ]]; then
-              echo "  SKIP: no manifest digest"
-              continue
-            fi
-
-            printf '%s\t%s\t%s\n' "$created" "$tag" "$manifest_digest" >> "$metadata_file"
-          done <<< "$tags"
-
-          sort -r "$metadata_file" > "$sorted_metadata_file"
+          vcr_arguments=(
+            --project="$VERCEL_PROJECT_ID"
+            --scope="$VERCEL_ORG_ID"
+            --non-interactive
+            --no-color
+          )
           cutoff="$(date -u -d "${keep_days} days ago" +%s)"
 
           echo "============================================================"
@@ -202,32 +180,38 @@ jobs:
           echo "============================================================"
 
           index=0
-          while IFS=$'\t' read -r created tag digest; do
+          while IFS= read -r image; do
             index=$((index + 1))
+            image_id="$(jq -r '.id' <<< "$image")"
+            created_at="$(jq -r '.createdAt' <<< "$image")"
+            tags="$(jq -r '.tags | if length == 0 then "<none>" else join(", ") end' <<< "$image")"
 
-            echo "[${index}] tag=${tag} created=${created} digest=${digest}"
+            echo "[${index}] image=${image_id} tags=${tags} created=${created_at}"
 
             if (( index <= keep_count )); then
               echo "KEEP: newest ${keep_count}"
               continue
             fi
 
-            if [[ "$tag" == "latest" ]]; then
+            if [[ "$image_id" == "$latest_image_id" ]]; then
               echo "KEEP: latest tag"
               continue
             fi
 
-            if [[ -n "$latest_digest" && "$digest" == "$latest_digest" ]]; then
-              echo "KEEP: same digest as latest"
-              continue
-            fi
-
-            if [[ "$digest" == "$production_digest" ]]; then
+            if [[ "$image_id" == "$production_image_id" ]]; then
               echo "KEEP: currently used by Production"
               continue
             fi
 
-            created_timestamp="$(date -u -d "$created" +%s)"
+            if [[ "$created_at" =~ ^[0-9]+$ ]]; then
+              created_timestamp="$created_at"
+              if (( created_timestamp > 100000000000 )); then
+                created_timestamp=$((created_timestamp / 1000))
+              fi
+            else
+              created_timestamp="$(date -u -d "$created_at" +%s)"
+            fi
+
             if (( created_timestamp >= cutoff )); then
               echo "KEEP: newer than ${keep_days} days"
               continue
@@ -239,9 +223,9 @@ jobs:
               continue
             fi
 
-            curl -fsS \
-              -X DELETE \
-              "${registry_auth_headers[@]}" \
-              "https://${registry}/v2/${repository}/manifests/${digest}"
+            vercel vcr image rm "$repository" "$image_id" \
+              "${vcr_arguments[@]}" \
+              --yes \
+              --json
             echo "DELETED"
-          done < "$sorted_metadata_file"
+          done < "$VCR_IMAGES_FILE"
