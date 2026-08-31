@@ -127,9 +127,9 @@ function auditSummaryContent(event) {
     const name = auditApplicationName(event)
     if (!name) return '已完成应用授权。'
     return [
-      { type: 'text', text: '已为应用「' },
+      { type: 'text', text: '已为应用 ' },
       { type: 'application', text: name, logo: event.application?.logo_url || '', href: applicationHomepage(event.application?.homepage_url) },
-      { type: 'text', text: '」完成账号授权。' }
+      { type: 'text', text: ' 完成账号授权。' }
     ]
   }
   const changed = (details.changed_fields || []).map(field => known(fields, field)).filter(Boolean)
