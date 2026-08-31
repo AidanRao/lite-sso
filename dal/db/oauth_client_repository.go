@@ -32,6 +32,17 @@ func (r *OAuthClientRepository) FindByID(ctx context.Context, id uint) (*model.O
 	return &client, nil
 }
 
+// FindDisplayByClientIDs fetches public display fields in one batch without loading secrets.
+func (r *OAuthClientRepository) FindDisplayByClientIDs(ctx context.Context, clientIDs []string) ([]model.OAuthClient, error) {
+	if len(clientIDs) == 0 {
+		return []model.OAuthClient{}, nil
+	}
+	var clients []model.OAuthClient
+	err := r.db.WithContext(ctx).Select("client_id", "name", "logo_url").
+		Where("client_id IN ?", clientIDs).Find(&clients).Error
+	return clients, err
+}
+
 func (r *OAuthClientRepository) FindAll(ctx context.Context) ([]model.OAuthClient, error) {
 	var clients []model.OAuthClient
 	if err := r.db.WithContext(ctx).Order("id ASC").Find(&clients).Error; err != nil {

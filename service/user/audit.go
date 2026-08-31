@@ -58,16 +58,37 @@ func (s *UserService) listAuditLogs(ctx context.Context, userID string, request 
 		}
 		page.NextCursor = base64.RawURLEncoding.EncodeToString(data)
 	}
+	clientIDs := make([]string, 0)
+	seenClients := make(map[string]bool)
+	for _, record := range records {
+		if record.ClientID != nil && *record.ClientID != "" && !seenClients[*record.ClientID] {
+			clientIDs = append(clientIDs, *record.ClientID)
+			seenClients[*record.ClientID] = true
+		}
+	}
+	clients, err := db.NewOAuthClientRepository(s.db).FindDisplayByClientIDs(ctx, clientIDs)
+	if err != nil {
+		return nil, err
+	}
+	applications := make(map[string]*dto.AuditApplicationResponse, len(clients))
+	for _, client := range clients {
+		applications[client.ClientID] = &dto.AuditApplicationResponse{ClientID: client.ClientID, Name: client.Name, LogoURL: client.LogoURL}
+	}
 	for _, record := range records {
 		var details model.AuditDetails
 		if err := json.Unmarshal([]byte(record.Details), &details); err != nil {
 			return nil, err
 		}
+		var application *dto.AuditApplicationResponse
+		if record.ClientID != nil {
+			application = applications[*record.ClientID]
+		}
 		page.Items = append(page.Items, dto.AuditLogResponse{
 			ID: record.ID, OccurredAt: record.OccurredAt, Action: record.Action,
 			Outcome: record.Outcome, ReasonCode: record.ReasonCode,
 			TargetType: record.TargetType, TargetID: record.TargetID, ClientID: record.ClientID,
-			Method: record.Method, Route: record.Route, HTTPStatus: record.HTTPStatus,
+			Application: application,
+			Method:      record.Method, Route: record.Route, HTTPStatus: record.HTTPStatus,
 			DurationMS: record.DurationMS, IP: record.IP, DeviceLabel: record.DeviceLabel, Details: details,
 		})
 	}

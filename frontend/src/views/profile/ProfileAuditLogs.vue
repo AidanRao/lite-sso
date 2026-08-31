@@ -66,6 +66,10 @@
             </div>
             <p class="event-summary">{{ auditSummary(event) }}</p>
             <div class="event-meta">
+              <span v-if="event.client_id" class="event-application" :title="auditCopy.applicationCurrent">
+                <ApplicationLogo :label="auditApplicationName(event)" :src="event.application?.logo_url || ''" size="inline" />
+                <span>{{ auditApplicationName(event) }}</span>
+              </span>
               <span>{{ event.ip || auditCopy.unknownIP }}</span>
               <span>{{ event.device_label || auditCopy.unknownDevice }}</span>
               <time :datetime="event.occurred_at" :title="auditFullTime(event.occurred_at)">{{ auditRelativeTime(event.occurred_at, clock) }}</time>
@@ -93,9 +97,10 @@ import { computed, inject, onBeforeUnmount, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowRight, Ban, Check, ChevronDown, CircleAlert, Ellipsis, ListFilter, LoaderCircle, RefreshCw, ScrollText, Search } from 'lucide-vue-next'
 import ProfileSettingsSection from '../../components/profile/ProfileSettingsSection.vue'
+import ApplicationLogo from '../../components/ApplicationLogo.vue'
 import { userAPI } from '../../api/auth'
 import { PROFILE_CONTEXT_KEY } from './profileContext'
-import { auditCopy, auditDateBounds, auditDetailRows, auditFullTime, auditLoadError, auditOutcomeLabel, auditRelativeTime, auditSummary, buildAuditQuery, outcomeOptions, periodOptions } from '../../utils/auditLog'
+import { auditApplicationName, auditCopy, auditDateBounds, auditDetailRows, auditFullTime, auditLoadError, auditOutcomeLabel, auditRelativeTime, auditSummary, buildAuditQuery, outcomeOptions, periodOptions } from '../../utils/auditLog'
 
 const { user } = inject(PROFILE_CONTEXT_KEY)
 const route = useRoute()
@@ -229,6 +234,8 @@ button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-v
 .event-meta > * + * { margin-left: 9px; padding-left: 9px; border-left: 1px solid var(--profile-divider); }
 .event-meta > .more-button { padding: 0 4px; border: 0; }
 .event-meta > span { overflow-wrap: anywhere; }
+.event-application { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; }
+.event-application > span:last-child { min-width: 0; overflow-wrap: anywhere; }
 .event-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; margin: 16px 0 0; padding: 16px; border: 1px solid var(--profile-border); border-radius: 6px; background: var(--profile-surface-subtle); }
 .event-details > div { min-width: 0; }
 .event-details dt { margin-bottom: 4px; color: var(--profile-text-muted); font-size: 12px; }

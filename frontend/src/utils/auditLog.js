@@ -7,7 +7,8 @@ export const auditCopy = {
   loadFailed: '操作日志加载失败，请稍后重试。', invalidQuery: '查询条件无效，请检查筛选条件后重试。',
   invalidDates: '请选择最近 30 天内有效的起止日期。', longSearch: '搜索内容不能超过 100 个字符。',
   searchSubmit: '搜索', clear: '清除筛选', result: '操作结果', period: '时间范围', from: '开始日期', to: '结束日期',
-  details: '查看详情', hideDetails: '收起详情', unknownDevice: '未知设备', unknownIP: '未知 IP', user: '你', placeholder: '—'
+  details: '查看详情', hideDetails: '收起详情', unknownDevice: '未知设备', unknownIP: '未知 IP', user: '你', placeholder: '—',
+  applicationCurrent: '应用名称和 Logo 为当前信息'
 }
 
 export const outcomeOptions = [
@@ -71,6 +72,10 @@ export function auditOutcomeLabel(outcome) {
   return outcomeOptions.find(item => item.value === outcome && outcome)?.label || '结果未知'
 }
 
+export function auditApplicationName(event) {
+  return event.application?.name || event.client_id || ''
+}
+
 export function auditReasonLabel(code) {
   if (known(reasons, code)) return reasons[code]
   if (/^HTTP_[1-5]\d{2}$/.test(code || '')) return `请求未完成（HTTP ${code.slice(5)}）`
@@ -100,7 +105,10 @@ export function auditSummary(event) {
   if (event.action === 'user.third_party.callback') return `${provider ? `${provider} ` : ''}绑定预览已准备，等待确认。`
   if (event.action === 'user.third_party.bind' && completed.includes('binding_created')) return `${provider ? `${provider} ` : ''}第三方绑定已完成。`
   if (event.action.startsWith('auth.login.') && completed.includes('session_created')) return `已通过${known(authMethods, details.auth_method) || provider || title.replace('登录', '')}完成登录，登录会话已创建。`
-  if (event.action === 'oauth.authorize' && completed.includes('authorization_code_issued')) return '应用授权码已签发；此记录不代表应用端已建立登录会话。'
+  if (event.action === 'oauth.authorize' && completed.includes('authorization_code_issued')) {
+    const name = auditApplicationName(event)
+    return name ? `已为应用「${name}」完成账号授权。` : '已完成应用授权。'
+  }
   const changed = (details.changed_fields || []).map(field => known(fields, field)).filter(Boolean)
   return `${title}操作成功${changed.length ? `，涉及字段：${changed.join('、')}` : ''}。`
 }
@@ -128,7 +136,7 @@ export function auditDetailRows(event) {
     ['事件 ID', event.id], ['发生时间', auditFullTime(event.occurred_at)], ['操作', known(auditActions, event.action) || '未知操作'],
     ['操作结果', auditOutcomeLabel(event.outcome)], ['结果说明', auditReasonLabel(event.reason_code)], ['原因码', event.reason_code],
     ['接口', [event.method, event.route].filter(Boolean).join(' ')], ['HTTP 状态', event.http_status], ['耗时', Number.isFinite(event.duration_ms) ? `${event.duration_ms} ms` : null],
-    ['目标类型', known(targets, event.target_type) || event.target_type], ['目标 ID', event.target_id], ['应用 ID', event.client_id],
+    ['目标类型', known(targets, event.target_type) || event.target_type], ['目标 ID', event.target_id], ['应用 ID', event.client_id], ['应用名称（当前）', event.application?.name],
     ['来源 IP', event.ip], ['设备', event.device_label], ['认证方式', known(authMethods, details.auth_method) || details.auth_method],
     ['第三方平台', known(providers, details.provider) || details.provider], ['邮箱（已脱敏）', details.email_masked],
     ['变更字段', list(details.changed_fields, fields)], ['已完成步骤', list(details.completed_steps, steps)]

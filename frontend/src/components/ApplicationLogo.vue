@@ -1,12 +1,12 @@
 <template>
   <span class="application-logo" :class="sizeClass" :aria-label="`${label || '应用'} Logo`">
-    <img v-if="src" :src="src" :alt="`${label || '应用'} Logo`" />
+    <img v-if="src && !failed" :src="src" :alt="`${label || '应用'} Logo`" @error="failed = true" />
     <span v-else>{{ initial }}</span>
   </span>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   label: {
@@ -25,6 +25,8 @@ const props = defineProps({
 
 const initial = computed(() => (props.label || '?').trim().slice(0, 1).toUpperCase() || '?')
 const sizeClass = computed(() => `application-logo--${props.size}`)
+const failed = ref(false)
+watch(() => props.src, () => { failed.value = false })
 </script>
 
 <style scoped>
@@ -52,6 +54,13 @@ const sizeClass = computed(() => `application-logo--${props.size}`)
   width: 28px;
   height: 28px;
   font-size: 12px;
+}
+
+.application-logo--inline {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  font-size: 10px;
 }
 
 .application-logo--medium {

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { auditActionMatches, auditDateBounds, auditDetailRows, auditFullTime, auditLoadError, auditRelativeTime, auditSummary, buildAuditQuery, localDateInput } from './auditLog.js'
+import { auditActionMatches, auditApplicationName, auditDateBounds, auditDetailRows, auditFullTime, auditLoadError, auditRelativeTime, auditSummary, buildAuditQuery, localDateInput } from './auditLog.js'
 
 test('third-party redirects describe distinct business stages rather than HTTP status', () => {
   const event = { outcome: 'success', http_status: 307, details: { provider: 'github', auth_method: 'github' } }
@@ -9,7 +9,7 @@ test('third-party redirects describe distinct business stages rather than HTTP s
   assert.match(auditSummary({ ...event, action: 'user.third_party.callback', details: { provider: 'github', completed_steps: ['binding_prepared'] } }), /等待确认/)
   assert.match(auditSummary({ ...event, action: 'user.third_party.bind', details: { provider: 'github', completed_steps: ['binding_created'] } }), /绑定已完成/)
   assert.match(auditSummary({ ...event, action: 'auth.login.third_party', details: { auth_method: 'github', completed_steps: ['session_created'] } }), /通过GitHub完成登录/)
-  assert.match(auditSummary({ ...event, action: 'oauth.authorize', details: { completed_steps: ['authorization_code_issued'] } }), /不代表应用端已建立登录会话/)
+  assert.equal(auditSummary({ ...event, action: 'oauth.authorize', client_id: 'demo-app', details: { completed_steps: ['authorization_code_issued'] } }), '已为应用「demo-app」完成账号授权。')
   assert.equal(auditSummary({ ...event, action: 'auth.login.third_party', outcome: 'failure', reason_code: 'UNCLASSIFIED_REDIRECT' }), '跳转结果未确认')
   assert.doesNotMatch(auditSummary({ ...event, action: 'auth.login.third_party', outcome: 'failure', reason_code: 'PROVIDER_AUTH_FAILED' }), /完成登录/)
 })
@@ -21,6 +21,18 @@ test('partial completion and denial never become full success', () => {
   assert.match(auditSummary({ action: 'future.unknown', outcome: 'success' }), /已记录该操作，结果：成功/)
   assert.match(auditSummary({ action: 'user.password.update', outcome: 'failure', reason_code: 'UNKNOWN' }), /未提供可识别的结果说明/)
   assert.match(auditSummary({ action: 'constructor', outcome: 'failure' }), /已记录该操作/)
+})
+
+test('application display prefers current metadata and retains IDs for missing applications', () => {
+  const event = { action: 'oauth.authorize', outcome: 'success', client_id: 'demo-app', details: { completed_steps: ['authorization_code_issued'] } }
+  const withApplication = { ...event, application: { client_id: 'demo-app', name: '示例应用', logo_url: 'https://example.com/logo.png' } }
+  assert.equal(auditApplicationName(withApplication), '示例应用')
+  assert.equal(auditSummary(withApplication), '已为应用「示例应用」完成账号授权。')
+  assert.equal(auditDetailRows(withApplication).find(row => row.label === '应用名称（当前）').value, '示例应用')
+  assert.equal(auditApplicationName({ ...event, application: null }), 'demo-app')
+  assert.equal(auditSummary({ ...event, application: null }), '已为应用「demo-app」完成账号授权。')
+  assert.equal(auditApplicationName({}), '')
+  assert.equal(auditSummary({ ...event, client_id: null }), '已完成应用授权。')
 })
 
 test('frontend translates Chinese search into codes without dropping the original text', () => {
