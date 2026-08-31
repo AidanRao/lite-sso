@@ -9,6 +9,8 @@ database:
   password: "123456"
   name: "sso-server"
   sslmode: "disable"
+  max_open_conns: 2 # DATABASE_MAX_OPEN_CONNS
+  max_idle_conns: 1 # DATABASE_MAX_IDLE_CONNS
 
 cache:
   url: "redis://:123456@localhost:63783"
