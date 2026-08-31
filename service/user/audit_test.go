@@ -114,8 +114,9 @@ func Test_ListAuditLogs_CurrentApplicationMetadata(t *testing.T) {
 	owner, other := "owner", "other"
 	clientID, missingID, otherID := "own-app", "deleted-app", "other-app"
 	logo, objectKey := "https://example.com/logo.png", "private-object-key"
+	homepage := "https://example.com/app"
 	clients := []model.OAuthClient{
-		{ClientID: clientID, Name: "我的应用", LogoURL: &logo, ClientSecret: "private-client-secret", LogoObjectKey: &objectKey},
+		{ClientID: clientID, Name: "我的应用", LogoURL: &logo, HomepageURL: homepage, ClientSecret: "private-client-secret", LogoObjectKey: &objectKey},
 		{ClientID: otherID, Name: "other-user-app-name", ClientSecret: "other-secret"},
 	}
 	require.NoError(t, database.Create(&clients).Error)
@@ -133,7 +134,7 @@ func Test_ListAuditLogs_CurrentApplicationMetadata(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, page.Items, 4)
 	for _, item := range page.Items[:2] {
-		require.Equal(t, &dto.AuditApplicationResponse{ClientID: clientID, Name: "我的应用", LogoURL: &logo}, item.Application)
+		require.Equal(t, &dto.AuditApplicationResponse{ClientID: clientID, Name: "我的应用", LogoURL: &logo, HomepageURL: homepage}, item.Application)
 	}
 	require.Nil(t, page.Items[2].Application)
 	require.Equal(t, &missingID, page.Items[2].ClientID)
@@ -146,7 +147,7 @@ func Test_ListAuditLogs_CurrentApplicationMetadata(t *testing.T) {
 
 	// Display metadata follows the current application without changing the audit event.
 	require.NoError(t, database.Model(&model.OAuthClient{}).Where("client_id = ?", clientID).
-		Updates(map[string]any{"name": "已改名应用", "logo_url": nil}).Error)
+		Updates(map[string]any{"name": "已改名应用", "logo_url": nil, "homepage_url": ""}).Error)
 	page, err = s.listAuditLogs(ctx, owner, dto.AuditLogQuery{}, now)
 	require.NoError(t, err)
 	require.Equal(t, &dto.AuditApplicationResponse{ClientID: clientID, Name: "已改名应用"}, page.Items[0].Application)

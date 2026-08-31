@@ -64,12 +64,17 @@
                 <CircleAlert v-else :size="12" aria-hidden="true" />{{ auditOutcomeLabel(event.outcome) }}
               </span>
             </div>
-            <p class="event-summary">{{ auditSummary(event) }}</p>
+            <p class="event-summary">
+              <template v-for="(part, index) in auditSummaryParts(event)" :key="index">
+                <span v-if="part.type === 'application'" class="event-application" :title="auditCopy.applicationCurrent">
+                  <ApplicationLogo :label="part.text" :src="part.logo" size="inline" />
+                  <a v-if="part.href" :href="part.href" target="_blank" rel="noopener noreferrer">{{ part.text }}</a>
+                  <span v-else>{{ part.text }}</span>
+                </span>
+                <template v-else>{{ part.text }}</template>
+              </template>
+            </p>
             <div class="event-meta">
-              <span v-if="event.client_id" class="event-application" :title="auditCopy.applicationCurrent">
-                <ApplicationLogo :label="auditApplicationName(event)" :src="event.application?.logo_url || ''" size="inline" />
-                <span>{{ auditApplicationName(event) }}</span>
-              </span>
               <span>{{ event.ip || auditCopy.unknownIP }}</span>
               <span>{{ event.device_label || auditCopy.unknownDevice }}</span>
               <time :datetime="event.occurred_at" :title="auditFullTime(event.occurred_at)">{{ auditRelativeTime(event.occurred_at, clock) }}</time>
@@ -100,7 +105,7 @@ import ProfileSettingsSection from '../../components/profile/ProfileSettingsSect
 import ApplicationLogo from '../../components/ApplicationLogo.vue'
 import { userAPI } from '../../api/auth'
 import { PROFILE_CONTEXT_KEY } from './profileContext'
-import { auditApplicationName, auditCopy, auditDateBounds, auditDetailRows, auditFullTime, auditLoadError, auditOutcomeLabel, auditRelativeTime, auditSummary, buildAuditQuery, outcomeOptions, periodOptions } from '../../utils/auditLog'
+import { auditCopy, auditDateBounds, auditDetailRows, auditFullTime, auditLoadError, auditOutcomeLabel, auditRelativeTime, auditSummaryParts, buildAuditQuery, outcomeOptions, periodOptions } from '../../utils/auditLog'
 
 const { user } = inject(PROFILE_CONTEXT_KEY)
 const route = useRoute()
@@ -210,7 +215,7 @@ reload()
 .button:hover:not(:disabled), .more-button:hover { background: var(--profile-surface-hover); }
 .button:disabled { opacity: .6; cursor: default; }
 .refresh-button { flex: none; }
-button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--profile-accent); outline-offset: 2px; }
+button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--profile-accent); outline-offset: 2px; }
 .events-panel { overflow: hidden; border: 1px solid var(--profile-border); border-radius: 6px; }
 .events-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 0 20px; background: var(--profile-surface-subtle); }
 .events-heading h3 { margin: 0; font-size: 14px; font-weight: 600; }
@@ -234,8 +239,9 @@ button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-v
 .event-meta > * + * { margin-left: 9px; padding-left: 9px; border-left: 1px solid var(--profile-divider); }
 .event-meta > .more-button { padding: 0 4px; border: 0; }
 .event-meta > span { overflow-wrap: anywhere; }
-.event-application { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; }
-.event-application > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.event-application { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; vertical-align: middle; }
+.event-application > :last-child { min-width: 0; overflow-wrap: anywhere; }
+.event-application a { color: var(--profile-accent); text-decoration: underline; text-underline-offset: 2px; }
 .event-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; margin: 16px 0 0; padding: 16px; border: 1px solid var(--profile-border); border-radius: 6px; background: var(--profile-surface-subtle); }
 .event-details > div { min-width: 0; }
 .event-details dt { margin-bottom: 4px; color: var(--profile-text-muted); font-size: 12px; }

@@ -89,6 +89,24 @@ export function auditActionMatches(search) {
 }
 
 export function auditSummary(event) {
+  return auditSummaryParts(event).map(part => part.text).join('')
+}
+
+export function auditSummaryParts(event) {
+  const content = auditSummaryContent(event)
+  return typeof content === 'string' ? [{ type: 'text', text: content }] : content
+}
+
+function applicationHomepage(value) {
+  try {
+    const url = new URL(value)
+    return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? url.href : ''
+  } catch {
+    return ''
+  }
+}
+
+function auditSummaryContent(event) {
   const title = known(auditActions, event.action)
   const details = event.details || {}
   const completed = Array.isArray(details.completed_steps) ? details.completed_steps : []
@@ -107,7 +125,12 @@ export function auditSummary(event) {
   if (event.action.startsWith('auth.login.') && completed.includes('session_created')) return `已通过${known(authMethods, details.auth_method) || provider || title.replace('登录', '')}完成登录，登录会话已创建。`
   if (event.action === 'oauth.authorize' && completed.includes('authorization_code_issued')) {
     const name = auditApplicationName(event)
-    return name ? `已为应用「${name}」完成账号授权。` : '已完成应用授权。'
+    if (!name) return '已完成应用授权。'
+    return [
+      { type: 'text', text: '已为应用「' },
+      { type: 'application', text: name, logo: event.application?.logo_url || '', href: applicationHomepage(event.application?.homepage_url) },
+      { type: 'text', text: '」完成账号授权。' }
+    ]
   }
   const changed = (details.changed_fields || []).map(field => known(fields, field)).filter(Boolean)
   return `${title}操作成功${changed.length ? `，涉及字段：${changed.join('、')}` : ''}。`

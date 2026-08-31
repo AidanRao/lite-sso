@@ -72,7 +72,7 @@ func (s *UserService) listAuditLogs(ctx context.Context, userID string, request 
 	}
 	applications := make(map[string]*dto.AuditApplicationResponse, len(clients))
 	for _, client := range clients {
-		applications[client.ClientID] = &dto.AuditApplicationResponse{ClientID: client.ClientID, Name: client.Name, LogoURL: client.LogoURL}
+		applications[client.ClientID] = &dto.AuditApplicationResponse{ClientID: client.ClientID, Name: client.Name, LogoURL: client.LogoURL, HomepageURL: client.HomepageURL}
 	}
 	for _, record := range records {
 		var details model.AuditDetails

@@ -38,7 +38,7 @@ func (r *OAuthClientRepository) FindDisplayByClientIDs(ctx context.Context, clie
 		return []model.OAuthClient{}, nil
 	}
 	var clients []model.OAuthClient
-	err := r.db.WithContext(ctx).Select("client_id", "name", "logo_url").
+	err := r.db.WithContext(ctx).Select("client_id", "name", "logo_url", "homepage_url").
 		Where("client_id IN ?", clientIDs).Find(&clients).Error
 	return clients, err
 }

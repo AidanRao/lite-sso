@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { auditActionMatches, auditApplicationName, auditDateBounds, auditDetailRows, auditFullTime, auditLoadError, auditRelativeTime, auditSummary, buildAuditQuery, localDateInput } from './auditLog.js'
+import { auditActionMatches, auditApplicationName, auditDateBounds, auditDetailRows, auditFullTime, auditLoadError, auditRelativeTime, auditSummary, auditSummaryParts, buildAuditQuery, localDateInput } from './auditLog.js'
 
 test('third-party redirects describe distinct business stages rather than HTTP status', () => {
   const event = { outcome: 'success', http_status: 307, details: { provider: 'github', auth_method: 'github' } }
@@ -33,6 +33,24 @@ test('application display prefers current metadata and retains IDs for missing a
   assert.equal(auditSummary({ ...event, application: null }), '已为应用「demo-app」完成账号授权。')
   assert.equal(auditApplicationName({}), '')
   assert.equal(auditSummary({ ...event, client_id: null }), '已完成应用授权。')
+})
+
+test('authorization summary embeds an application token with only safe homepage links', () => {
+  const event = { action: 'oauth.authorize', outcome: 'success', details: { completed_steps: ['authorization_code_issued'] }, application: { name: '<b>devops-local</b>', logo_url: '/logo.png', homepage_url: 'http://localhost:8080/' } }
+  assert.deepEqual(auditSummaryParts(event), [
+    { type: 'text', text: '已为应用「' },
+    { type: 'application', text: '<b>devops-local</b>', logo: '/logo.png', href: 'http://localhost:8080/' },
+    { type: 'text', text: '」完成账号授权。' }
+  ])
+  for (const homepage of ['', null, 'javascript:alert(1)', 'data:text/html,test', 'file:///tmp/test', 'https://user:password@example.com', '/relative', 'not a URL']) {
+    const parts = auditSummaryParts({ ...event, application: { ...event.application, homepage_url: homepage } })
+    assert.equal(parts[1].href, '')
+  }
+  for (const override of [{ outcome: 'failure' }, { reason_code: 'UNCLASSIFIED_REDIRECT' }, { details: {} }]) {
+    assert.ok(auditSummaryParts({ ...event, ...override }).every(part => part.type === 'text'))
+  }
+  const deleted = auditSummaryParts({ ...event, client_id: 'deleted-app', application: null })
+  assert.deepEqual(deleted[1], { type: 'application', text: 'deleted-app', logo: '', href: '' })
 })
 
 test('frontend translates Chinese search into codes without dropping the original text', () => {

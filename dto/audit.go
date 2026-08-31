@@ -39,9 +39,10 @@ type AuditLogResponse struct {
 
 // AuditApplicationResponse contains current public application metadata, not a historical snapshot.
 type AuditApplicationResponse struct {
-	ClientID string  `json:"client_id"`
-	Name     string  `json:"name"`
-	LogoURL  *string `json:"logo_url"`
+	ClientID    string  `json:"client_id"`
+	Name        string  `json:"name"`
+	LogoURL     *string `json:"logo_url"`
+	HomepageURL string  `json:"homepage_url"`
 }
 
 // AuditLogPage uses keyset pagination and intentionally omits a total count.
