@@ -97,6 +97,8 @@ export const refreshAccessToken = async () => {
 }
 
 export const authAPI = {
+  logout: (redirect, signal) => refreshClient.post('/auth/logout', null, { params: { redirect }, signal }).then(response => response.data),
+
   loginWithPassword: (data) => {
     return api.post('/auth/login/password', data)
   },

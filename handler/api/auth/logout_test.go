@@ -203,7 +203,7 @@ func TestAuthLogout_LoggedOutSessionCannotAccessProfile(t *testing.T) {
 	}
 }
 
-func TestAuthLogout_WithLogoutURI_ReturnsHTMLPage(t *testing.T) {
+func Test_Logout_WithLogoutURI_ReturnsJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	db, err := gorm.Open(sqlite.Open("file:auth_logout_uris?mode=memory&cache=shared"), &gorm.Config{})
@@ -256,15 +256,15 @@ func TestAuthLogout_WithLogoutURI_ReturnsHTMLPage(t *testing.T) {
 	}
 
 	contentType := w.Header().Get("Content-Type")
-	if !strings.Contains(contentType, "text/html") {
-		t.Fatalf("expected html content type, got %s", contentType)
+	if !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected json content type, got %s", contentType)
 	}
 
 	body := w.Body.String()
 	if !strings.Contains(body, "https://app.example.com/logout") {
 		t.Fatalf("expected logout uri in body, got %s", body)
 	}
-	if !strings.Contains(body, "app.example.com\\/home") {
+	if !strings.Contains(body, "app.example.com/home") {
 		t.Fatalf("expected redirect uri in body, got %s", body)
 	}
 }
@@ -389,10 +389,10 @@ func Test_Logout_RedirectAllowsSameHomepageDomain(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "sso_session", Value: "sid-homepage-domain"})
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusFound {
-		t.Fatalf("expected 302, got %d, body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
 	}
-	if location := w.Header().Get("Location"); location != redirectURI {
+	if location := logoutRedirect(t, w); location != redirectURI {
 		t.Fatalf("expected redirect location %q, got %q", redirectURI, location)
 	}
 }
@@ -444,10 +444,10 @@ func Test_Logout_RedirectAllowsRelativePath(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "sso_session", Value: "sid-relative-redirect"})
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusFound {
-		t.Fatalf("expected 302, got %d, body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
 	}
-	if location := w.Header().Get("Location"); location != "/login" {
+	if location := logoutRedirect(t, w); location != "/login" {
 		t.Fatalf("expected redirect location /login, got %q", location)
 	}
 }
@@ -516,4 +516,17 @@ func Test_Logout_RedirectRejectsSimilarHomepageDomain(t *testing.T) {
 	if !strings.Contains(logs.String(), redirectURI) {
 		t.Fatalf("expected redirect uri in log, got %s", logs.String())
 	}
+}
+
+func logoutRedirect(t *testing.T, response *httptest.ResponseRecorder) string {
+	t.Helper()
+	var body struct {
+		Data struct {
+			RedirectURI string `json:"redirect_uri"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode logout response: %v", err)
+	}
+	return body.Data.RedirectURI
 }
