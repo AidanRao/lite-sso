@@ -1,22 +1,13 @@
 <template>
-  <div class="min-h-screen md:h-screen flex overflow-hidden">
-    <router-link to="/docs" class="fixed left-4 top-4 z-20 text-sm font-medium text-gray-400 hover:text-[#0891b2] transition-colors md:hidden">
-      开发文档
-    </router-link>
-
+  <div class="login-page min-h-screen md:h-screen flex overflow-hidden" :style="mobileViewportStyle">
     <AuthSplashPane class="hidden md:flex flex-[1.5]" title="身份认证系统" :target-name="targetPlatformName" />
 
     <div class="login-auth-pane flex-1 min-h-screen md:h-screen bg-gradient-to-br from-[#ecfeff] to-[#f0fdfa] flex items-center justify-center overflow-y-auto p-4 sm:p-6 lg:p-8">
       <div class="login-stack w-full max-w-md py-6 md:py-0">
         <div class="login-card bg-white rounded-2xl shadow-xl shadow-[#0891b2]/5 p-6 sm:p-8 xl:p-10">
           <div class="login-header text-center mb-6 xl:mb-8">
-            <h2 class="text-2xl font-bold text-gray-800">欢迎回来</h2>
-            <p v-if="targetClientName" class="target-client text-gray-500 text-sm mt-2">
-              登录后将进入
-              <ApplicationLogo :label="targetClientName" :src="targetClientLogo" size="small" />
-              <span class="font-semibold text-[#0891b2]">{{ targetClientName }}</span>
-            </p>
-            <p v-else class="text-gray-500 text-sm mt-2">请登录您的账号</p>
+            <ApplicationLogo class="login-brand-logo" :label="targetPlatformName" :src="targetClientLogo" size="large" />
+            <h1 class="login-title">登录 {{ targetPlatformName }}</h1>
           </div>
 
           <div v-if="errorMessage" class="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm flex items-center gap-2">
@@ -222,6 +213,14 @@ import ThirdPartyProviderIcon from '../components/ThirdPartyProviderIcon.vue'
 import { getLoginRedirect, loadTargetClient as loadTargetClientInfo } from '../utils/oauthTarget'
 
 const route = useRoute()
+const mobileViewportStyle = ref({})
+
+const updateMobileViewport = () => {
+  const viewport = window.visualViewport
+  mobileViewportStyle.value = viewport
+    ? { '--login-viewport-height': `${viewport.height}px`, '--login-viewport-top': `${viewport.offsetTop}px` }
+    : {}
+}
 
 const redirectUrl = ref(getLoginRedirect(route))
 const targetClient = ref(null)
@@ -531,6 +530,9 @@ const refreshQRCode = async () => {
 }
 
 onMounted(() => {
+  updateMobileViewport()
+  window.visualViewport?.addEventListener('resize', updateMobileViewport)
+  window.visualViewport?.addEventListener('scroll', updateMobileViewport)
   loadTargetClient()
   if (activeTab.value === 'qr') {
     refreshQRCode()
@@ -538,6 +540,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  window.visualViewport?.removeEventListener('resize', updateMobileViewport)
+  window.visualViewport?.removeEventListener('scroll', updateMobileViewport)
   if (qrCheckInterval.value) clearInterval(qrCheckInterval.value)
   if (qrTimerInterval.value) clearInterval(qrTimerInterval.value)
   if (passwordLockInterval.value) clearInterval(passwordLockInterval.value)
@@ -599,11 +603,81 @@ watch(activeTab, (tab) => {
   padding: 0 14px;
 }
 
-.target-client {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
+.login-brand-logo {
+  --profile-border: #cffafe;
+  --profile-success-soft: #ecfeff;
+  --profile-success: #0891b2;
+}
+
+.login-title {
+  margin-top: 12px;
+  color: #1f2937;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  .login-page {
+    position: fixed;
+    inset: 0;
+    top: var(--login-viewport-top, 0px);
+    height: 100vh;
+    height: var(--login-viewport-height, 100dvh);
+    min-height: 0;
+  }
+
+  .login-auth-pane {
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    flex-direction: column;
+    justify-content: flex-start;
+    overscroll-behavior-y: contain;
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+
+  .login-stack {
+    flex-shrink: 0;
+    margin-block: auto;
+    padding-block: 0;
+  }
+
+  .login-card {
+    padding: 24px 20px;
+  }
+
+  .login-header,
+  .login-tabs {
+    margin-bottom: 16px;
+  }
+
+  .login-form-panel {
+    min-height: 0;
+  }
+
+  .login-form-panel :deep(.el-input__inner) {
+    font-size: 16px;
+  }
+
+  .login-form-panel :deep(.el-input) {
+    min-width: 0;
+  }
+
+  .login-divider {
+    margin-block: 16px;
+  }
+
+  .login-provider-button {
+    padding-inline: 10px;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  .login-register-link {
+    margin-top: 16px;
+  }
 }
 
 .login-provider-icon {
