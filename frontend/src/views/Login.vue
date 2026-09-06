@@ -635,17 +635,21 @@ watch(activeTab, (tab) => {
     flex-direction: column;
     justify-content: flex-start;
     overscroll-behavior-y: contain;
-    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    background: #fff;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
 
   .login-stack {
     flex-shrink: 0;
+    max-width: none;
     margin-block: auto;
     padding-block: 0;
   }
 
   .login-card {
-    padding: 24px 20px;
+    padding: 24px;
+    border-radius: 0;
+    box-shadow: none;
   }
 
   .login-header,
