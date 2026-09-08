@@ -16,6 +16,7 @@ import (
 	"sso-server/handler/api/user"
 	"sso-server/handler/health"
 	"sso-server/handler/oauth2"
+	"sso-server/service/feature"
 	servicepasskey "sso-server/service/passkey"
 	"sso-server/service/reauth"
 )
@@ -135,7 +136,7 @@ func (s *Server) registerRoutes() {
 			userProtected := userGroup.Group("")
 			userProtected.Use(authRequired)
 			userProtected.GET("/profile", userHandler.GetProfile)
-			userProtected.GET("/audit-logs", userHandler.ListAuditLogs)
+			userProtected.GET("/audit-logs", RequireFeature(feature.NewService(db.DB), feature.AuditLogs), userHandler.ListAuditLogs)
 			userProtected.PUT("/profile", userHandler.UpdateProfile)
 			userProtected.GET("/login-methods", userHandler.GetLoginMethods)
 			userProtected.GET("/emails", userHandler.ListEmails)
@@ -167,6 +168,8 @@ func (s *Server) registerRoutes() {
 		adminGroup := apiGroup.Group("/admin")
 		adminGroup.Use(authRequired, adminRequired)
 		{
+			adminGroup.GET("/features", adminHandler.ListFeatures)
+			adminGroup.PUT("/features/:key", adminHandler.UpdateFeature)
 			adminGroup.GET("/users", adminHandler.ListUsers)
 			adminGroup.GET("/users/:id", adminHandler.GetUserDetail)
 			adminGroup.GET("/oauth-clients", adminHandler.ListOAuthClients)

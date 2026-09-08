@@ -7,7 +7,7 @@
       <div>
         <h1>系统管理</h1>
       </div>
-      <button class="icon-text-button primary" type="button" @click="openCreateDialog">
+      <button v-if="activeTab !== 'features'" class="icon-text-button primary" type="button" @click="openCreateDialog">
         <Plus :size="17" />
         <span>新增平台</span>
       </button>
@@ -23,10 +23,14 @@
           <PanelsTopLeft :size="18" />
           <span>平台</span>
         </button>
+        <button :class="{ active: activeTab === 'features' }" type="button" @click="activeTab = 'features'">
+          <SlidersHorizontal :size="18" /><span>功能发布</span>
+        </button>
       </aside>
 
       <section class="content">
-        <div class="content-toolbar">
+        <FeatureReleases v-if="activeTab === 'features'" />
+        <div v-if="activeTab !== 'features'" class="content-toolbar">
           <div>
             <h2>{{ activeTab === 'users' ? '系统用户' : '接入平台' }}</h2>
             <span>{{ activeTab === 'users' ? `${users.length} 条记录` : `${clients.length} 条记录` }}</span>
@@ -68,7 +72,7 @@
           <div v-if="!users.length && !loading" class="empty-state">暂无用户</div>
         </div>
 
-        <div v-else class="data-table clients-table">
+        <div v-else-if="activeTab === 'clients'" class="data-table clients-table">
           <div class="table-row table-head">
             <span>平台</span>
             <span>Homepage URL</span>
@@ -264,8 +268,9 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Copy, Eye, EyeOff, PanelsTopLeft, Pencil, Plus, RefreshCw, Save, Upload, Users, X } from 'lucide-vue-next'
+import { SlidersHorizontal, ArrowLeft, Copy, Eye, EyeOff, PanelsTopLeft, Pencil, Plus, RefreshCw, Save, Upload, Users, X } from 'lucide-vue-next'
 import { adminAPI } from '../api/auth'
+import FeatureReleases from '../components/FeatureReleases.vue'
 import ApplicationLogo from '../components/ApplicationLogo.vue'
 import { generateClientSecret, maskClientSecret } from '../utils/clientSecret'
 

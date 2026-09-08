@@ -30,8 +30,9 @@ type UserEmailResponse struct {
 
 // ProfileResponse represents the current user's account summary.
 type ProfileResponse struct {
-	User    *UserResponse `json:"user"`
-	IsAdmin bool          `json:"is_admin"`
+	User     *UserResponse           `json:"user"`
+	IsAdmin  bool                    `json:"is_admin"`
+	Features map[string]FeatureState `json:"features"`
 }
 
 // LoginMethodType identifies a supported sign-in method category.

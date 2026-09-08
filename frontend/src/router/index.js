@@ -54,7 +54,7 @@ const routes = [
       {
         path: 'archived/audit-logs',
         name: 'ProfileAuditLogs',
-        meta: { title: '审计日志' },
+        meta: { title: '审计日志', featureKey: 'profile.audit_logs' },
         component: () => import('../views/profile/ProfileAuditLogs.vue')
       },
       {

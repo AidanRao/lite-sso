@@ -53,7 +53,7 @@ func TestUserProfile_RequiresSessionCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := db.AutoMigrate(&model.FeatureConfig{}, &model.FeatureUser{}, &model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -82,7 +82,7 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := db.AutoMigrate(&model.FeatureConfig{}, &model.FeatureUser{}, &model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	email := "u1@example.com"
@@ -359,7 +359,7 @@ func TestUserProfile_UpdateUsername(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := db.AutoMigrate(&model.FeatureConfig{}, &model.FeatureUser{}, &model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	if err := db.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {
@@ -412,7 +412,7 @@ func TestUserProfile_UpdateUsernameRejectsDuplicate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := db.AutoMigrate(&model.FeatureConfig{}, &model.FeatureUser{}, &model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	username := "bob"
@@ -455,7 +455,7 @@ func TestUserProfile_UpdateProfileRejectsAvatarURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}); err != nil {
+	if err := db.AutoMigrate(&model.FeatureConfig{}, &model.FeatureUser{}, &model.User{}, &model.UserEmail{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	if err := db.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {

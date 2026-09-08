@@ -10,21 +10,18 @@
     >
       <component :is="item.icon" v-if="item.icon" :size="17" aria-hidden="true" />
       <span>{{ item.label }}</span>
+      <span v-if="item.beta" class="beta-badge">Beta</span>
     </RouterLink>
 
-    <button
+    <div
       v-else-if="hasChildren"
-      class="navigation-group-button"
+      class="navigation-group-title"
       :style="indentStyle"
-      type="button"
-      :aria-expanded="open"
-      @click="open = !open"
     >
       <span>{{ item.label }}</span>
-      <ChevronDown :size="15" :class="{ rotated: !open }" aria-hidden="true" />
-    </button>
+    </div>
 
-    <ul v-if="hasChildren" v-show="open" class="navigation-children">
+    <ul v-if="hasChildren" class="navigation-children">
       <ProfileSidebarItem
         v-for="child in item.children"
         :key="child.to || child.label"
@@ -36,9 +33,8 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { ChevronDown } from 'lucide-vue-next'
 
 defineOptions({ name: 'ProfileSidebarItem' })
 
@@ -56,20 +52,24 @@ const props = defineProps({
 const route = useRoute()
 const hasChildren = computed(() => Array.isArray(props.item.children) && props.item.children.length > 0)
 const isActive = computed(() => Boolean(props.item.to) && route.path === props.item.to)
-const containsActiveRoute = (item) => item.to === route.path || item.children?.some(containsActiveRoute)
-const hasActiveChild = computed(() => hasChildren.value && props.item.children.some(containsActiveRoute))
-const open = ref(true)
 const indentStyle = computed(() => ({
   '--navigation-link-indent': `${10 + Math.max(0, props.depth - 1) * 16}px`,
   '--navigation-group-indent': `${10 + props.depth * 16}px`
 }))
-
-watch(hasActiveChild, (active) => {
-  if (active) open.value = true
-})
 </script>
 
 <style scoped>
+.beta-badge {
+  margin-left: auto;
+  border: 1px solid var(--profile-border-muted);
+  border-radius: 12px;
+  padding: 0 7px;
+  color: var(--profile-text-muted);
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 500;
+}
+
 .navigation-item,
 .navigation-children {
   margin: 0;
@@ -78,7 +78,7 @@ watch(hasActiveChild, (active) => {
 }
 
 .navigation-link,
-.navigation-group-button {
+.navigation-group-title {
   position: relative;
   display: flex;
   width: 100%;
@@ -120,24 +120,14 @@ watch(hasActiveChild, (active) => {
   content: '';
 }
 
-.navigation-group-button {
-  justify-content: space-between;
+.navigation-group-title {
   margin-top: 12px;
   padding: 10px 10px 5px var(--navigation-group-indent);
   border-top: 1px solid var(--profile-divider);
   border-radius: 0;
   color: var(--profile-text-muted);
-  cursor: pointer;
   font-size: 12px;
   font-weight: 600;
-}
-
-.navigation-group-button svg {
-  transition: transform 0.18s ease;
-}
-
-.navigation-group-button svg.rotated {
-  transform: rotate(-90deg);
 }
 
 .navigation-children {

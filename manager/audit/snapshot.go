@@ -57,7 +57,7 @@ func snapshot(event model.AuditLog) (model.AuditLog, bool) {
 	if event.Details != "" && json.Unmarshal([]byte(event.Details), &details) != nil {
 		return model.AuditLog{}, false
 	}
-	details.ChangedFields = allowedValues(details.ChangedFields, "username", "avatar", "password", "email", "verified", "is_primary", "name", "provider", "passkey", "session", "logo", "client_secret", "redirect_uri", "logout_uri", "homepage_url", "is_active", "description")
+	details.ChangedFields = allowedValues(details.ChangedFields, "audience", "percentage", "stage", "user_ids", "username", "avatar", "password", "email", "verified", "is_primary", "name", "provider", "passkey", "session", "logo", "client_secret", "redirect_uri", "logout_uri", "homepage_url", "is_active", "description")
 	details.CompletedSteps = allowedValues(details.CompletedSteps, "user_created", "session_created", "password_updated", "sessions_revoked", "email_created", "verification_sent", "email_verified", "binding_prepared", "binding_created", "authorization_code_issued")
 	details.AuthMethod = allowedValue(details.AuthMethod, "password", "email_otp", "qr_code", "github", "feishu", "passkey")
 	details.Provider = allowedValue(details.Provider, "github", "feishu")

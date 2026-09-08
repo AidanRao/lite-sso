@@ -45,6 +45,9 @@ api.interceptors.response.use(
       }
     }
     const machineCode = error.response?.data?.data?.code
+    if (error.response?.status === 403 && machineCode === 'FEATURE_NOT_ENABLED') {
+      window.dispatchEvent(new CustomEvent('feature-not-enabled', { detail: error.response.data.data.feature_key }))
+    }
     const descriptor = error.response?.data?.data?.reauth
     if (
       error.response?.status === 403 &&
@@ -219,6 +222,8 @@ export const reauthAPI = {
 const isReauthEndpoint = (url = '') => String(url).includes('/user/reauth/')
 
 export const adminAPI = {
+  getFeatures: () => api.get('/admin/features'),
+  updateFeature: (key, policy) => api.put(`/admin/features/${encodeURIComponent(key)}`, policy),
   listUsers: () => {
     return api.get('/admin/users')
   },

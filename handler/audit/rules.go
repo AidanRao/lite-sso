@@ -3,6 +3,7 @@ package audit
 // Rules is the explicit method/route allowlist; reads, polling and tokens are excluded.
 func Rules() []Rule {
 	return []Rule{
+		{Method: "PUT", Route: "/api/admin/features/:key", Action: "admin.feature.update", TargetType: "feature", TargetParam: "key"},
 		{Method: "POST", Route: "/api/auth/login/password", Action: "auth.login.password", TargetType: "user", AuthMethod: "password"},
 		{Method: "POST", Route: "/api/auth/login/email", Action: "auth.login.email", TargetType: "user", AuthMethod: "email_otp"},
 		{Method: "POST", Route: "/api/auth/email/send", Action: "auth.email.send", TargetType: "user"},

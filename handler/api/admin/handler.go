@@ -16,6 +16,7 @@ import (
 	"sso-server/dto"
 	"sso-server/handler/audit"
 	manageross "sso-server/manager/oss"
+	"sso-server/service/feature"
 	"sso-server/service/systemadmin"
 )
 
@@ -27,13 +28,15 @@ type AdminDeps struct {
 
 // AdminHandler handles system administration API requests.
 type AdminHandler struct {
-	admin *systemadmin.AdminService
+	admin    *systemadmin.AdminService
+	features *feature.Service
 }
 
 // NewAdminHandler creates a system administration handler.
 func NewAdminHandler(deps AdminDeps) *AdminHandler {
 	return &AdminHandler{
-		admin: systemadmin.NewAdminService(deps.Config, deps.DB, deps.ImageStore),
+		features: feature.NewService(deps.DB),
+		admin:    systemadmin.NewAdminService(deps.Config, deps.DB, deps.ImageStore),
 	}
 }
 
