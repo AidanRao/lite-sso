@@ -18,6 +18,7 @@ import (
 	"sso-server/handler/oauth2"
 	manageross "sso-server/manager/oss"
 	serviceauth "sso-server/service/auth"
+	"sso-server/service/feature"
 	serviceuser "sso-server/service/user"
 )
 
@@ -34,12 +35,16 @@ type UserHandler struct {
 	user              *serviceuser.UserService
 	auth              *serviceauth.AuthService
 	emails            *serviceuser.EmailService
+	permissions       *feature.Service
+	config            *conf.Config
 	trustProxyHeaders bool
 }
 
 func NewUserHandler(deps UserDeps) *UserHandler {
 	trustProxyHeaders := deps.Config != nil && deps.Config.Server.TrustProxyHeaders
 	return &UserHandler{
+		permissions:       feature.NewService(deps.DB),
+		config:            deps.Config,
 		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2, deps.ImageStore),
 		auth:              serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
 		emails:            serviceuser.NewEmailService(serviceuser.EmailDeps{Config: deps.Config, DB: deps.DB, MessageSender: deps.MessageSender}),

@@ -4,6 +4,10 @@
       <ProfileSidebar :user="user" :is-admin="isAdmin" :features="features" />
 
       <section class="settings-content" aria-live="polite">
+        <div v-if="permissionState.error" role="alert" class="permissions-error">
+          权限加载失败，部分入口暂不可用。
+          <button class="button" type="button" :disabled="permissionState.loading" @click="loadPermissions">重新加载权限</button>
+        </div>
         <div v-if="loading" class="page-state">
           <span class="spinner" aria-hidden="true"></span>
           <p>正在加载账号设置…</p>
@@ -15,6 +19,8 @@
           <button class="button" type="button" @click="loadProfile">重新加载</button>
         </div>
 
+        <div v-else-if="route.meta.featureKey && !permissionState.loaded && !permissionState.error" class="page-state"><p>正在加载权限…</p></div>
+        <div v-else-if="route.meta.featureKey && permissionState.error" class="page-state"><p>权限加载失败，请重试。</p></div>
         <div v-else-if="!pageEnabled" class="page-state error-state">
           <p>该功能暂未向你开放</p>
           <RouterLink class="button" to="/profile/account">返回账号页</RouterLink>
@@ -26,7 +32,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, provide, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, provide, ref } from 'vue'
+import { permissions } from '../utils/permissions'
 import { featureEnabled } from '../utils/features'
 import { useRoute, useRouter } from 'vue-router'
 import { CircleAlert } from 'lucide-vue-next'
@@ -36,11 +43,12 @@ import { PROFILE_CONTEXT_KEY } from './profile/profileContext'
 
 const route = useRoute()
 const router = useRouter()
-const features = ref({})
+const permissionState = permissions.state
+const features = computed(() => permissionState.error ? {} : permissionState.features)
 const pageEnabled = computed(() => featureEnabled(features.value, route.meta.featureKey))
 let requestVersion = 0
 const user = ref(null)
-const isAdmin = ref(false)
+const isAdmin = computed(() => !permissionState.error && permissionState.isAdmin)
 const loading = ref(true)
 const loadError = ref('')
 
@@ -51,15 +59,12 @@ const setUser = (nextUser) => {
 const loadProfile = async () => {
   const version = ++requestVersion
   loading.value = true
-  features.value = {}
   loadError.value = ''
   try {
     const result = await userAPI.getProfile()
     if (version !== requestVersion) return
     const data = result?.data || {}
-    features.value = data.features || {}
     user.value = data.user || null
-    isAdmin.value = Boolean(data.is_admin)
   } catch (error) {
     if (version !== requestVersion) return
     if (error.status === 401) {
@@ -80,24 +85,19 @@ provide(PROFILE_CONTEXT_KEY, {
   reload: loadProfile
 })
 
-const onFeatureDenied = (event) => {
-  if (typeof event.detail !== 'string') return
-  ++requestVersion
-  features.value = { ...features.value, [event.detail]: { enabled: false, stage: features.value[event.detail]?.stage || 'beta' } }
-  loading.value = false
+const loadPermissions = async () => {
+  try { await permissions.load() }
+  catch (error) {
+    if (error.status === 401) router.replace({ path: '/login', query: { redirect: route.fullPath } })
+  }
 }
-watch(() => route.path, loadProfile, { flush: 'sync' })
-window.addEventListener('focus', loadProfile)
-window.addEventListener('feature-not-enabled', onFeatureDenied)
-onBeforeUnmount(() => {
-  ++requestVersion
-  window.removeEventListener('focus', loadProfile)
-  window.removeEventListener('feature-not-enabled', onFeatureDenied)
-})
+onBeforeUnmount(() => { ++requestVersion })
+loadPermissions()
 loadProfile()
 </script>
 
 <style scoped>
+.permissions-error { margin-bottom: 16px; color: var(--profile-danger); }
 .settings-page {
   min-height: 100vh;
   box-sizing: border-box;

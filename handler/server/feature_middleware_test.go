@@ -58,6 +58,7 @@ func Test_RequireFeature_AdminPoliciesAndProfileAgreement(t *testing.T) {
 	group.GET("/features", handler.ListFeatures)
 	group.PUT("/features/:key", handler.UpdateFeature)
 	router.GET("/api/user/profile", profile.GetProfile)
+	router.GET("/api/user/permissions", profile.GetPermissions)
 	router.GET("/api/user/audit-logs", RequireFeature(service, feature.AuditLogs), func(c *gin.Context) { c.Status(http.StatusOK) })
 	request := func(method, path, actor, body string) *httptest.ResponseRecorder {
 		t.Helper()
@@ -84,12 +85,14 @@ func Test_RequireFeature_AdminPoliciesAndProfileAgreement(t *testing.T) {
 	require.NotContains(t, saved.Details, "ordinary")
 	require.Contains(t, saved.Details, "user_ids")
 	for _, actor := range []string{"ordinary", "admin"} {
-		res := request("GET", "/api/user/profile", actor, "")
+		res := request("GET", "/api/user/permissions", actor, "")
 		require.Equal(t, 200, res.Code, res.Body.String())
 		var payload struct {
-			Data dto.ProfileResponse `json:"data"`
+			Data dto.PermissionsResponse `json:"data"`
 		}
 		require.NoError(t, json.Unmarshal(res.Body.Bytes(), &payload))
+		require.Equal(t, "no-store", res.Header().Get("Cache-Control"))
+		require.Equal(t, actor == "admin", payload.Data.IsAdmin)
 		require.Equal(t, actor == "ordinary", payload.Data.Features[feature.AuditLogs].Enabled)
 		require.NotContains(t, res.Body.String(), "user_ids")
 		require.NotContains(t, res.Body.String(), "percentage")
@@ -107,5 +110,10 @@ func Test_RequireFeature_AdminPoliciesAndProfileAgreement(t *testing.T) {
 	require.Equal(t, 403, request("GET", "/api/user/audit-logs", "ordinary", "").Code)
 	require.NoError(t, database.Migrator().DropTable(&model.FeatureConfig{}))
 	require.Equal(t, 503, request("GET", "/api/user/audit-logs", "ordinary", "").Code)
-	require.Equal(t, 500, request("GET", "/api/user/profile", "ordinary", "").Code)
+	require.Equal(t, 503, request("GET", "/api/user/permissions", "ordinary", "").Code)
+	require.Equal(t, 401, request("GET", "/api/user/permissions", "", "").Code)
+	res := request("GET", "/api/user/profile", "ordinary", "")
+	require.Equal(t, 200, res.Code)
+	require.NotContains(t, res.Body.String(), "is_admin")
+	require.NotContains(t, res.Body.String(), "features")
 }

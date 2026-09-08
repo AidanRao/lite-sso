@@ -19,7 +19,6 @@ import (
 	"sso-server/handler/oauth2"
 	manageross "sso-server/manager/oss"
 	"sso-server/model"
-	"sso-server/service/feature"
 )
 
 var supportedThirdPartyProviders = []string{"github", "feishu"}
@@ -65,14 +64,8 @@ func (s *UserService) GetProfile(ctx context.Context, userID string) (*dto.Profi
 		return nil, common.ErrUserNotFound
 	}
 
-	states, err := feature.NewService(s.db).States(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
 	return &dto.ProfileResponse{
-		Features: states,
-		User:     dto.ToUserResponse(user),
-		IsAdmin:  s.cfg.IsAdminUser(userID),
+		User: dto.ToUserResponse(user),
 	}, nil
 }
 

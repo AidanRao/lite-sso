@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { permissions } from '../utils/permissions.js'
 import { clearReauth, getCachedReauthToken, invalidateReauthToken, requestReauth } from '../utils/reauthCoordinator.js'
 
 let accessToken = ''
@@ -16,6 +17,7 @@ const refreshClient = axios.create({
 })
 
 api.interceptors.request.use(config => {
+  config.permissionSession = permissions.sessionVersion()
   if (accessToken) {
     config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${accessToken}`
@@ -33,7 +35,7 @@ api.interceptors.response.use(
   response => response.data,
   async error => {
     const originalRequest = error.config
-    if (error.response?.status === 401 && originalRequest && !originalRequest._authRetry && !originalRequest.url?.includes('/auth/token/refresh')) {
+    if (error.response?.status === 401 && originalRequest?.permissionSession === permissions.sessionVersion() && !originalRequest._authRetry && !originalRequest.url?.includes('/auth/token/refresh')) {
       originalRequest._authRetry = true
       try {
         const refreshed = await refreshAccessToken()
@@ -41,12 +43,15 @@ api.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${refreshed}`
         return api(originalRequest)
       } catch (refreshError) {
-        clearAccessToken()
+        if (originalRequest.permissionSession === permissions.sessionVersion()) clearAccessToken()
       }
     }
+    if (error.response?.status === 401 && originalRequest?.permissionSession === permissions.sessionVersion()) clearAccessToken()
     const machineCode = error.response?.data?.data?.code
     if (error.response?.status === 403 && machineCode === 'FEATURE_NOT_ENABLED') {
-      window.dispatchEvent(new CustomEvent('feature-not-enabled', { detail: error.response.data.data.feature_key }))
+      if (originalRequest?.permissionSession === permissions.sessionVersion()) {
+        void permissions.deny(error.response.data.data.feature_key).catch(() => {})
+      }
     }
     const descriptor = error.response?.data?.data?.reauth
     if (
@@ -77,21 +82,28 @@ api.interceptors.response.use(
   }
 )
 
-export const setAccessToken = (token) => {
+export const setAccessToken = (token, { preservePermissions = false } = {}) => {
+  if (!preservePermissions) permissions.reset()
   accessToken = token || ''
 }
 
 export const clearAccessToken = () => {
+  permissions.reset()
   accessToken = ''
   clearReauth()
 }
 
 export const refreshAccessToken = async () => {
   if (!refreshPromise) {
+    const session = permissions.sessionVersion()
     refreshPromise = refreshClient.post('/auth/token/refresh').then(response => {
+      if (session !== permissions.sessionVersion()) throw new Error('登录状态已变化')
       const data = response.data?.data || response.data
-      setAccessToken(data?.access_token)
+      setAccessToken(data?.access_token, { preservePermissions: true })
       return accessToken
+    }).catch(error => {
+      if (session === permissions.sessionVersion()) clearAccessToken()
+      throw error
     }).finally(() => {
       refreshPromise = null
     })
@@ -144,6 +156,7 @@ export const authAPI = {
 export const userAPI = {
   getAuditLogs: (params, signal) => api.get('/user/audit-logs', { params, signal }),
 
+  getPermissions: () => api.get('/user/permissions'),
   getProfile: () => {
     return api.get('/user/profile')
   },

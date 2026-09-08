@@ -43,6 +43,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { adminAPI } from '../api/auth'
+import { permissions } from '../utils/permissions'
 const features = ref([])
 const users = ref([])
 const search = ref('')
@@ -71,6 +72,8 @@ async function save(item) {
   try {
     await adminAPI.updateFeature(item.key, { audience: item.audience, percentage: item.percentage, stage: item.stage, user_ids: item.user_ids })
     notice.value = '功能发布配置已保存'
+    try { await permissions.refresh() }
+    catch { notice.value = '功能发布配置已保存，但当前账号权限刷新失败，请返回账号页重试加载权限。' }
   } catch (err) { notice.value = err.message || '保存失败，请重试' }
   finally { saving.value = false }
 }
