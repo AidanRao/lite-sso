@@ -63,13 +63,18 @@ func NewWithStores(cfg *conf.Config, database *gorm.DB, tokenStore gooauth2.Toke
 		IsGenerateRefresh: false,
 	})
 	manager.MapTokenStorage(tokenStore)
-	manager.MapClientStorage(NewClientStore(database))
+	clientStore := NewClientStore(database)
+	manager.MapClientStorage(clientStore)
 	manager.SetValidateURIHandler(ValidateRedirectURI)
 
 	srv := oauth2server.NewDefaultServer(manager)
+	srv.Config.AllowedCodeChallengeMethods = []gooauth2.CodeChallengeMethod{
+		gooauth2.CodeChallengePlain,
+		gooauth2.CodeChallengeS256,
+	}
 	srv.SetAllowedResponseType(gooauth2.Code)
 	srv.SetAllowedGrantType(gooauth2.AuthorizationCode)
-	srv.SetClientInfoHandler(clientInfoHandler)
+	srv.SetClientInfoHandler(clientInfoHandler(clientStore))
 	srv.SetUserAuthorizationHandler(func(w http.ResponseWriter, r *http.Request) (string, error) {
 		if r == nil {
 			return "", oauth2errors.ErrAccessDenied
@@ -134,6 +139,10 @@ func (o *OAuth2) HandleAuthorize(c *gin.Context) {
 		return
 	}
 	req.RedirectURI = finalRedirectURI
+	if err := (AuthorizationCodePolicy{}).ValidateAuthorizationRequest(c.Request, client.IsPublic()); err != nil {
+		o.redirectOrWriteAuthorizeError(c, req, err)
+		return
+	}
 
 	userID, err := o.server.UserAuthorizationHandler(c.Writer, c.Request)
 	if err != nil {
@@ -200,12 +209,24 @@ func (o *OAuth2) writeTokenError(c *gin.Context, err error) {
 	c.JSON(status, data)
 }
 
-func clientInfoHandler(r *http.Request) (string, string, error) {
-	clientID, clientSecret, err := oauth2server.ClientBasicHandler(r)
-	if err == nil && clientID != "" {
+func clientInfoHandler(clientStore *ClientStore) oauth2server.ClientInfoHandler {
+	return func(r *http.Request) (string, string, error) {
+		clientID, clientSecret, err := oauth2server.ClientBasicHandler(r)
+		if err != nil || clientID == "" {
+			clientID, clientSecret, err = oauth2server.ClientFormHandler(r)
+			if err != nil {
+				return "", "", err
+			}
+		}
+		client, err := clientStore.GetByID(r.Context(), clientID)
+		if err != nil {
+			return "", "", err
+		}
+		if client.IsPublic() && clientSecret != "" {
+			return "", "", oauth2errors.ErrInvalidClient
+		}
 		return clientID, clientSecret, nil
 	}
-	return oauth2server.ClientFormHandler(r)
 }
 
 func toRedisV8Options(cfg *conf.Config) *redis.Options {

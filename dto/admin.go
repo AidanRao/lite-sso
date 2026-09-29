@@ -26,6 +26,7 @@ type OAuthClientResponse struct {
 	ID          uint    `json:"id"`
 	Name        string  `json:"name"`
 	ClientID    string  `json:"client_id"`
+	ClientType  string  `json:"client_type"`
 	HomepageURL string  `json:"homepage_url"`
 	RedirectURI string  `json:"redirect_uri"`
 	LogoutURI   string  `json:"logout_uri"`
@@ -43,7 +44,8 @@ type OAuthClientSecretResponse struct {
 type CreateOAuthClientRequest struct {
 	Name         string `json:"name" binding:"required"`
 	ClientID     string `json:"client_id" binding:"required"`
-	ClientSecret string `json:"client_secret" binding:"required"`
+	ClientSecret string `json:"client_secret"`
+	ClientType   string `json:"client_type"`
 	HomepageURL  string `json:"homepage_url" binding:"required"`
 	RedirectURI  string `json:"redirect_uri" binding:"required"`
 	LogoutURI    string `json:"logout_uri"`
@@ -53,6 +55,7 @@ type CreateOAuthClientRequest struct {
 type UpdateOAuthClientRequest struct {
 	Name         string  `json:"name" binding:"required"`
 	ClientSecret *string `json:"client_secret"`
+	ClientType   *string `json:"client_type"`
 	HomepageURL  string  `json:"homepage_url" binding:"required"`
 	RedirectURI  string  `json:"redirect_uri" binding:"required"`
 	LogoutURI    string  `json:"logout_uri"`

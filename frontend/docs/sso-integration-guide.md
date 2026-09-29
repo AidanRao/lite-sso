@@ -1,6 +1,6 @@
 # 身份认证系统接入指南
 
-其他系统通过 OAuth 2.0 授权码模式接入。接入方后端负责使用授权码换取令牌、获取用户信息，并创建本系统登录会话。
+其他系统通过 OAuth 2.0 授权码模式接入。服务端客户端由接入方后端保管密钥并兑换令牌；无后端的原生客户端应使用公共客户端和 PKCE。
 
 ## 1. 接入信息
 
@@ -9,7 +9,8 @@ SSO 管理员需为接入系统登记客户端信息：
 | 配置项 | 说明 | 示例 |
 | --- | --- | --- |
 | `client_id` | 系统标识 | `order-app` |
-| `client_secret` | 系统密钥，仅保存在后端 | `replace-with-secret` |
+| `client_type` | `confidential` 服务端客户端，或 `public` 公共客户端 | `confidential` |
+| `client_secret` | 服务端客户端密钥，仅保存在后端；公共客户端不使用 | `replace-with-secret` |
 | `homepage_url` | 系统首页地址，用于退出后的 `redirect` 域名校验 | `https://order.example.com` |
 | `redirect_uri` | 登录回调地址 | `https://order.example.com/auth/sso/callback` |
 | `logout_uri` | 可选，全局登出通知地址 | `https://order.example.com/auth/sso/logout` |
@@ -25,6 +26,21 @@ VALUES (
     'https://order.example.com',
     'https://order.example.com/auth/sso/callback',
     'https://order.example.com/auth/sso/logout'
+);
+```
+
+公共客户端示例（如 Android、iOS、桌面客户端或单页 Web 应用；也可在管理界面选择“公共客户端”登记）：
+
+```sql
+INSERT INTO oauth_clients (name, client_id, client_secret, client_type, homepage_url, redirect_uri, logout_uri)
+VALUES (
+    'Android App',
+    'android-app',
+    '',
+    'public',
+    'https://android.example.com',
+    'lite-sso-demo://oauth/callback',
+    ''
 );
 ```
 
@@ -57,7 +73,37 @@ https://sso.aidanrao.top/oauth/authorize
 
 SSO 登录成功后会写入仅供浏览器授权流程使用的 `sso_session` Cookie。该 Cookie 为 `HttpOnly`、`SameSite=Lax`，路径为 `/`；普通 `/api` 接口仍要求 `Authorization: Bearer <access-token>`，不会接受该 Cookie 代替 Access Token。
 
-### 3.2 处理登录回调
+### 3.2 公共客户端（PKCE）
+
+没有安全保密能力的客户端应登记为 `public` 客户端，例如 Android / iOS App、桌面客户端和单页 Web 应用。公共客户端不设置或发送 `client_secret`，授权码流程必须使用 PKCE `S256`。回调 URI 需要登记完整值，例如原生应用可使用 `lite-sso-demo://oauth/callback`；SSO 会精确匹配该值。
+
+客户端使用系统浏览器或平台提供的安全授权代理打开授权页，不要在嵌入式 WebView 中收集 SSO 凭据。每次登录生成独立随机 `state` 和 `code_verifier`；`code_challenge` 为 `BASE64URL_NO_PADDING(SHA256(UTF8(code_verifier)))`。`code_verifier` 应符合 PKCE 长度和字符要求，授权请求固定使用 `code_challenge_method=S256`。
+
+授权请求示例：
+
+```text
+https://sso.aidanrao.top/oauth/authorize
+  ?response_type=code
+  &client_id=android-app
+  &redirect_uri=lite-sso-demo%3A%2F%2Foauth%2Fcallback
+  &state=<random-state>
+  &code_challenge=<base64url-sha256-verifier>
+  &code_challenge_method=S256
+```
+
+回调到 `lite-sso-demo://oauth/callback?code=...&state=...` 后，App 必须先校验 `state`，再使用授权开始时保存的 `code_verifier` 请求令牌：
+
+```http
+POST /oauth/token HTTP/1.1
+Host: sso.aidanrao.top
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&client_id=android-app&code=<code>&redirect_uri=lite-sso-demo%3A%2F%2Foauth%2Fcallback&code_verifier=<original-verifier>
+```
+
+公共客户端不发送 `Authorization: Basic`，也不发送 `client_secret`。成功后可使用 `Authorization: Bearer <access-token>` 调用 `/oauth/userinfo`。当前 SSO 不签发 refresh token；令牌过期后重新走授权流程。建议将临时 `state` / verifier 与登录事务绑定保存，成功或失败后清除，并使用平台提供的安全存储保护本地令牌。
+
+### 3.3 处理服务端登录回调
 
 SSO 登录成功后跳转到接入系统的回调地址：
 
@@ -71,7 +117,7 @@ https://order.example.com/auth/sso/callback?code=<code>&state=<random-state>
 2. 读取 `code`，由后端调用令牌接口。
 3. 校验完成后删除已保存的 `state`，防止重复使用。
 
-### 3.3 使用 Code 换取 Access Token
+### 3.4 使用 Code 换取 Access Token
 
 ```http
 POST /oauth/token HTTP/1.1
@@ -94,7 +140,7 @@ redirect_uri=https%3A%2F%2Forder.example.com%2Fauth%2Fsso%2Fcallback
 }
 ```
 
-### 3.4 获取用户信息
+### 3.5 获取用户信息
 
 ```http
 GET /oauth/userinfo HTTP/1.1
@@ -115,7 +161,7 @@ Authorization: Bearer <access-token>
 
 接入系统应以 `id` 作为 SSO 用户唯一标识，并在获取用户信息后创建自己的登录会话。
 
-### 3.5 退出登录
+### 3.6 退出登录
 
 系统退出分为接入系统本地会话退出和 SSO 全局会话退出：
 
@@ -246,10 +292,10 @@ if __name__ == "__main__":
 
 ## 5. 注意事项
 
-- `client_secret` 只能存放在接入系统后端，不能写入浏览器端代码。
+- `client_secret` 只能用于 `confidential` 服务端客户端并存放在接入系统后端；`public` 客户端不使用 secret。
 - 每次登录必须生成并校验 `state`。
 - 当前 SSO 不签发 `refresh_token`，令牌过期后需要重新登录。
-- 当前未提供 PKCE，推荐由服务端应用接入。
-- `redirect_uri` 必须与管理端登记的地址完全一致，生产环境应使用 HTTPS。
+- 公共客户端必须使用 PKCE `S256`；服务端客户端可继续使用现有 secret 流程，也可选用 PKCE `S256`。
+- `redirect_uri` 必须与管理端登记的地址完全一致。服务端回调生产环境应使用 HTTPS；原生公共客户端可登记精确的自定义 Scheme 回调。
 - 退出登录携带的 `redirect` 只校验域名是否与已登记的 `homepage_url` 一致，不要求路径与 `homepage_url` 相同。
 - 如需联动登出，可登记 `logout_uri`，由 SSO 登出流程通知接入系统清除本地会话。

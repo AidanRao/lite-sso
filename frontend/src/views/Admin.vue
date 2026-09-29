@@ -82,7 +82,10 @@
           <div v-for="client in clients" :key="client.id" class="table-row">
             <div class="client-identity">
               <ApplicationLogo :label="client.name || client.client_id" :src="client.logo_url" size="small" />
-              <strong>{{ client.name }}</strong>
+              <div>
+                <strong>{{ client.name }}</strong>
+                <span class="client-type-label">{{ client.client_type === 'public' ? '公共客户端 · PKCE' : '服务端客户端' }}</span>
+              </div>
             </div>
             <span class="uri-list">{{ client.homepage_url }}</span>
             <span class="uri-list">{{ client.redirect_uri }}</span>
@@ -137,7 +140,14 @@
           <output v-if="editingClient" class="readonly-output mono">{{ form.client_id }}</output>
           <input v-else v-model.trim="form.client_id" required maxlength="50" />
         </label>
-        <div class="secret-field">
+        <label>
+          <span>客户端类型</span>
+          <select v-model="form.client_type" @change="handleClientTypeChange">
+            <option value="confidential">服务端客户端（Client Secret）</option>
+            <option value="public">公共客户端（无后端客户端 / PKCE）</option>
+          </select>
+        </label>
+        <div v-if="form.client_type === 'confidential'" class="secret-field">
           <span>Client Secret</span>
           <div class="secret-row">
             <output class="secret-output mono">{{ secretLoading ? '密钥加载中' : (clientSecretDisplay || '未获取密钥') }}</output>
@@ -294,6 +304,7 @@ const form = reactive({
   name: '',
   client_id: '',
   client_secret: '',
+  client_type: 'confidential',
   homepage_url: '',
   redirect_uri: '',
   logout_uri: ''
@@ -364,12 +375,13 @@ const openEditDialog = async (client) => {
   form.name = client.name || ''
   form.client_id = client.client_id || ''
   form.client_secret = ''
+  form.client_type = client.client_type || 'confidential'
   form.homepage_url = client.homepage_url || ''
   secretVisible.value = false
   form.redirect_uri = client.redirect_uri || ''
   form.logout_uri = client.logout_uri || ''
   dialogOpen.value = true
-  await loadClientSecret(client.id)
+  if (form.client_type === 'confidential') await loadClientSecret(client.id)
 }
 
 const closeDialog = () => {
@@ -382,16 +394,17 @@ const saveClient = async () => {
   saving.value = true
   let savedClient = null
   try {
-    if (!editingClient.value && !form.client_secret) {
+    if (form.client_type === 'confidential' && !form.client_secret) {
       regenerateClientSecret()
     }
     const payload = {
       name: form.name,
+      client_type: form.client_type,
       homepage_url: form.homepage_url,
       redirect_uri: form.redirect_uri,
       logout_uri: form.logout_uri
     }
-    if (!editingClient.value || form.client_secret.trim()) {
+    if (form.client_type === 'confidential' && (!editingClient.value || form.client_secret.trim())) {
       payload.client_secret = form.client_secret.trim()
     }
 
@@ -431,6 +444,7 @@ const resetForm = () => {
   form.name = ''
   form.client_id = ''
   form.client_secret = ''
+  form.client_type = 'confidential'
   form.homepage_url = ''
   secretVisible.value = false
   secretLoading.value = false
@@ -505,16 +519,29 @@ const regenerateClientSecret = () => {
   secretVisible.value = false
 }
 
+const handleClientTypeChange = () => {
+  secretVisible.value = false
+  if (form.client_type === 'public') {
+    form.client_secret = ''
+    secretLoading.value = false
+    return
+  }
+  if (!form.client_secret) regenerateClientSecret()
+}
+
 const loadClientSecret = async (id) => {
+  if (form.client_type !== 'confidential') return
   secretLoading.value = true
   try {
     const response = await adminAPI.getOAuthClientSecret(id)
-    form.client_secret = response?.data?.secret?.client_secret || ''
-    secretVisible.value = false
+    if (form.client_type === 'confidential' && editingClient.value?.id === id) {
+      form.client_secret = response?.data?.secret?.client_secret || ''
+      secretVisible.value = false
+    }
   } catch (error) {
     ElMessage.error(error.message || '获取平台密钥失败')
   } finally {
-    secretLoading.value = false
+    if (form.client_type === 'confidential') secretLoading.value = false
   }
 }
 
@@ -787,6 +814,14 @@ button:disabled {
   white-space: nowrap;
 }
 
+.client-type-label {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .table-row strong,
 .table-row > span,
 .table-row time {
@@ -982,6 +1017,7 @@ button:disabled {
 }
 
 .dialog input,
+.dialog select,
 .dialog textarea {
   width: 100%;
   box-sizing: border-box;
@@ -995,6 +1031,7 @@ button:disabled {
 }
 
 .dialog input:focus,
+.dialog select:focus,
 .dialog textarea:focus {
   border-color: #0f766e;
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);

@@ -213,6 +213,10 @@ func (s *AdminService) CreateOAuthClient(ctx context.Context, req dto.CreateOAut
 	name := strings.TrimSpace(req.Name)
 	clientID := strings.TrimSpace(req.ClientID)
 	clientSecret := strings.TrimSpace(req.ClientSecret)
+	clientType := model.OAuthClientType(strings.TrimSpace(req.ClientType))
+	if clientType == "" {
+		clientType = model.OAuthClientTypeConfidential
+	}
 	homepageURL, err := normalizeURI(req.HomepageURL)
 	if err != nil {
 		return nil, err
@@ -225,8 +229,11 @@ func (s *AdminService) CreateOAuthClient(ctx context.Context, req dto.CreateOAut
 	if err != nil {
 		return nil, err
 	}
-	if name == "" || clientID == "" || clientSecret == "" {
+	if !clientType.IsValid() || name == "" || clientID == "" || (!clientType.IsPublic() && clientSecret == "") {
 		return nil, common.ErrInvalidOAuthClient
+	}
+	if clientType.IsPublic() {
+		clientSecret = ""
 	}
 
 	exists, err := s.clientRepo.ExistsClientID(ctx, clientID, 0)
@@ -241,6 +248,7 @@ func (s *AdminService) CreateOAuthClient(ctx context.Context, req dto.CreateOAut
 		Name:         name,
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
+		ClientType:   clientType,
 		HomepageURL:  homepageURL,
 		RedirectURI:  redirectURI,
 		LogoutURI:    logoutURI,
@@ -260,6 +268,10 @@ func (s *AdminService) UpdateOAuthClient(ctx context.Context, id uint, req dto.U
 	}
 
 	name := strings.TrimSpace(req.Name)
+	clientType := client.ClientType
+	if req.ClientType != nil {
+		clientType = model.OAuthClientType(strings.TrimSpace(*req.ClientType))
+	}
 	homepageURL, err := normalizeURI(req.HomepageURL)
 	if err != nil {
 		return nil, err
@@ -272,7 +284,7 @@ func (s *AdminService) UpdateOAuthClient(ctx context.Context, id uint, req dto.U
 	if err != nil {
 		return nil, err
 	}
-	if name == "" {
+	if name == "" || !clientType.IsValid() {
 		return nil, common.ErrInvalidOAuthClient
 	}
 
@@ -280,8 +292,14 @@ func (s *AdminService) UpdateOAuthClient(ctx context.Context, id uint, req dto.U
 	client.HomepageURL = homepageURL
 	client.RedirectURI = redirectURI
 	client.LogoutURI = logoutURI
-	if req.ClientSecret != nil && strings.TrimSpace(*req.ClientSecret) != "" {
+	client.ClientType = clientType
+	if clientType.IsPublic() {
+		client.ClientSecret = ""
+	} else if req.ClientSecret != nil && strings.TrimSpace(*req.ClientSecret) != "" {
 		client.ClientSecret = strings.TrimSpace(*req.ClientSecret)
+	}
+	if !clientType.IsPublic() && client.ClientSecret == "" {
+		return nil, common.ErrInvalidOAuthClient
 	}
 
 	if err := s.clientRepo.Update(ctx, client); err != nil {
@@ -296,6 +314,7 @@ func toOAuthClientResponse(client *model.OAuthClient) dto.OAuthClientResponse {
 		ID:          client.ID,
 		Name:        client.Name,
 		ClientID:    client.ClientID,
+		ClientType:  string(client.ClientType),
 		HomepageURL: client.HomepageURL,
 		RedirectURI: client.RedirectURI,
 		LogoutURI:   client.LogoutURI,

@@ -2,6 +2,8 @@ package oauth2_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -95,6 +97,9 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	redirectURI := "http://localhost:8000/auth/sso/callback"
 	clientID := "c1"
 	clientSecret := "s1"
+	codeVerifier := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+	codeChallengeDigest := sha256.Sum256([]byte(codeVerifier))
+	codeChallenge := base64.RawURLEncoding.EncodeToString(codeChallengeDigest[:])
 	if err := db.Create(&model.OAuthClient{
 		Name:         "app",
 		ClientID:     clientID,
@@ -141,7 +146,8 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	r.GET("/oauth/userinfo", oauthHandler.HandleUserinfo)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?response_type=code&client_id="+url.QueryEscape(clientID)+"&redirect_uri="+url.QueryEscape(redirectURI)+"&state=xyz", nil)
+	confidentialAuthorizeURL := "/oauth/authorize?response_type=code&client_id=" + url.QueryEscape(clientID) + "&redirect_uri=" + url.QueryEscape(redirectURI) + "&state=xyz&code_challenge=" + url.QueryEscape(codeChallenge) + "&code_challenge_method=S256"
+	req := httptest.NewRequest(http.MethodGet, confidentialAuthorizeURL, nil)
 	req.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusFound {
@@ -168,6 +174,7 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	form.Set("grant_type", "authorization_code")
 	form.Set("code", code)
 	form.Set("redirect_uri", redirectURI)
+	form.Set("code_verifier", codeVerifier)
 
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
@@ -204,5 +211,147 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), email) || strings.Contains(w.Body.String(), "secondary@example.com") {
 		t.Fatalf("expected userinfo to expose only primary email, got %s", w.Body.String())
+	}
+
+	for _, credential := range []struct {
+		name   string
+		secret string
+	}{
+		{name: "missing secret"},
+		{name: "incorrect secret", secret: "incorrect-secret"},
+	} {
+		t.Run(credential.name, func(t *testing.T) {
+			authorizeURL := strings.Replace(confidentialAuthorizeURL, "state=xyz", "state="+url.QueryEscape(credential.name), 1)
+			authorizeRecorder := httptest.NewRecorder()
+			authorizeRequest := httptest.NewRequest(http.MethodGet, authorizeURL, nil)
+			authorizeRequest.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
+			r.ServeHTTP(authorizeRecorder, authorizeRequest)
+			if authorizeRecorder.Code != http.StatusFound {
+				t.Fatalf("expected authorization 302, got %d, body=%s", authorizeRecorder.Code, authorizeRecorder.Body.String())
+			}
+			callback, parseErr := url.Parse(authorizeRecorder.Header().Get("Location"))
+			if parseErr != nil {
+				t.Fatalf("parse callback: %v", parseErr)
+			}
+			credentialForm := url.Values{}
+			credentialForm.Set("grant_type", "authorization_code")
+			credentialForm.Set("client_id", clientID)
+			credentialForm.Set("code", callback.Query().Get("code"))
+			credentialForm.Set("redirect_uri", redirectURI)
+			credentialForm.Set("code_verifier", codeVerifier)
+			tokenRecorder := httptest.NewRecorder()
+			tokenRequest := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(credentialForm.Encode()))
+			tokenRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if credential.secret != "" {
+				tokenRequest.SetBasicAuth(clientID, credential.secret)
+			}
+			r.ServeHTTP(tokenRecorder, tokenRequest)
+			if tokenRecorder.Code == http.StatusOK {
+				t.Fatalf("expected %s to fail, got %s", credential.name, tokenRecorder.Body.String())
+			}
+		})
+	}
+
+	publicRedirectURI := "lite-sso-demo://oauth/callback"
+	publicClientID := "android-app"
+	if err := db.Create(&model.OAuthClient{
+		Name:         "Android App",
+		ClientID:     publicClientID,
+		ClientSecret: "",
+		ClientType:   model.OAuthClientTypePublic,
+		HomepageURL:  "https://android.example.com",
+		RedirectURI:  publicRedirectURI,
+	}).Error; err != nil {
+		t.Fatalf("create public client: %v", err)
+	}
+
+	publicAuthorizeURL := "/oauth/authorize?response_type=code&client_id=" + url.QueryEscape(publicClientID) +
+		"&redirect_uri=" + url.QueryEscape(publicRedirectURI) + "&state=android-state&code_challenge=" + url.QueryEscape(codeChallenge) +
+		"&code_challenge_method=S256"
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, publicAuthorizeURL, nil)
+	req.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected public authorization 302, got %d, body=%s", w.Code, w.Body.String())
+	}
+	publicCallback, err := url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse public callback: %v", err)
+	}
+	publicCode := publicCallback.Query().Get("code")
+	if publicCode == "" || publicCallback.Query().Get("state") != "android-state" {
+		t.Fatalf("expected public authorization code and state, got %q", publicCallback.String())
+	}
+
+	publicForm := url.Values{}
+	publicForm.Set("grant_type", "authorization_code")
+	publicForm.Set("client_id", publicClientID)
+	publicForm.Set("code", publicCode)
+	publicForm.Set("redirect_uri", publicRedirectURI)
+	publicForm.Set("code_verifier", codeVerifier)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(publicForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected public token exchange 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	badVerifierAuthorizeURL := strings.Replace(publicAuthorizeURL, "android-state", "bad-verifier-state", 1)
+	req = httptest.NewRequest(http.MethodGet, badVerifierAuthorizeURL, nil)
+	req.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected second public authorization 302, got %d, body=%s", w.Code, w.Body.String())
+	}
+	badVerifierCallback, err := url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse second public callback: %v", err)
+	}
+	publicForm.Set("code", badVerifierCallback.Query().Get("code"))
+	publicForm.Set("code_verifier", "wrong-verifier")
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(publicForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.ServeHTTP(w, req)
+	if w.Code == http.StatusOK {
+		t.Fatalf("expected wrong code verifier to fail, got %s", w.Body.String())
+	}
+
+	missingVerifierAuthorizeURL := strings.Replace(publicAuthorizeURL, "android-state", "missing-verifier-state", 1)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, missingVerifierAuthorizeURL, nil)
+	req.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected third public authorization 302, got %d, body=%s", w.Code, w.Body.String())
+	}
+	missingVerifierCallback, err := url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse third public callback: %v", err)
+	}
+	publicForm.Set("code", missingVerifierCallback.Query().Get("code"))
+	publicForm.Set("code_verifier", "")
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(publicForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.ServeHTTP(w, req)
+	if w.Code == http.StatusOK {
+		t.Fatalf("expected missing code verifier to fail, got %s", w.Body.String())
+	}
+
+	missingChallengeURL := "/oauth/authorize?response_type=code&client_id=" + url.QueryEscape(publicClientID) + "&redirect_uri=" + url.QueryEscape(publicRedirectURI)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, missingChallengeURL, nil)
+	req.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected missing public challenge to redirect with error, got %d, body=%s", w.Code, w.Body.String())
+	}
+	missingChallengeCallback, err := url.Parse(w.Header().Get("Location"))
+	if err != nil || missingChallengeCallback.Query().Get("error") == "" {
+		t.Fatalf("expected callback error for missing public challenge, got %q", w.Header().Get("Location"))
 	}
 }
