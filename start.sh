@@ -83,7 +83,6 @@ build_frontend() {
 start_server() {
     info "启动 SSO 服务器..."
     export ENV=local
-    export DEV_ECHO_OTP=true
     go run ./cmd/server
 }
 

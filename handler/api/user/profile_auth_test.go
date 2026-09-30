@@ -153,7 +153,6 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 				ID    string  `json:"id"`
 				Email *string `json:"email"`
 			} `json:"user"`
-			IsAdmin bool `json:"is_admin"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -169,6 +168,11 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 	data, ok := envelope["data"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected object data, got %s", w.Body.String())
+	}
+	for _, key := range []string{"is_admin", "features"} {
+		if _, exists := data[key]; exists {
+			t.Fatalf("profile must not include %s: %s", key, w.Body.String())
+		}
 	}
 	if _, exists := data["applications"]; exists {
 		t.Fatalf("profile must not include applications: %s", w.Body.String())

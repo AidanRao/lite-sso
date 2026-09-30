@@ -22,9 +22,6 @@ func ClearLoginCookies(c *gin.Context, secure bool) {
 }
 
 func writeRefreshCookie(c *gin.Context, token string, secure bool, ttl time.Duration) {
-	if ttl <= 0 {
-		ttl = 30 * 24 * time.Hour
-	}
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     serviceauth.RefreshTokenCookieName,
 		Value:    token,

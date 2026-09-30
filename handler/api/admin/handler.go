@@ -16,6 +16,7 @@ import (
 	"sso-server/dto"
 	"sso-server/handler/audit"
 	manageross "sso-server/manager/oss"
+	"sso-server/service/feature"
 	"sso-server/service/systemadmin"
 )
 
@@ -27,13 +28,15 @@ type AdminDeps struct {
 
 // AdminHandler handles system administration API requests.
 type AdminHandler struct {
-	admin *systemadmin.AdminService
+	admin    *systemadmin.AdminService
+	features *feature.Service
 }
 
 // NewAdminHandler creates a system administration handler.
 func NewAdminHandler(deps AdminDeps) *AdminHandler {
 	return &AdminHandler{
-		admin: systemadmin.NewAdminService(deps.Config, deps.DB, deps.ImageStore),
+		features: feature.NewService(deps.DB),
+		admin:    systemadmin.NewAdminService(deps.Config, deps.DB, deps.ImageStore),
 	}
 }
 
@@ -121,7 +124,7 @@ func (h *AdminHandler) CreateOAuthClient(c *gin.Context) {
 
 	audit.Target(c, "oauth_client", strconv.FormatUint(uint64(client.ID), 10))
 	audit.Client(c, client.ClientID)
-	audit.Changed(c, "name", "client_secret", "homepage_url", "redirect_uri", "logout_uri")
+	audit.Changed(c, "name", "client_type", "client_secret", "homepage_url", "redirect_uri", "logout_uri")
 	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"client": client}))
 }
@@ -148,7 +151,7 @@ func (h *AdminHandler) UpdateOAuthClient(c *gin.Context) {
 
 	audit.Target(c, "oauth_client", strconv.FormatUint(uint64(client.ID), 10))
 	audit.Client(c, client.ClientID)
-	audit.Changed(c, "name", "homepage_url", "redirect_uri", "logout_uri")
+	audit.Changed(c, "name", "client_type", "homepage_url", "redirect_uri", "logout_uri")
 	if req.ClientSecret != nil {
 		audit.Changed(c, "client_secret")
 	}

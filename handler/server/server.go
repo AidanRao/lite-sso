@@ -31,7 +31,13 @@ func New(cfg *conf.Config) (*Server, error) {
 	if err := cfg.ValidateAuthSecrets(); err != nil {
 		return nil, err
 	}
-	if err := cfg.ValidateOSS(); err != nil {
+	if err := cfg.ValidateOAuthTokenLifetimes(); err != nil {
+		return nil, err
+	}
+	if err := cfg.ValidateSessionTokenLifetimes(); err != nil {
+		return nil, err
+	}
+	if err := cfg.OSS.Validate(); err != nil {
 		return nil, err
 	}
 	if err := cfg.ValidatePasskey(); err != nil {
@@ -84,7 +90,9 @@ func New(cfg *conf.Config) (*Server, error) {
 		messageCenterClient: messageCenterClient,
 		imageStore:          imageStore,
 	}
-	srv.registerRoutes()
+	if err := srv.registerRoutes(); err != nil {
+		return nil, fmt.Errorf("initialize OAuth: %w", err)
+	}
 	return srv, nil
 }
 
@@ -121,7 +129,7 @@ func newMessageCenterClient(cfg *conf.Config) (*messagecenter.Client, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("create message center client: configuration is required")
 	}
-	if conf.GetEnvironmentName() == string(conf.EnvLocal) && cfg.Dev.SkipSendMessage {
+	if cfg.Dev.SkipSendMessage {
 		return nil, nil
 	}
 

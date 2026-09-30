@@ -2,19 +2,28 @@ database:
   max_open_conns: 2 # DATABASE_MAX_OPEN_CONNS
   max_idle_conns: 1 # DATABASE_MAX_IDLE_CONNS
 
+server:
+  cookie_secure: true
+
 dev:
   skip_send_message: false
   fixed_email_otp: ""
 
-security:
-  access_token_expire: "12h"
+tokens:
+  oauth:
+    access_token_ttl: "30m"
+    authorization_code_ttl: "5m"
+    refresh_token_ttl: "720h"
+    issuer: "https://sso.aidanrao.top"
+  session:
+    access_token_ttl: "15m"
+    refresh_token_ttl: "720h"
+  reauth:
+    grant_ttl: "5m"
 
 auth:
   otp_expire: "5m"
   otp_max_attempts: 5
-  access_token_ttl: "15m"
-  refresh_token_ttl: "720h"
-  reauth_token_ttl: "5m"
   password_account_fail_limit: 5
   password_device_fail_limit: 20
   password_ip_fail_limit: 100
@@ -39,7 +48,6 @@ message_center:
 
 oss:
   region: "cn-beijing"
-  endpoint: ""
   bucket: "aidan-space"
   avatar_prefix: "sso/user-assets"
   public_base_url: "https://aidan-space.oss-cn-beijing.aliyuncs.com"

@@ -69,17 +69,11 @@ type accessClaims struct {
 }
 
 func (s *AuthService) accessTokenTTL() time.Duration {
-	if s.cfg != nil && s.cfg.Auth.AccessTokenTTL > 0 {
-		return s.cfg.Auth.AccessTokenTTL
-	}
-	return 15 * time.Minute
+	return s.cfg.Tokens.Session.AccessTokenTTL
 }
 
 func (s *AuthService) refreshTokenTTL() time.Duration {
-	if s.cfg != nil && s.cfg.Auth.RefreshTokenTTL > 0 {
-		return s.cfg.Auth.RefreshTokenTTL
-	}
-	return 30 * 24 * time.Hour
+	return s.cfg.Tokens.Session.RefreshTokenTTL
 }
 
 // RefreshTokenTTL returns the configured lifetime of a refresh token.
@@ -88,10 +82,7 @@ func (s *AuthService) RefreshTokenTTL() time.Duration {
 }
 
 func (s *AuthService) jwtSecret() []byte {
-	if s.cfg != nil && strings.TrimSpace(s.cfg.Auth.JWTSecret) != "" {
-		return []byte(s.cfg.Auth.JWTSecret)
-	}
-	return []byte("test-only-jwt-secret")
+	return []byte(s.cfg.Auth.JWTSecret)
 }
 
 func refreshHash(token string) string {

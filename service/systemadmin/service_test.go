@@ -12,6 +12,7 @@ import (
 
 	"sso-server/common"
 	"sso-server/conf"
+	"sso-server/dto"
 	"sso-server/model"
 )
 
@@ -117,6 +118,33 @@ func Test_UploadOAuthClientLogo_RequiresStorageAndClient(t *testing.T) {
 	_, err = service.UploadOAuthClientLogo(context.Background(), 1, "image/png", ".png", bytes.NewBufferString("image"), 5)
 	if !errors.Is(err, common.ErrOAuthClientNotFound) {
 		t.Fatalf("expected missing client error, got %v", err)
+	}
+}
+
+func Test_OAuthClientClaims_CreateAndUpdate(t *testing.T) {
+	database := newOAuthClientLogoTestDB(t)
+	service := NewAdminService(&conf.Config{}, database, nil)
+	request := dto.CreateOAuthClientRequest{Name: "Android", ClientID: "android-app", ClientType: "public", HomepageURL: "https://app.example.com", RedirectURI: "app://callback", Audiences: []string{"classhopper-api", "profile-api"}, AllowedScopes: []string{"courses:read", "profile:read"}}
+	created, err := service.CreateOAuthClient(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created.Audiences) != 2 || len(created.AllowedScopes) != 2 {
+		t.Fatalf("claim configuration was not returned: %#v", created)
+	}
+	updated, err := service.UpdateOAuthClient(context.Background(), created.ID, dto.UpdateOAuthClientRequest{Name: request.Name, ClientType: &request.ClientType, HomepageURL: request.HomepageURL, RedirectURI: request.RedirectURI, Audiences: []string{"classhopper-api"}, AllowedScopes: []string{"courses:read"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.Audiences) != 1 || updated.Audiences[0] != "classhopper-api" {
+		t.Fatalf("claim update failed: %#v", updated)
+	}
+	var saved model.OAuthClient
+	if err := database.First(&saved, created.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.AllowedScopes) != 1 || saved.AllowedScopes[0] != "courses:read" {
+		t.Fatalf("claim configuration not persisted: %#v", saved)
 	}
 }
 

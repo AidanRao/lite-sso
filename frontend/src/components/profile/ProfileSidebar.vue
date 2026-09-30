@@ -26,10 +26,10 @@
         <Shield :size="16" aria-hidden="true" />
         管理后台
       </RouterLink>
-      <button class="sidebar-action" type="button" @click="logout">
+      <RouterLink class="sidebar-action" to="/logout">
         <LogOut :size="16" aria-hidden="true" />
         退出登录
-      </button>
+      </RouterLink>
     </div>
   </aside>
 </template>
@@ -38,9 +38,10 @@
 import { computed } from 'vue'
 import { AppWindow, KeyRound, LogOut, Mail, Paintbrush, RadioTower, ScrollText, Shield, UserRound } from 'lucide-vue-next'
 import ProfileSidebarItem from './ProfileSidebarItem.vue'
-import { submitGlobalLogout } from '../../utils/logout'
+import { filterFeatureNavigation } from '../../utils/features'
 
 const props = defineProps({
+  features: { type: Object, default: () => ({}) },
   user: {
     type: Object,
     default: null
@@ -51,7 +52,7 @@ const props = defineProps({
   }
 })
 
-const navigation = [
+const navigationItems = [
   {
     label: 'Account',
     to: '/profile/account',
@@ -95,17 +96,15 @@ const navigation = [
   {
     label: 'Archived',
     children: [
-      { label: '操作日志', to: '/profile/archived/audit-logs', icon: ScrollText }
+      { featureKey: 'profile.audit_logs', label: '操作日志', to: '/profile/archived/audit-logs', icon: ScrollText }
     ]
   }
 ]
 
+const navigation = computed(() => filterFeatureNavigation(navigationItems, props.features))
+
 const displayName = computed(() => props.user?.username || props.user?.email || 'Lite SSO 用户')
 const avatarInitial = computed(() => displayName.value.slice(0, 1).toUpperCase())
-
-const logout = () => {
-  submitGlobalLogout('/login')
-}
 </script>
 
 <style scoped>

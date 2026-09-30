@@ -99,7 +99,7 @@ func (s *AuthService) SendEmailOTP(ctx context.Context, email string, captchaID 
 }
 
 func (s *AuthService) skipMessageSend() bool {
-	return s.cfg != nil && conf.GetEnvironmentName() == string(conf.EnvLocal) && s.cfg.Dev.SkipSendMessage
+	return s.cfg != nil && s.cfg.Dev.SkipSendMessage
 }
 
 func (s *AuthService) emailOTP() (string, error) {
@@ -110,7 +110,7 @@ func (s *AuthService) emailOTP() (string, error) {
 }
 
 func (s *AuthService) useFixedEmailOTP() bool {
-	return s.cfg != nil && conf.GetEnvironmentName() == string(conf.EnvLocal) && strings.TrimSpace(s.cfg.Dev.FixedEmailOTP) != ""
+	return s.cfg != nil && strings.TrimSpace(s.cfg.Dev.FixedEmailOTP) != ""
 }
 
 func (s *AuthService) verifyCaptcha(ctx context.Context, captchaID string, captchaAnswer string) (bool, error) {

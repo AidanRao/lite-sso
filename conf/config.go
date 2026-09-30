@@ -10,31 +10,11 @@ import (
 	"github.com/spf13/viper"
 )
 
-type Environment string
-
-const (
-	EnvLocal Environment = "local"
-	EnvTest  Environment = "test"
-	EnvProd  Environment = "prod"
-)
-
-func GetEnv() Environment {
-	name := GetEnvironmentName()
-	switch name {
-	case string(EnvProd):
-		return EnvProd
-	case string(EnvTest):
-		return EnvTest
-	default:
-		return EnvLocal
-	}
-}
-
-// GetEnvironmentName returns the normalized environment name used for Redis key isolation.
+// GetEnvironmentName returns the name used to select configuration and isolate Redis keys.
 func GetEnvironmentName() string {
 	env := strings.ToLower(strings.TrimSpace(os.Getenv("ENV")))
 	if env == "" {
-		return string(EnvLocal)
+		return "local"
 	}
 	return env
 }
@@ -44,7 +24,7 @@ type Config struct {
 	Server        ServerConfig          `mapstructure:"server"`
 	Database      DatabaseConfig        `mapstructure:"database"`
 	Cache         CacheConfig           `mapstructure:"cache"`
-	Security      SecurityConfig        `mapstructure:"security"`
+	Tokens        TokenConfig           `mapstructure:"tokens"`
 	Auth          AuthConfig            `mapstructure:"auth"`
 	MessageCenter MessageCenterConfig   `mapstructure:"message_center"`
 	Dev           DevConfig             `mapstructure:"dev"`
@@ -93,9 +73,6 @@ func (c *Config) ValidatePasskey() error {
 	if c == nil {
 		return errors.New("configuration is required")
 	}
-	if GetEnv() == EnvLocal {
-		return nil
-	}
 	if strings.TrimSpace(c.Passkey.RPID) == "" {
 		return errors.New("passkey.rp_id is required")
 	}
@@ -122,61 +99,8 @@ func (c *Config) ValidateReauth() error {
 	if c == nil {
 		return errors.New("configuration is required")
 	}
-	if GetEnv() == EnvLocal {
-		return nil
-	}
-	if c.Auth.ReauthTokenTTL <= 0 {
-		return errors.New("auth.reauth_token_ttl must be positive")
-	}
-	return nil
-}
-
-// OSSConfig contains the Alibaba Cloud OSS settings used for user avatars.
-type OSSConfig struct {
-	Region          string `mapstructure:"region"`
-	Endpoint        string `mapstructure:"endpoint"`
-	Bucket          string `mapstructure:"bucket"`
-	AccessKeyID     string `mapstructure:"access_key_id"`
-	AccessKeySecret string `mapstructure:"access_key_secret"`
-	AvatarPrefix    string `mapstructure:"avatar_prefix"`
-	PublicBaseURL   string `mapstructure:"public_base_url"`
-}
-
-// IsConfigured reports whether any OSS setting has been provided.
-func (c OSSConfig) IsConfigured() bool {
-	return strings.TrimSpace(c.Region) != "" ||
-		strings.TrimSpace(c.Endpoint) != "" ||
-		strings.TrimSpace(c.Bucket) != "" ||
-		strings.TrimSpace(c.AccessKeyID) != "" ||
-		strings.TrimSpace(c.AccessKeySecret) != "" ||
-		strings.TrimSpace(c.AvatarPrefix) != "" ||
-		strings.TrimSpace(c.PublicBaseURL) != ""
-}
-
-// ValidateOSS checks that all required OSS settings are supplied together.
-func (c *Config) ValidateOSS() error {
-	if c == nil {
-		return errors.New("configuration is required")
-	}
-	if !c.OSS.IsConfigured() {
-		if GetEnv() == EnvProd {
-			return errors.New("oss configuration is required in production")
-		}
-		return nil
-	}
-
-	values := map[string]string{
-		"oss.region":            c.OSS.Region,
-		"oss.bucket":            c.OSS.Bucket,
-		"oss.access_key_id":     c.OSS.AccessKeyID,
-		"oss.access_key_secret": c.OSS.AccessKeySecret,
-		"oss.avatar_prefix":     c.OSS.AvatarPrefix,
-		"oss.public_base_url":   c.OSS.PublicBaseURL,
-	}
-	for name, value := range values {
-		if strings.TrimSpace(value) == "" {
-			return errors.New(name + " is required when OSS is configured")
-		}
+	if c.Tokens.Reauth.GrantTTL <= 0 {
+		return errors.New("tokens.reauth.grant_ttl must be positive")
 	}
 	return nil
 }
@@ -228,6 +152,7 @@ func (c FeishuOAuthConfig) IsConfigured() bool {
 type ServerConfig struct {
 	Port              string `mapstructure:"port"`
 	TrustProxyHeaders bool   `mapstructure:"trust_proxy_headers"`
+	CookieSecure      bool   `mapstructure:"cookie_secure"`
 }
 
 type DatabaseConfig struct {
@@ -245,8 +170,49 @@ type CacheConfig struct {
 	URL string `mapstructure:"url"`
 }
 
-type SecurityConfig struct {
-	AccessTokenExpire time.Duration `mapstructure:"access_token_expire"`
+// TokenConfig contains lifetimes grouped by the token's purpose and issuer.
+type TokenConfig struct {
+	OAuth   OAuthTokenConfig   `mapstructure:"oauth"`
+	Session SessionTokenConfig `mapstructure:"session"`
+	Reauth  ReauthTokenConfig  `mapstructure:"reauth"`
+}
+
+// OAuthTokenConfig contains lifetimes for OAuth authorization grants and tokens.
+type OAuthTokenConfig struct {
+	AccessTokenTTL       time.Duration `mapstructure:"access_token_ttl"`
+	AuthorizationCodeTTL time.Duration `mapstructure:"authorization_code_ttl"`
+	RefreshTokenTTL      time.Duration `mapstructure:"refresh_token_ttl"`
+	Issuer               string        `mapstructure:"issuer"`
+	SigningKID           string        `mapstructure:"signing_kid"`
+	SigningPrivateKeyPEM string        `mapstructure:"signing_private_key_pem"`
+	PreviousPublicKeys   string        `mapstructure:"previous_public_keys"`
+}
+
+// ValidateOAuthTokenLifetimes checks the configured OAuth token lifetimes.
+func (c *Config) ValidateOAuthTokenLifetimes() error {
+	if c.Tokens.OAuth.AccessTokenTTL <= 0 || c.Tokens.OAuth.AuthorizationCodeTTL <= 0 || c.Tokens.OAuth.RefreshTokenTTL <= 0 {
+		return errors.New("OAuth token lifetimes must be positive")
+	}
+	return nil
+}
+
+// SessionTokenConfig contains lifetimes for first-party login sessions.
+type SessionTokenConfig struct {
+	AccessTokenTTL  time.Duration `mapstructure:"access_token_ttl"`
+	RefreshTokenTTL time.Duration `mapstructure:"refresh_token_ttl"`
+}
+
+// ValidateSessionTokenLifetimes checks the first-party session token lifetimes.
+func (c *Config) ValidateSessionTokenLifetimes() error {
+	if c.Tokens.Session.AccessTokenTTL <= 0 || c.Tokens.Session.RefreshTokenTTL <= 0 {
+		return errors.New("session token lifetimes must be positive")
+	}
+	return nil
+}
+
+// ReauthTokenConfig contains lifetime settings for reauthentication grants.
+type ReauthTokenConfig struct {
+	GrantTTL time.Duration `mapstructure:"grant_ttl"`
 }
 
 type AuthConfig struct {
@@ -254,9 +220,6 @@ type AuthConfig struct {
 	JWTSecret                 string        `mapstructure:"jwt_secret"`
 	OTPExpire                 time.Duration `mapstructure:"otp_expire"`
 	OTPMaxAttempts            int           `mapstructure:"otp_max_attempts"`
-	AccessTokenTTL            time.Duration `mapstructure:"access_token_ttl"`
-	RefreshTokenTTL           time.Duration `mapstructure:"refresh_token_ttl"`
-	ReauthTokenTTL            time.Duration `mapstructure:"reauth_token_ttl"`
 	PasswordAccountFailLimit  int           `mapstructure:"password_account_fail_limit"`
 	PasswordDeviceFailLimit   int           `mapstructure:"password_device_fail_limit"`
 	PasswordIPFailLimit       int           `mapstructure:"password_ip_fail_limit"`
@@ -268,9 +231,6 @@ type AuthConfig struct {
 func (c *Config) ValidateAuthSecrets() error {
 	if c == nil {
 		return errors.New("configuration is required")
-	}
-	if GetEnv() != EnvProd {
-		return nil
 	}
 	if len(strings.TrimSpace(c.Auth.OTPSecret)) < 32 {
 		return errors.New("auth.otp_secret must contain at least 32 characters")
@@ -293,7 +253,6 @@ type DevConfig struct {
 }
 
 func Load() (*Config, error) {
-	env := GetEnv()
 	v := viper.New()
 
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -302,12 +261,12 @@ func Load() (*Config, error) {
 	if configFile := os.Getenv("CONFIG_FILE"); configFile != "" {
 		v.SetConfigFile(configFile)
 	} else {
-		v.SetConfigName(string(env))
+		v.SetConfigName(GetEnvironmentName())
 		v.AddConfigPath("conf")
 		v.AddConfigPath(".")
 	}
 
-	setDefaults(v, env)
+	setDefaults(v)
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := errors.AsType[viper.ConfigFileNotFoundError](err); !ok {
@@ -335,14 +294,20 @@ func bindEnvs(v *viper.Viper) {
 		"database.name",
 		"database.max_open_conns",
 		"database.max_idle_conns",
-		"security.access_token_expire",
+		"tokens.oauth.access_token_ttl",
+		"tokens.oauth.authorization_code_ttl",
+		"tokens.oauth.refresh_token_ttl",
+		"tokens.oauth.issuer",
+		"tokens.oauth.signing_kid",
+		"tokens.oauth.signing_private_key_pem",
+		"tokens.oauth.previous_public_keys",
+		"tokens.session.access_token_ttl",
+		"tokens.session.refresh_token_ttl",
+		"tokens.reauth.grant_ttl",
 		"auth.otp_secret",
 		"auth.jwt_secret",
 		"auth.otp_expire",
 		"auth.otp_max_attempts",
-		"auth.access_token_ttl",
-		"auth.refresh_token_ttl",
-		"auth.reauth_token_ttl",
 		"auth.password_account_fail_limit",
 		"auth.password_device_fail_limit",
 		"auth.password_ip_fail_limit",
@@ -362,6 +327,7 @@ func bindEnvs(v *viper.Viper) {
 		"oauth.feishu.redirect_uri",
 		"admin.user_ids",
 		"server.trust_proxy_headers",
+		"server.cookie_secure",
 		"oss.region",
 		"oss.endpoint",
 		"oss.bucket",
@@ -382,7 +348,6 @@ func bindEnvs(v *viper.Viper) {
 			panic(err)
 		}
 	}
-
 	if err := v.BindEnv("server.port", "PORT", "SERVER_PORT"); err != nil {
 		panic(err)
 	}
@@ -394,7 +359,7 @@ func bindEnvs(v *viper.Viper) {
 	}
 }
 
-func setDefaults(v *viper.Viper, env Environment) {
+func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.max_open_conns", 2)
 	v.SetDefault("database.max_idle_conns", 1)
 	v.SetDefault("audit.queue_capacity", 1024)
@@ -402,26 +367,18 @@ func setDefaults(v *viper.Viper, env Environment) {
 	v.SetDefault("audit.flush_interval", "1s")
 	v.SetDefault("audit.write_timeout", "2s")
 	v.SetDefault("passkey.ceremony_ttl", "5m")
-	v.SetDefault("auth.reauth_token_ttl", "5m")
+	v.SetDefault("tokens.oauth.access_token_ttl", "30m")
+	v.SetDefault("tokens.oauth.authorization_code_ttl", "5m")
+	v.SetDefault("tokens.oauth.refresh_token_ttl", "720h")
+	v.SetDefault("tokens.session.access_token_ttl", "15m")
+	v.SetDefault("tokens.session.refresh_token_ttl", "720h")
+	v.SetDefault("tokens.reauth.grant_ttl", "5m")
 	v.SetDefault("email.max_addresses", 3)
-	if env == EnvLocal {
-		v.SetDefault("passkey.rp_id", "localhost")
-		v.SetDefault("passkey.rp_origins", []string{"http://localhost:5173", "http://localhost:8080"})
-		v.SetDefault("passkey.rp_display_name", "Lite SSO")
-		v.SetDefault("email.verification_base_url", "http://localhost:5173")
-	}
-	if env != EnvProd {
-		return
-	}
-
 	defaults := map[string]any{
 		"server.port":                       "8080",
 		"server.trust_proxy_headers":        false,
-		"security.access_token_expire":      "12h",
 		"auth.otp_expire":                   "5m",
 		"auth.otp_max_attempts":             5,
-		"auth.access_token_ttl":             "15m",
-		"auth.refresh_token_ttl":            "720h",
 		"auth.password_account_fail_limit":  5,
 		"auth.password_device_fail_limit":   20,
 		"auth.password_ip_fail_limit":       100,

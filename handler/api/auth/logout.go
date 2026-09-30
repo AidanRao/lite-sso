@@ -1,19 +1,14 @@
 package auth
 
 import (
-	"embed"
-	"encoding/json"
-	"html/template"
 	"log"
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 
 	"github.com/gin-gonic/gin"
 
 	"sso-server/common/ecode"
-	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
 	"sso-server/handler/audit"
@@ -21,23 +16,8 @@ import (
 	serviceauth "sso-server/service/auth"
 )
 
-//go:embed templates/logout.html
-var logoutTemplateFS embed.FS
-
-var (
-	logoutTemplate     *template.Template
-	logoutTemplateOnce sync.Once
-)
-
-func getLogoutTemplate() *template.Template {
-	logoutTemplateOnce.Do(func() {
-		logoutTemplate = template.Must(template.ParseFS(logoutTemplateFS, "templates/logout.html"))
-	})
-	return logoutTemplate
-}
-
 func (h *AuthHandler) Logout(c *gin.Context) {
-	ClearLoginCookies(c, conf.GetEnv() == conf.EnvProd)
+	ClearLoginCookies(c, h.cookieSecure)
 
 	sessionID := c.GetString("session_id")
 	refreshTokenRevoked := false
@@ -88,6 +68,12 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
 		return
 	}
+	if h.oauth2 != nil && c.GetString("user_id") != "" {
+		if err := h.oauth2.RevokeUserRefreshTokens(c.Request.Context(), c.GetString("user_id")); err != nil {
+			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "退出失败", Data: nil})
+			return
+		}
+	}
 	audit.Actor(c, c.GetString("user_id"), sessionID)
 	if c.GetBool("fixture_session") {
 		_ = h.kv.Del(c.Request.Context(), kv.KeySession(sessionID))
@@ -109,21 +95,14 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		redirectURI = ""
 	}
 
-	if len(logoutURIs) == 0 {
-		if redirectURI != "" {
-			c.Redirect(http.StatusFound, redirectURI)
-			return
-		}
-		c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"logged_out": true}))
-		return
+	if redirectURI == "" {
+		redirectURI = "/login"
 	}
-
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	logoutURIsJSON, _ := json.Marshal(logoutURIs)
-	getLogoutTemplate().Execute(c.Writer, gin.H{
-		"LogoutURIs":  template.JS(logoutURIsJSON),
-		"RedirectURI": redirectURI,
-	})
+	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{
+		"logged_out":   true,
+		"logout_uris":  logoutURIs,
+		"redirect_uri": redirectURI,
+	}))
 }
 
 func (h *AuthHandler) getLogoutClients(c *gin.Context) []model.OAuthClient {
@@ -141,7 +120,7 @@ func (h *AuthHandler) getLogoutClients(c *gin.Context) []model.OAuthClient {
 }
 
 func getLogoutURIs(clients []model.OAuthClient) []string {
-	var uris []string
+	uris := make([]string, 0, len(clients))
 	for _, client := range clients {
 		if client.LogoutURI == "" {
 			continue
@@ -152,8 +131,18 @@ func getLogoutURIs(clients []model.OAuthClient) []string {
 }
 
 func isAllowedLogoutRedirect(clients []model.OAuthClient, redirectURI string) bool {
-	if isRelativeLogoutRedirect(redirectURI) {
-		return true
+	if strings.ContainsAny(redirectURI, "\\\r\n\t") {
+		return false
+	}
+	redirect, err := url.Parse(redirectURI)
+	if err != nil || redirect.User != nil {
+		return false
+	}
+	if redirect.Scheme != "" && redirect.Scheme != "http" && redirect.Scheme != "https" {
+		return false
+	}
+	if redirect.Scheme == "" {
+		return isRelativeLogoutRedirect(redirectURI)
 	}
 
 	for _, client := range clients {
@@ -172,7 +161,7 @@ func isRelativeLogoutRedirect(redirectURI string) bool {
 	if err != nil {
 		return false
 	}
-	return !redirect.IsAbs() && redirect.Host == "" && strings.HasPrefix(redirect.Path, "/")
+	return !redirect.IsAbs() && redirect.Host == "" && strings.HasPrefix(redirect.Path, "/") && !strings.HasPrefix(redirectURI, "//")
 }
 
 func isSameHostname(homepageURL string, redirectURI string) bool {

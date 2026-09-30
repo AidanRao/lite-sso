@@ -159,11 +159,27 @@ func TestAdminOAuthClients_CreateAndUpdate(t *testing.T) {
 	if client.ClientSecret != "secret-1" {
 		t.Fatalf("expected secret preserved, got %q", client.ClientSecret)
 	}
+	if client.ClientType != model.OAuthClientTypeConfidential {
+		t.Fatalf("expected omitted client type to default to confidential, got %q", client.ClientType)
+	}
 	if client.RedirectURI != "https://order.example.com/oauth/callback" {
 		t.Fatalf("unexpected redirect uri: %s", client.RedirectURI)
 	}
 	if client.LogoutURI != "https://order.example.com/logout" {
 		t.Fatalf("unexpected logout uri: %s", client.LogoutURI)
+	}
+
+	publicBody := `{"name":"Android 客户端","client_id":"android-app","client_type":"public","homepage_url":"https://android.example.com","redirect_uri":"lite-sso-demo://oauth/callback"}`
+	publicResponse := doAdminJSONRequest(t, router, http.MethodPost, "/api/admin/oauth-clients", "sid-admin", publicBody)
+	if publicResponse.Code != http.StatusOK {
+		t.Fatalf("expected public client create 200, got %d, body=%s", publicResponse.Code, publicResponse.Body.String())
+	}
+	var publicClient model.OAuthClient
+	if err := database.First(&publicClient, "client_id = ?", "android-app").Error; err != nil {
+		t.Fatalf("find public client: %v", err)
+	}
+	if publicClient.ClientType != model.OAuthClientTypePublic || publicClient.ClientSecret != "" {
+		t.Fatalf("expected public client without a secret, got type=%q secret=%q", publicClient.ClientType, publicClient.ClientSecret)
 	}
 }
 

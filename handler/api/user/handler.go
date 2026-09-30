@@ -18,6 +18,7 @@ import (
 	"sso-server/handler/oauth2"
 	manageross "sso-server/manager/oss"
 	serviceauth "sso-server/service/auth"
+	"sso-server/service/feature"
 	serviceuser "sso-server/service/user"
 )
 
@@ -34,16 +35,22 @@ type UserHandler struct {
 	user              *serviceuser.UserService
 	auth              *serviceauth.AuthService
 	emails            *serviceuser.EmailService
+	permissions       *feature.Service
+	config            *conf.Config
 	trustProxyHeaders bool
+	cookieSecure      bool
 }
 
 func NewUserHandler(deps UserDeps) *UserHandler {
 	trustProxyHeaders := deps.Config != nil && deps.Config.Server.TrustProxyHeaders
 	return &UserHandler{
+		permissions:       feature.NewService(deps.DB),
+		config:            deps.Config,
 		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2, deps.ImageStore),
 		auth:              serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
 		emails:            serviceuser.NewEmailService(serviceuser.EmailDeps{Config: deps.Config, DB: deps.DB, MessageSender: deps.MessageSender}),
 		trustProxyHeaders: trustProxyHeaders,
+		cookieSecure:      deps.Config != nil && deps.Config.Server.CookieSecure,
 	}
 }
 
@@ -114,12 +121,12 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 	if isNewDevice {
-		apiauth.WriteDeviceCookie(c, deviceID)
+		apiauth.WriteDeviceCookie(c, deviceID, h.cookieSecure)
 	}
 	audit.Actor(c, user.ID, pair.SessionID)
 	audit.AuthMethod(c, "password")
 	audit.Completed(c, "session_created")
-	apiauth.WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
+	apiauth.WriteLoginCookies(c, pair, h.cookieSecure, h.auth.RefreshTokenTTL())
 	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }
@@ -208,7 +215,7 @@ func (h *UserHandler) ResetPassword(c *gin.Context) {
 	}
 
 	if isNewDevice {
-		apiauth.WriteDeviceCookie(c, deviceID)
+		apiauth.WriteDeviceCookie(c, deviceID, h.cookieSecure)
 	}
 	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"reset": true}))

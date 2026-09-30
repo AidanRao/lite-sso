@@ -23,13 +23,16 @@ type AdminUserDetailResponse struct {
 
 // OAuthClientResponse represents an OAuth client without exposing its secret.
 type OAuthClientResponse struct {
-	ID          uint    `json:"id"`
-	Name        string  `json:"name"`
-	ClientID    string  `json:"client_id"`
-	HomepageURL string  `json:"homepage_url"`
-	RedirectURI string  `json:"redirect_uri"`
-	LogoutURI   string  `json:"logout_uri"`
-	LogoURL     *string `json:"logo_url"`
+	ID            uint     `json:"id"`
+	Name          string   `json:"name"`
+	ClientID      string   `json:"client_id"`
+	ClientType    string   `json:"client_type"`
+	Audiences     []string `json:"audiences"`
+	AllowedScopes []string `json:"allowed_scopes"`
+	HomepageURL   string   `json:"homepage_url"`
+	RedirectURI   string   `json:"redirect_uri"`
+	LogoutURI     string   `json:"logout_uri"`
+	LogoURL       *string  `json:"logo_url"`
 }
 
 // OAuthClientSecretResponse represents an OAuth client secret for administrators.
@@ -41,19 +44,25 @@ type OAuthClientSecretResponse struct {
 
 // CreateOAuthClientRequest represents the request body for creating an OAuth client.
 type CreateOAuthClientRequest struct {
-	Name         string `json:"name" binding:"required"`
-	ClientID     string `json:"client_id" binding:"required"`
-	ClientSecret string `json:"client_secret" binding:"required"`
-	HomepageURL  string `json:"homepage_url" binding:"required"`
-	RedirectURI  string `json:"redirect_uri" binding:"required"`
-	LogoutURI    string `json:"logout_uri"`
+	Name          string   `json:"name" binding:"required"`
+	ClientID      string   `json:"client_id" binding:"required"`
+	ClientSecret  string   `json:"client_secret"`
+	ClientType    string   `json:"client_type"`
+	Audiences     []string `json:"audiences"`
+	AllowedScopes []string `json:"allowed_scopes"`
+	HomepageURL   string   `json:"homepage_url" binding:"required"`
+	RedirectURI   string   `json:"redirect_uri" binding:"required"`
+	LogoutURI     string   `json:"logout_uri"`
 }
 
 // UpdateOAuthClientRequest represents the request body for updating an OAuth client.
 type UpdateOAuthClientRequest struct {
-	Name         string  `json:"name" binding:"required"`
-	ClientSecret *string `json:"client_secret"`
-	HomepageURL  string  `json:"homepage_url" binding:"required"`
-	RedirectURI  string  `json:"redirect_uri" binding:"required"`
-	LogoutURI    string  `json:"logout_uri"`
+	Name          string   `json:"name" binding:"required"`
+	ClientSecret  *string  `json:"client_secret"`
+	ClientType    *string  `json:"client_type"`
+	Audiences     []string `json:"audiences"`
+	AllowedScopes []string `json:"allowed_scopes"`
+	HomepageURL   string   `json:"homepage_url" binding:"required"`
+	RedirectURI   string   `json:"redirect_uri" binding:"required"`
+	LogoutURI     string   `json:"logout_uri"`
 }

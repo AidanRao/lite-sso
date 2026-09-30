@@ -371,7 +371,7 @@ func (s *EmailService) sendVerification(ctx context.Context, userID string, emai
 }
 
 func (s *EmailService) skipMessageSend() bool {
-	return s.cfg != nil && conf.GetEnvironmentName() == string(conf.EnvLocal) && s.cfg.Dev.SkipSendMessage
+	return s.cfg != nil && s.cfg.Dev.SkipSendMessage
 }
 
 func (s *EmailService) maxAddresses() int {

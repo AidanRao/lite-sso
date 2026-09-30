@@ -32,6 +32,7 @@ export const auditActions = {
   'user.passkey.create': '注册 Passkey', 'user.passkey.rename': '修改 Passkey 名称', 'user.passkey.delete': '删除 Passkey',
   'user.reauth.passkey.start': '发起 Passkey 重新验证', 'user.reauth.passkey.verify': 'Passkey 重新验证',
   'user.reauth.email.send': '发送重新验证验证码', 'user.reauth.email.verify': '邮箱重新验证',
+  'admin.feature.update': '修改功能发布配置',
   'admin.client.create': '创建应用', 'admin.client.update': '修改应用', 'admin.client.logo.update': '修改应用 Logo',
   'admin.client.logo.clear': '删除应用 Logo', 'admin.client.secret.view': '查看应用密钥'
 }
@@ -61,8 +62,8 @@ const reasons = {
 }
 const authMethods = { password: '密码', email_otp: '邮箱验证码', qr_code: '扫码', github: 'GitHub', feishu: '飞书', passkey: 'Passkey' }
 const providers = { github: 'GitHub', feishu: '飞书' }
-const targets = { user: '账号', email: '邮箱', device: '登录设备', provider: '第三方平台', passkey: 'Passkey', oauth_client: '应用' }
-const fields = { username: '用户名', avatar: '头像', password: '密码', email: '邮箱', verified: '邮箱验证状态', is_primary: '主邮箱', name: '名称', provider: '第三方绑定', passkey: 'Passkey', session: '会话', logo: 'Logo', client_secret: '应用密钥', redirect_uri: '回调地址', logout_uri: '退出地址', homepage_url: '主页地址', is_active: '启用状态', description: '描述' }
+const targets = { feature: '功能', user: '账号', email: '邮箱', device: '登录设备', provider: '第三方平台', passkey: 'Passkey', oauth_client: '应用' }
+const fields = { audience: '开放范围', percentage: '灰度百分比', stage: '发布阶段', user_ids: '指定用户', username: '用户名', avatar: '头像', password: '密码', email: '邮箱', verified: '邮箱验证状态', is_primary: '主邮箱', name: '名称', provider: '第三方绑定', passkey: 'Passkey', session: '会话', logo: 'Logo', client_secret: '应用密钥', redirect_uri: '回调地址', logout_uri: '退出地址', homepage_url: '主页地址', is_active: '启用状态', description: '描述' }
 const steps = { user_created: '账号已创建', session_created: '登录会话已创建', password_updated: '密码已更新', sessions_revoked: '会话已撤销', email_created: '邮箱已添加', verification_sent: '验证邮件已发送', email_verified: '邮箱已验证', binding_prepared: '绑定预览已准备', binding_created: '第三方绑定已完成', authorization_code_issued: '应用授权码已签发' }
 const dayMS = 24 * 60 * 60 * 1000
 const known = (map, key) => Object.hasOwn(map, key) ? map[key] : ''

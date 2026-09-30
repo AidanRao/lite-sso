@@ -40,7 +40,7 @@ func Test_MigrationProvider_ConcurrentUp(t *testing.T) {
 			database,
 			os.DirFS("../../migrations"),
 			1,
-			10,
+			11,
 		)
 		require.NoError(t, err)
 		providers = append(providers, provider)
@@ -118,7 +118,7 @@ func Test_UserEmailsMigration_AllowsUsersWithoutEmail(t *testing.T) {
 	testDatabase := newPostgresTestDatabase(t)
 	database := testDatabase.open(t)
 	t.Cleanup(func() { require.NoError(t, database.Close()) })
-	provider, err := migration.NewProvider(database, os.DirFS("../../migrations"), 1, 10)
+	provider, err := migration.NewProvider(database, os.DirFS("../../migrations"), 1, 11)
 	require.NoError(t, err)
 
 	_, err = provider.UpTo(context.Background(), 7)
@@ -212,7 +212,7 @@ func assertMigrationVersionsRecordedOnce(t *testing.T, database *sql.DB) {
 		versions[version] = count
 	}
 	require.NoError(t, rows.Err())
-	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1}, versions)
+	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1, 11: 1}, versions)
 }
 
 func assertFinalDatabaseStructure(t *testing.T, database *sql.DB) {
@@ -251,6 +251,7 @@ func assertFinalDatabaseStructure(t *testing.T, database *sql.DB) {
 	assert.True(t, columns["redirect_uri"])
 	assert.True(t, columns["homepage_url"])
 	assert.True(t, columns["logout_uri"])
+	assert.True(t, columns["client_type"])
 	assert.False(t, columns["redirect_uris"])
 	assert.False(t, columns["logout_uris"])
 }

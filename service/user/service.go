@@ -65,8 +65,7 @@ func (s *UserService) GetProfile(ctx context.Context, userID string) (*dto.Profi
 	}
 
 	return &dto.ProfileResponse{
-		User:    dto.ToUserResponse(user),
-		IsAdmin: s.cfg.IsAdminUser(userID),
+		User: dto.ToUserResponse(user),
 	}, nil
 }
 

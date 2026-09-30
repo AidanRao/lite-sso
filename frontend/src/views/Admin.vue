@@ -7,7 +7,7 @@
       <div>
         <h1>系统管理</h1>
       </div>
-      <button class="icon-text-button primary" type="button" @click="openCreateDialog">
+      <button v-if="activeTab !== 'features'" class="icon-text-button primary" type="button" @click="openCreateDialog">
         <Plus :size="17" />
         <span>新增平台</span>
       </button>
@@ -23,10 +23,14 @@
           <PanelsTopLeft :size="18" />
           <span>平台</span>
         </button>
+        <button :class="{ active: activeTab === 'features' }" type="button" @click="activeTab = 'features'">
+          <SlidersHorizontal :size="18" /><span>功能发布</span>
+        </button>
       </aside>
 
       <section class="content">
-        <div class="content-toolbar">
+        <FeatureReleases v-if="activeTab === 'features'" />
+        <div v-if="activeTab !== 'features'" class="content-toolbar">
           <div>
             <h2>{{ activeTab === 'users' ? '系统用户' : '接入平台' }}</h2>
             <span>{{ activeTab === 'users' ? `${users.length} 条记录` : `${clients.length} 条记录` }}</span>
@@ -68,7 +72,7 @@
           <div v-if="!users.length && !loading" class="empty-state">暂无用户</div>
         </div>
 
-        <div v-else class="data-table clients-table">
+        <div v-else-if="activeTab === 'clients'" class="data-table clients-table">
           <div class="table-row table-head">
             <span>平台</span>
             <span>Homepage URL</span>
@@ -78,7 +82,10 @@
           <div v-for="client in clients" :key="client.id" class="table-row">
             <div class="client-identity">
               <ApplicationLogo :label="client.name || client.client_id" :src="client.logo_url" size="small" />
-              <strong>{{ client.name }}</strong>
+              <div>
+                <strong>{{ client.name }}</strong>
+                <span class="client-type-label">{{ client.client_type === 'public' ? '公共客户端 · PKCE' : '服务端客户端' }}</span>
+              </div>
             </div>
             <span class="uri-list">{{ client.homepage_url }}</span>
             <span class="uri-list">{{ client.redirect_uri }}</span>
@@ -133,7 +140,22 @@
           <output v-if="editingClient" class="readonly-output mono">{{ form.client_id }}</output>
           <input v-else v-model.trim="form.client_id" required maxlength="50" />
         </label>
-        <div class="secret-field">
+        <label>
+          <span>客户端类型</span>
+          <select v-model="form.client_type" @change="handleClientTypeChange">
+            <option value="confidential">服务端客户端（Client Secret）</option>
+            <option value="public">公共客户端（无后端客户端 / PKCE）</option>
+          </select>
+        </label>
+        <label>
+          <span>API Audience（每行一个，至少一个才能签发令牌）</span>
+          <textarea v-model="form.audiences" rows="3" placeholder="classhopper-api" />
+        </label>
+        <label>
+          <span>允许的 Scope（每行一个）</span>
+          <textarea v-model="form.allowed_scopes" rows="3" placeholder="courses:read" />
+        </label>
+        <div v-if="form.client_type === 'confidential'" class="secret-field">
           <span>Client Secret</span>
           <div class="secret-row">
             <output class="secret-output mono">{{ secretLoading ? '密钥加载中' : (clientSecretDisplay || '未获取密钥') }}</output>
@@ -264,8 +286,9 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Copy, Eye, EyeOff, PanelsTopLeft, Pencil, Plus, RefreshCw, Save, Upload, Users, X } from 'lucide-vue-next'
+import { SlidersHorizontal, ArrowLeft, Copy, Eye, EyeOff, PanelsTopLeft, Pencil, Plus, RefreshCw, Save, Upload, Users, X } from 'lucide-vue-next'
 import { adminAPI } from '../api/auth'
+import FeatureReleases from '../components/FeatureReleases.vue'
 import ApplicationLogo from '../components/ApplicationLogo.vue'
 import { generateClientSecret, maskClientSecret } from '../utils/clientSecret'
 
@@ -289,6 +312,9 @@ const form = reactive({
   name: '',
   client_id: '',
   client_secret: '',
+  client_type: 'confidential',
+  audiences: '',
+  allowed_scopes: '',
   homepage_url: '',
   redirect_uri: '',
   logout_uri: ''
@@ -359,12 +385,15 @@ const openEditDialog = async (client) => {
   form.name = client.name || ''
   form.client_id = client.client_id || ''
   form.client_secret = ''
+  form.client_type = client.client_type || 'confidential'
+  form.audiences = (client.audiences || []).join('\n')
+  form.allowed_scopes = (client.allowed_scopes || []).join('\n')
   form.homepage_url = client.homepage_url || ''
   secretVisible.value = false
   form.redirect_uri = client.redirect_uri || ''
   form.logout_uri = client.logout_uri || ''
   dialogOpen.value = true
-  await loadClientSecret(client.id)
+  if (form.client_type === 'confidential') await loadClientSecret(client.id)
 }
 
 const closeDialog = () => {
@@ -377,16 +406,19 @@ const saveClient = async () => {
   saving.value = true
   let savedClient = null
   try {
-    if (!editingClient.value && !form.client_secret) {
+    if (form.client_type === 'confidential' && !form.client_secret) {
       regenerateClientSecret()
     }
     const payload = {
       name: form.name,
+      audiences: form.audiences.split('\n').map(value => value.trim()).filter(Boolean),
+      allowed_scopes: form.allowed_scopes.split('\n').map(value => value.trim()).filter(Boolean),
+      client_type: form.client_type,
       homepage_url: form.homepage_url,
       redirect_uri: form.redirect_uri,
       logout_uri: form.logout_uri
     }
-    if (!editingClient.value || form.client_secret.trim()) {
+    if (form.client_type === 'confidential' && (!editingClient.value || form.client_secret.trim())) {
       payload.client_secret = form.client_secret.trim()
     }
 
@@ -426,6 +458,9 @@ const resetForm = () => {
   form.name = ''
   form.client_id = ''
   form.client_secret = ''
+  form.client_type = 'confidential'
+  form.audiences = ''
+  form.allowed_scopes = ''
   form.homepage_url = ''
   secretVisible.value = false
   secretLoading.value = false
@@ -500,16 +535,29 @@ const regenerateClientSecret = () => {
   secretVisible.value = false
 }
 
+const handleClientTypeChange = () => {
+  secretVisible.value = false
+  if (form.client_type === 'public') {
+    form.client_secret = ''
+    secretLoading.value = false
+    return
+  }
+  if (!form.client_secret) regenerateClientSecret()
+}
+
 const loadClientSecret = async (id) => {
+  if (form.client_type !== 'confidential') return
   secretLoading.value = true
   try {
     const response = await adminAPI.getOAuthClientSecret(id)
-    form.client_secret = response?.data?.secret?.client_secret || ''
-    secretVisible.value = false
+    if (form.client_type === 'confidential' && editingClient.value?.id === id) {
+      form.client_secret = response?.data?.secret?.client_secret || ''
+      secretVisible.value = false
+    }
   } catch (error) {
     ElMessage.error(error.message || '获取平台密钥失败')
   } finally {
-    secretLoading.value = false
+    if (form.client_type === 'confidential') secretLoading.value = false
   }
 }
 
@@ -782,6 +830,14 @@ button:disabled {
   white-space: nowrap;
 }
 
+.client-type-label {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .table-row strong,
 .table-row > span,
 .table-row time {
@@ -977,6 +1033,7 @@ button:disabled {
 }
 
 .dialog input,
+.dialog select,
 .dialog textarea {
   width: 100%;
   box-sizing: border-box;
@@ -990,6 +1047,7 @@ button:disabled {
 }
 
 .dialog input:focus,
+.dialog select:focus,
 .dialog textarea:focus {
   border-color: #0f766e;
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
