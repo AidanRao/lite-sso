@@ -186,10 +186,7 @@ func (s *AuthService) verifyChallengeFallback(ctx context.Context, key string, c
 }
 
 func (s *AuthService) authSecret() string {
-	if s.cfg != nil && strings.TrimSpace(s.cfg.Auth.OTPSecret) != "" {
-		return s.cfg.Auth.OTPSecret
-	}
-	return "test-only-otp-secret"
+	return s.cfg.Auth.OTPSecret
 }
 
 func (s *AuthService) authOTPExpire() time.Duration {

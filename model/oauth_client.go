@@ -26,6 +26,8 @@ type OAuthClient struct {
 	ClientID      string          `gorm:"type:varchar(50);uniqueIndex;not null"`
 	ClientSecret  string          `gorm:"type:varchar(255);not null"`
 	ClientType    OAuthClientType `gorm:"type:varchar(20);not null;default:confidential"`
+	Audiences     []string        `gorm:"type:jsonb;serializer:json;not null;default:'[]'"`
+	AllowedScopes []string        `gorm:"type:jsonb;serializer:json;not null;default:'[]'"`
 	HomepageURL   string          `gorm:"type:text;not null"`
 	RedirectURI   string          `gorm:"type:text;not null"`
 	LogoutURI     string          `gorm:"type:text"`

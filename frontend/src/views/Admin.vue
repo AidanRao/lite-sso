@@ -147,6 +147,14 @@
             <option value="public">公共客户端（无后端客户端 / PKCE）</option>
           </select>
         </label>
+        <label>
+          <span>API Audience（每行一个，至少一个才能签发令牌）</span>
+          <textarea v-model="form.audiences" rows="3" placeholder="classhopper-api" />
+        </label>
+        <label>
+          <span>允许的 Scope（每行一个）</span>
+          <textarea v-model="form.allowed_scopes" rows="3" placeholder="courses:read" />
+        </label>
         <div v-if="form.client_type === 'confidential'" class="secret-field">
           <span>Client Secret</span>
           <div class="secret-row">
@@ -305,6 +313,8 @@ const form = reactive({
   client_id: '',
   client_secret: '',
   client_type: 'confidential',
+  audiences: '',
+  allowed_scopes: '',
   homepage_url: '',
   redirect_uri: '',
   logout_uri: ''
@@ -376,6 +386,8 @@ const openEditDialog = async (client) => {
   form.client_id = client.client_id || ''
   form.client_secret = ''
   form.client_type = client.client_type || 'confidential'
+  form.audiences = (client.audiences || []).join('\n')
+  form.allowed_scopes = (client.allowed_scopes || []).join('\n')
   form.homepage_url = client.homepage_url || ''
   secretVisible.value = false
   form.redirect_uri = client.redirect_uri || ''
@@ -399,6 +411,8 @@ const saveClient = async () => {
     }
     const payload = {
       name: form.name,
+      audiences: form.audiences.split('\n').map(value => value.trim()).filter(Boolean),
+      allowed_scopes: form.allowed_scopes.split('\n').map(value => value.trim()).filter(Boolean),
       client_type: form.client_type,
       homepage_url: form.homepage_url,
       redirect_uri: form.redirect_uri,
@@ -445,6 +459,8 @@ const resetForm = () => {
   form.client_id = ''
   form.client_secret = ''
   form.client_type = 'confidential'
+  form.audiences = ''
+  form.allowed_scopes = ''
   form.homepage_url = ''
   secretVisible.value = false
   secretLoading.value = false

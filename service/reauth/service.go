@@ -89,8 +89,8 @@ type Service struct {
 // NewService creates a generic re-authentication service.
 func NewService(deps Deps) *Service {
 	ttl := 5 * time.Minute
-	if deps.Config != nil && deps.Config.Auth.ReauthTokenTTL > 0 {
-		ttl = deps.Config.Auth.ReauthTokenTTL
+	if deps.Config != nil && deps.Config.Tokens.Reauth.GrantTTL > 0 {
+		ttl = deps.Config.Tokens.Reauth.GrantTTL
 	}
 	return &Service{cfg: deps.Config, database: deps.DB, store: deps.Store, auth: deps.Auth, ttl: ttl}
 }

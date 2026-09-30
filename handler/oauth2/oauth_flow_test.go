@@ -2,9 +2,13 @@ package oauth2_test
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,11 +18,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	gooauth2store "github.com/go-oauth2/oauth2/v4/store"
+	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
 	"sso-server/conf"
 	"sso-server/dal/kv"
+	apiauth "sso-server/handler/api/auth"
 	"sso-server/handler/api/oauth"
 	"sso-server/handler/oauth2"
 	serverhandler "sso-server/handler/server"
@@ -52,8 +58,7 @@ func TestOAuth2_Authorize_RequiresSession(t *testing.T) {
 		t.Fatalf("token store: %v", err)
 	}
 
-	cfg := &conf.Config{}
-	cfg.Security.AccessTokenExpire = time.Hour
+	cfg := testOAuthConfig(t)
 
 	o, err := oauth2.NewWithStores(cfg, db, tokenStore)
 	if err != nil {
@@ -101,10 +106,12 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	codeChallengeDigest := sha256.Sum256([]byte(codeVerifier))
 	codeChallenge := base64.RawURLEncoding.EncodeToString(codeChallengeDigest[:])
 	if err := db.Create(&model.OAuthClient{
-		Name:         "app",
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-		RedirectURI:  redirectURI,
+		Name:          "app",
+		ClientID:      clientID,
+		ClientSecret:  clientSecret,
+		Audiences:     []string{"classhopper-api", "profile-api"},
+		AllowedScopes: []string{"courses:read", "profile:read"},
+		RedirectURI:   redirectURI,
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
 	}
@@ -114,9 +121,8 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 		t.Fatalf("token store: %v", err)
 	}
 
-	cfg := &conf.Config{}
+	cfg := testOAuthConfig(t)
 	cfg.Server.Port = "0"
-	cfg.Security.AccessTokenExpire = time.Hour
 
 	o, err := oauth2.NewWithStores(cfg, db, tokenStore)
 	if err != nil {
@@ -144,9 +150,11 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	r.GET("/oauth/authorize", serverhandler.RequireSessionAuthOrRedirect(authService), o.HandleAuthorize)
 	r.POST("/oauth/token", o.HandleToken)
 	r.GET("/oauth/userinfo", oauthHandler.HandleUserinfo)
+	r.GET("/.well-known/jwks.json", o.HandleJWKS)
+	r.POST("/api/auth/logout", apiauth.NewAuthHandler(apiauth.AuthDeps{Config: cfg, DB: db, KV: kvStore, OAuth2: o}).Logout)
 
 	w := httptest.NewRecorder()
-	confidentialAuthorizeURL := "/oauth/authorize?response_type=code&client_id=" + url.QueryEscape(clientID) + "&redirect_uri=" + url.QueryEscape(redirectURI) + "&state=xyz&code_challenge=" + url.QueryEscape(codeChallenge) + "&code_challenge_method=S256"
+	confidentialAuthorizeURL := "/oauth/authorize?response_type=code&client_id=" + url.QueryEscape(clientID) + "&redirect_uri=" + url.QueryEscape(redirectURI) + "&state=xyz&scope=courses%3Aread&code_challenge=" + url.QueryEscape(codeChallenge) + "&code_challenge_method=S256"
 	req := httptest.NewRequest(http.MethodGet, confidentialAuthorizeURL, nil)
 	req.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
 	r.ServeHTTP(w, req)
@@ -186,8 +194,11 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	}
 
 	var tokenResp struct {
-		AccessToken string `json:"access_token"`
-		TokenType   string `json:"token_type"`
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		TokenType    string `json:"token_type"`
+		ExpiresIn    int64  `json:"expires_in"`
+		Scope        string `json:"scope"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &tokenResp); err != nil {
 		t.Fatalf("unmarshal token: %v", err)
@@ -198,6 +209,59 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	if tokenResp.TokenType == "" {
 		t.Fatalf("expected token_type, got %s", w.Body.String())
 	}
+	if tokenResp.RefreshToken == "" || tokenResp.ExpiresIn != int64(30*time.Minute/time.Second) || tokenResp.Scope != "courses:read" {
+		t.Fatalf("unexpected OAuth token response: %s", w.Body.String())
+	}
+	var claims jwt.MapClaims
+	parsed, _, err := jwt.NewParser().ParseUnverified(tokenResp.AccessToken, &claims)
+	if err != nil || parsed.Header["alg"] != "RS256" || parsed.Header["kid"] == "" || claims["iss"] != "http://localhost:8080" || claims["sub"] != userID || claims["client_id"] != clientID || claims["scope"] != "courses:read" {
+		t.Fatalf("unexpected JWT claims or header: %v %v %v", parsed, claims, err)
+	}
+	audiences, ok := claims["aud"].([]interface{})
+	if !ok || len(audiences) != 2 || audiences[0] != "classhopper-api" || audiences[1] != "profile-api" {
+		t.Fatalf("unexpected JWT audiences: %#v", claims["aud"])
+	}
+	if int64(claims["exp"].(float64)-claims["iat"].(float64)) != tokenResp.ExpiresIn {
+		t.Fatalf("JWT expiry differs from response")
+	}
+	jwksRecorder := httptest.NewRecorder()
+	r.ServeHTTP(jwksRecorder, httptest.NewRequest(http.MethodGet, "/.well-known/jwks.json", nil))
+	if jwksRecorder.Code != http.StatusOK || !strings.Contains(jwksRecorder.Body.String(), `"kid"`) || jwksRecorder.Header().Get("Cache-Control") != "public, max-age=300" {
+		t.Fatalf("JWKS endpoint invalid: status=%d body=%s", jwksRecorder.Code, jwksRecorder.Body.String())
+	}
+
+	refreshForm := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tokenResp.RefreshToken}}
+	refreshRequest := func(client, secret string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(refreshForm.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.SetBasicAuth(client, secret)
+		r.ServeHTTP(recorder, request)
+		return recorder
+	}
+	if got := refreshRequest("wrong-client", "wrong-secret"); got.Code == http.StatusOK {
+		t.Fatalf("other client refreshed token: %s", got.Body.String())
+	}
+	refreshed := refreshRequest(clientID, clientSecret)
+	if refreshed.Code != http.StatusOK {
+		t.Fatalf("refresh failed: %s", refreshed.Body.String())
+	}
+	var refreshedPair struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := json.Unmarshal(refreshed.Body.Bytes(), &refreshedPair); err != nil || refreshedPair.AccessToken == "" || refreshedPair.RefreshToken == "" || refreshedPair.RefreshToken == tokenResp.RefreshToken {
+		t.Fatalf("invalid refresh response: %s", refreshed.Body.String())
+	}
+	if got := refreshRequest(clientID, clientSecret); got.Code == http.StatusOK {
+		t.Fatalf("reused refresh token: %s", got.Body.String())
+	}
+	refreshForm.Set("refresh_token", refreshedPair.RefreshToken)
+	refreshForm.Set("scope", "profile:read")
+	if got := refreshRequest(clientID, clientSecret); got.Code == http.StatusOK {
+		t.Fatalf("refresh expanded original scope: %s", got.Body.String())
+	}
+	refreshForm.Del("scope")
 
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/oauth/userinfo", nil)
@@ -211,6 +275,15 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), email) || strings.Contains(w.Body.String(), "secondary@example.com") {
 		t.Fatalf("expected userinfo to expose only primary email, got %s", w.Body.String())
+	}
+
+	unauthorizedScopeURL := strings.Replace(confidentialAuthorizeURL, "scope=courses%3Aread", "scope=admin%3Awrite", 1)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, unauthorizedScopeURL, nil)
+	req.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusFound || !strings.Contains(w.Header().Get("Location"), "error=invalid_scope") {
+		t.Fatalf("unregistered scope accepted: %s", w.Header().Get("Location"))
 	}
 
 	for _, credential := range []struct {
@@ -251,16 +324,43 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 			}
 		})
 	}
+	var narrowedClient model.OAuthClient
+	if err := db.First(&narrowedClient, "client_id = ?", clientID).Error; err != nil {
+		t.Fatal(err)
+	}
+	narrowedClient.Audiences = []string{"profile-api"}
+	narrowedClient.AllowedScopes = []string{}
+	if err := db.Save(&narrowedClient).Error; err != nil {
+		t.Fatal(err)
+	}
+	refreshForm.Set("refresh_token", refreshedPair.RefreshToken)
+	narrowed := refreshRequest(clientID, clientSecret)
+	if narrowed.Code != http.StatusOK {
+		t.Fatalf("refresh after permission reduction failed: %s", narrowed.Body.String())
+	}
+	if err := json.Unmarshal(narrowed.Body.Bytes(), &refreshedPair); err != nil {
+		t.Fatal(err)
+	}
+	narrowedClaims := jwt.MapClaims{}
+	if _, _, err := jwt.NewParser().ParseUnverified(refreshedPair.AccessToken, &narrowedClaims); err != nil {
+		t.Fatal(err)
+	}
+	narrowedAudiences, ok := narrowedClaims["aud"].([]interface{})
+	if _, hasScope := narrowedClaims["scope"]; hasScope || !ok || len(narrowedAudiences) != 1 || narrowedAudiences[0] != "profile-api" {
+		t.Fatalf("refresh expanded or retained removed claims: %#v", narrowedClaims)
+	}
 
 	publicRedirectURI := "lite-sso-demo://oauth/callback"
 	publicClientID := "android-app"
 	if err := db.Create(&model.OAuthClient{
-		Name:         "Android App",
-		ClientID:     publicClientID,
-		ClientSecret: "",
-		ClientType:   model.OAuthClientTypePublic,
-		HomepageURL:  "https://android.example.com",
-		RedirectURI:  publicRedirectURI,
+		Name:          "Android App",
+		ClientID:      publicClientID,
+		ClientSecret:  "",
+		ClientType:    model.OAuthClientTypePublic,
+		Audiences:     []string{"classhopper-api"},
+		AllowedScopes: []string{"courses:read"},
+		HomepageURL:   "https://android.example.com",
+		RedirectURI:   publicRedirectURI,
 	}).Error; err != nil {
 		t.Fatalf("create public client: %v", err)
 	}
@@ -296,6 +396,28 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected public token exchange 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+	var publicPair struct {
+		RefreshToken string `json:"refresh_token"`
+		AccessToken  string `json:"access_token"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &publicPair); err != nil || publicPair.RefreshToken == "" {
+		t.Fatalf("public client missing refresh token: %s", w.Body.String())
+	}
+	publicClaims := jwt.MapClaims{}
+	if _, _, err := jwt.NewParser().ParseUnverified(publicPair.AccessToken, &publicClaims); err != nil {
+		t.Fatal(err)
+	}
+	if _, hasScope := publicClaims["scope"]; hasScope {
+		t.Fatalf("unsolicited scope appeared in JWT: %#v", publicClaims)
+	}
+	publicRefreshForm := url.Values{"grant_type": {"refresh_token"}, "client_id": {publicClientID}, "refresh_token": {publicPair.RefreshToken}}
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(publicRefreshForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("public refresh failed: %s", w.Body.String())
 	}
 
 	w = httptest.NewRecorder()
@@ -353,5 +475,62 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	missingChallengeCallback, err := url.Parse(w.Header().Get("Location"))
 	if err != nil || missingChallengeCallback.Query().Get("error") == "" {
 		t.Fatalf("expected callback error for missing public challenge, got %q", w.Header().Get("Location"))
+	}
+	pendingRecorder := httptest.NewRecorder()
+	pendingRequest := httptest.NewRequest(http.MethodGet, strings.Replace(publicAuthorizeURL, "android-state", "logout-pending", 1), nil)
+	pendingRequest.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
+	r.ServeHTTP(pendingRecorder, pendingRequest)
+	pendingCallback, err := url.Parse(pendingRecorder.Header().Get("Location"))
+	if err != nil || pendingCallback.Query().Get("code") == "" {
+		t.Fatalf("pending authorization failed: %s", pendingRecorder.Header().Get("Location"))
+	}
+	logoutRecorder := httptest.NewRecorder()
+	logoutRequest := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	logoutRequest.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
+	r.ServeHTTP(logoutRecorder, logoutRequest)
+	if logoutRecorder.Code != http.StatusOK {
+		t.Fatalf("logout failed: %s", logoutRecorder.Body.String())
+	}
+	refreshForm.Set("refresh_token", refreshedPair.RefreshToken)
+	if got := refreshRequest(clientID, clientSecret); got.Code == http.StatusOK {
+		t.Fatalf("refresh after logout: %s", got.Body.String())
+	}
+	accessAfterLogout := httptest.NewRecorder()
+	accessRequest := httptest.NewRequest(http.MethodGet, "/oauth/userinfo", nil)
+	accessRequest.Header.Set("Authorization", "Bearer "+tokenResp.AccessToken)
+	r.ServeHTTP(accessAfterLogout, accessRequest)
+	if accessAfterLogout.Code != http.StatusOK {
+		t.Fatalf("issued JWT stopped working before expiry: %s", accessAfterLogout.Body.String())
+	}
+	publicForm.Set("code", pendingCallback.Query().Get("code"))
+	publicForm.Set("code_verifier", codeVerifier)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(publicForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.ServeHTTP(w, req)
+	if w.Code == http.StatusOK {
+		t.Fatalf("authorization code redeemed after logout: %s", w.Body.String())
+	}
+}
+
+func testOAuthConfig(t *testing.T) *conf.Config {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &conf.Config{
+		Tokens: conf.TokenConfig{
+			OAuth: conf.OAuthTokenConfig{
+				AccessTokenTTL:       30 * time.Minute,
+				AuthorizationCodeTTL: 5 * time.Minute,
+				RefreshTokenTTL:      30 * 24 * time.Hour,
+				Issuer:               "http://localhost:8080",
+				SigningKID:           "oauth-test-key",
+				SigningPrivateKeyPEM: string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})),
+			},
+			Session: conf.SessionTokenConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour},
+		},
+		Auth: conf.AuthConfig{JWTSecret: "oauth-flow-test-jwt-secret"},
 	}
 }

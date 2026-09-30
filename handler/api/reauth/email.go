@@ -23,7 +23,7 @@ func (h *Handler) SendEmail(c *gin.Context) {
 	}
 	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
 	if isNewDevice {
-		apiauth.WriteDeviceCookie(c, deviceID)
+		apiauth.WriteDeviceCookie(c, deviceID, h.cookieSecure)
 	}
 	result, err := h.reauth.BeginEmail(c.Request.Context(), c.GetString("user_id"), c.GetString("session_id"), deviceID, req.CaptchaID, req.Captcha, serviceauth.OTPRequestContext{
 		DeviceID: deviceID,

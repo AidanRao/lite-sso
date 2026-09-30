@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"sso-server/common"
+	"sso-server/conf"
 	"sso-server/dal/kv"
 	"sso-server/model"
 )
@@ -72,7 +73,7 @@ func TestLoginWithPassword_AcceptsOnlyVerifiedSecondaryEmail(t *testing.T) {
 }
 
 func TestValidatePassword_RequiresLengthLetterAndDigit(t *testing.T) {
-	service := NewAuthService(nil, nil, nil, nil, nil)
+	service := NewAuthService(&conf.Config{}, nil, nil, nil, nil)
 	testCases := []struct {
 		name     string
 		password string
@@ -123,7 +124,7 @@ func TestChangePassword_UpdatesPasswordAndRevokesOtherSessions(t *testing.T) {
 		t.Fatalf("create sessions: %v", err)
 	}
 
-	service := NewAuthService(nil, database, nil, nil, nil)
+	service := NewAuthService(&conf.Config{}, database, nil, nil, nil)
 	if err := service.ChangePassword(context.Background(), "u1", "ses-current", "wrong-password", "new-password-456"); !errors.Is(err, common.ErrCurrentPasswordInvalid) {
 		t.Fatalf("expected current password error, got %v", err)
 	}
@@ -174,5 +175,5 @@ func newPasswordLoginTestServiceWithDB(t *testing.T, password string) (*AuthServ
 	if err := gormDB.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &hash, IsActive: true}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	return NewAuthService(nil, gormDB, kv.NewMemoryStore(), nil, nil), gormDB, email
+	return NewAuthService(&conf.Config{}, gormDB, kv.NewMemoryStore(), nil, nil), gormDB, email
 }

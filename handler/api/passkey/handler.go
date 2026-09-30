@@ -28,6 +28,7 @@ type Deps struct {
 type Handler struct {
 	service           *servicepasskey.Service
 	trustProxyHeaders bool
+	cookieSecure      bool
 }
 
 // NewHandler creates a Passkey lifecycle handler.
@@ -35,6 +36,7 @@ func NewHandler(deps Deps) *Handler {
 	return &Handler{
 		service:           deps.Service,
 		trustProxyHeaders: deps.Config != nil && deps.Config.Server.TrustProxyHeaders,
+		cookieSecure:      deps.Config != nil && deps.Config.Server.CookieSecure,
 	}
 }
 
@@ -60,7 +62,7 @@ func (h *Handler) SendRegistrationEmail(c *gin.Context) {
 	}
 	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
 	if isNewDevice {
-		apiauth.WriteDeviceCookie(c, deviceID)
+		apiauth.WriteDeviceCookie(c, deviceID, h.cookieSecure)
 	}
 	result, err := h.service.SendRegistrationEmail(c.Request.Context(), c.GetString("user_id"), req.CaptchaID, req.Captcha, serviceauth.OTPRequestContext{
 		DeviceID: deviceID,

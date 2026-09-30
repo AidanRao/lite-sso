@@ -41,7 +41,6 @@ func (m *testMessageSender) Send(ctx context.Context, target string, templateKey
 }
 
 func TestAuthEmailSend_CreatesHMACChallenge(t *testing.T) {
-	t.Setenv("ENV", "local")
 	gin.SetMode(gin.TestMode)
 	store := kv.NewMemoryStore()
 	_ = store.Set(context.Background(), kv.KeyCaptcha("cid"), "1234", time.Minute)
@@ -76,8 +75,8 @@ func TestAuthEmailSend_CreatesHMACChallenge(t *testing.T) {
 	}
 }
 
-func TestAuthEmailSend_LocalFixedOTP_VerifiesChallenge(t *testing.T) {
-	t.Setenv("ENV", "local")
+func TestAuthEmailSend_ConfiguredFixedOTP_VerifiesChallenge(t *testing.T) {
+	t.Setenv("ENV", "test")
 	store := kv.NewMemoryStore()
 	_ = store.Set(context.Background(), kv.KeyCaptcha("cid"), "1234", time.Minute)
 	cfg := &conf.Config{Dev: conf.DevConfig{FixedEmailOTP: "654321", SkipSendMessage: true}}
@@ -130,7 +129,6 @@ func TestAuthEmailSend_RateLimited(t *testing.T) {
 }
 
 func TestAuthEmailSend_MessageSenderFailure_LogsSanitizedError(t *testing.T) {
-	t.Setenv("ENV", "local")
 	gin.SetMode(gin.TestMode)
 	store := kv.NewMemoryStore()
 	_ = store.Set(context.Background(), kv.KeyCaptcha("cid"), "1234", time.Minute)

@@ -11,6 +11,8 @@ SSO 管理员需为接入系统登记客户端信息：
 | `client_id` | 系统标识 | `order-app` |
 | `client_type` | `confidential` 服务端客户端，或 `public` 公共客户端 | `confidential` |
 | `client_secret` | 服务端客户端密钥，仅保存在后端；公共客户端不使用 | `replace-with-secret` |
+| `audiences` | 允许访问的业务 API 标识列表，至少配置一个才能签发令牌 | `["classhopper-api"]` |
+| `allowed_scopes` | 客户端可申请的权限列表 | `["courses:read"]` |
 | `homepage_url` | 系统首页地址，用于退出后的 `redirect` 域名校验 | `https://order.example.com` |
 | `redirect_uri` | 登录回调地址 | `https://order.example.com/auth/sso/callback` |
 | `logout_uri` | 可选，全局登出通知地址 | `https://order.example.com/auth/sso/logout` |
@@ -18,11 +20,13 @@ SSO 管理员需为接入系统登记客户端信息：
 登记示例：
 
 ```sql
-INSERT INTO oauth_clients (name, client_id, client_secret, homepage_url, redirect_uri, logout_uri)
+INSERT INTO oauth_clients (name, client_id, client_secret, audiences, allowed_scopes, homepage_url, redirect_uri, logout_uri)
 VALUES (
     '订单系统',
     'order-app',
     'replace-with-secret',
+    '["classhopper-api"]'::jsonb,
+    '["courses:read"]'::jsonb,
     'https://order.example.com',
     'https://order.example.com/auth/sso/callback',
     'https://order.example.com/auth/sso/logout'
@@ -32,12 +36,14 @@ VALUES (
 公共客户端示例（如 Android、iOS、桌面客户端或单页 Web 应用；也可在管理界面选择“公共客户端”登记）：
 
 ```sql
-INSERT INTO oauth_clients (name, client_id, client_secret, client_type, homepage_url, redirect_uri, logout_uri)
+INSERT INTO oauth_clients (name, client_id, client_secret, client_type, audiences, allowed_scopes, homepage_url, redirect_uri, logout_uri)
 VALUES (
     'Android App',
     'android-app',
     '',
     'public',
+    '["classhopper-api"]'::jsonb,
+    '["courses:read"]'::jsonb,
     'https://android.example.com',
     'lite-sso-demo://oauth/callback',
     ''
@@ -53,11 +59,37 @@ VALUES (
 | 发起登录 | `GET` | `/oauth/authorize` |
 | 换取令牌 | `POST` | `/oauth/token` |
 | 获取用户信息 | `GET` | `/oauth/userinfo` |
+| 公钥集 | `GET` | `/.well-known/jwks.json` |
 | 退出登录 | `POST` | `/api/auth/logout` |
 
-## 3. 接入流程
+## 3. 令牌有效期配置
 
-### 3.1 跳转到 SSO 登录
+服务部署配置统一使用 `tokens` 分组，并按签发流程区分令牌。以下为当前生产配置：
+
+| 配置项 | 默认值 | 用途 |
+| --- | --- | --- |
+| `tokens.oauth.access_token_ttl` | `30m` | OAuth `/oauth/token` 签发给接入客户端的 JWT Access Token |
+| `tokens.oauth.authorization_code_ttl` | `5m` | OAuth 授权码有效期 |
+| `tokens.oauth.refresh_token_ttl` | `720h` | OAuth Refresh Token 最长期限，轮换不延长 |
+| `tokens.session.access_token_ttl` | `15m` | Lite SSO 自身登录会话使用的 Access Token |
+| `tokens.session.refresh_token_ttl` | `720h` | Lite SSO 自身登录会话 Refresh Token 的有效期 |
+| `tokens.reauth.grant_ttl` | `5m` | 高风险操作重新认证授权凭证的有效期 |
+
+OAuth 接入客户端使用独立的 Access Token 和 Refresh Token。内部登录会话的 Refresh Token 通过 SSO 的登录 Cookie 刷新，不应发送给接入业务 API。
+
+这些键也可通过对应环境变量覆盖，例如 `TOKENS_OAUTH_ACCESS_TOKEN_TTL=30m`。所有环境都必须配置 OAuth issuer、`signing_kid` 与 RSA 私钥；可通过 `TOKENS_OAUTH_ISSUER`、`TOKENS_OAUTH_SIGNING_KID` 和 `TOKENS_OAUTH_SIGNING_PRIVATE_KEY_PEM` 注入，私钥不要提交到仓库。`TOKENS_OAUTH_PREVIOUS_PUBLIC_KEYS` 可配置旧公钥 PEM 的 JSON 对象（键为 kid），轮换后至少保留 35 分钟。Cookie 的 `Secure` 属性由 `server.cookie_secure` 配置，本地 HTTP 示例设为 `false`，测试和生产 HTTPS 配置设为 `true`。完整配置示例见 `conf/prod.yaml` 和 `conf/local.example.yaml`。
+
+部署前先执行数据库迁移，并在管理端为现有客户端补齐 `audiences` 和 `allowed_scopes`。以下查询列出仍无法签发新令牌的客户端：
+
+```sql
+SELECT client_id FROM oauth_clients WHERE jsonb_array_length(audiences) = 0;
+```
+
+分别核对生产和测试环境的 `TOKENS_OAUTH_ACCESS_TOKEN_TTL` 覆盖值及 `TOKENS_OAUTH_ISSUER`，确保实际签发的 Access Token 有效期为 30 分钟。缺少有效 RSA 私钥时，所有环境都会拒绝启动。接入方完成 JWKS 验签和 Refresh Token 轮换后再切换流量。
+
+## 4. 接入流程
+
+### 4.1 跳转到 SSO 登录
 
 接入系统生成随机 `state` 并保存在本地会话中，然后将用户浏览器跳转至：
 
@@ -67,13 +99,14 @@ https://sso.aidanrao.top/oauth/authorize
   &client_id=order-app
   &redirect_uri=https%3A%2F%2Forder.example.com%2Fauth%2Fsso%2Fcallback
   &state=<random-state>
+  &scope=courses%3Aread
 ```
 
 如果用户未登录，SSO 会先展示登录页面；登录完成后继续回调接入系统。
 
 SSO 登录成功后会写入仅供浏览器授权流程使用的 `sso_session` Cookie。该 Cookie 为 `HttpOnly`、`SameSite=Lax`，路径为 `/`；普通 `/api` 接口仍要求 `Authorization: Bearer <access-token>`，不会接受该 Cookie 代替 Access Token。
 
-### 3.2 公共客户端（PKCE）
+### 4.2 公共客户端（PKCE）
 
 没有安全保密能力的客户端应登记为 `public` 客户端，例如 Android / iOS App、桌面客户端和单页 Web 应用。公共客户端不设置或发送 `client_secret`，授权码流程必须使用 PKCE `S256`。回调 URI 需要登记完整值，例如原生应用可使用 `lite-sso-demo://oauth/callback`；SSO 会精确匹配该值。
 
@@ -101,9 +134,9 @@ Content-Type: application/x-www-form-urlencoded
 grant_type=authorization_code&client_id=android-app&code=<code>&redirect_uri=lite-sso-demo%3A%2F%2Foauth%2Fcallback&code_verifier=<original-verifier>
 ```
 
-公共客户端不发送 `Authorization: Basic`，也不发送 `client_secret`。成功后可使用 `Authorization: Bearer <access-token>` 调用 `/oauth/userinfo`。当前 SSO 不签发 refresh token；令牌过期后重新走授权流程。建议将临时 `state` / verifier 与登录事务绑定保存，成功或失败后清除，并使用平台提供的安全存储保护本地令牌。
+公共客户端不发送 `Authorization: Basic`，也不发送 `client_secret`。成功后可使用 `Authorization: Bearer <access-token>` 调用 `/oauth/userinfo`。响应包含需要安全存储的 `refresh_token`；刷新成功后必须立即替换旧值。建议将临时 `state` / verifier 与登录事务绑定保存，成功或失败后清除，并使用平台提供的安全存储保护本地令牌。
 
-### 3.3 处理服务端登录回调
+### 4.3 处理服务端登录回调
 
 SSO 登录成功后跳转到接入系统的回调地址：
 
@@ -117,7 +150,7 @@ https://order.example.com/auth/sso/callback?code=<code>&state=<random-state>
 2. 读取 `code`，由后端调用令牌接口。
 3. 校验完成后删除已保存的 `state`，防止重复使用。
 
-### 3.4 使用 Code 换取 Access Token
+### 4.4 使用 Code 换取 Access Token
 
 ```http
 POST /oauth/token HTTP/1.1
@@ -134,13 +167,19 @@ redirect_uri=https%3A%2F%2Forder.example.com%2Fauth%2Fsso%2Fcallback
 
 ```json
 {
-  "access_token": "<access-token>",
-  "expires_in": 43200,
-  "token_type": "Bearer"
+  "access_token": "<RS256-JWT>",
+  "refresh_token": "<opaque-refresh-token>",
+  "expires_in": 1800,
+  "token_type": "Bearer",
+  "scope": "courses:read"
 }
 ```
 
-### 3.5 获取用户信息
+JWT 的 `iss` 为当前环境 SSO 地址，`aud` 包含客户端登记的全部 API 标识，`scope` 只包含授权请求明确申请且已登记的权限。未传 `scope` 时令牌没有业务权限。业务 API 应按 JWT header 的 `kid` 从 JWKS 获取公钥，并验证 RS256 签名、`iss`、自身 `aud`、`exp` 和所需 `scope`。JWKS 响应可缓存 5 分钟。旧不透明 OAuth Access Token 在切换后不再受支持。
+
+Access Token 到期时使用同一客户端调用 `POST /oauth/token`，参数为 `grant_type=refresh_token&refresh_token=<当前令牌>`。保密客户端继续使用 Basic 认证；公共客户端传 `client_id`。成功响应返回新的 Access Token 与 Refresh Token，旧 Refresh Token 立即失效；30 天最长期限不因轮换延长。SSO 退出登录会撤销用户的 OAuth Refresh Token，已签发 JWT 最多继续有效 30 分钟。
+
+### 4.5 获取用户信息
 
 ```http
 GET /oauth/userinfo HTTP/1.1
@@ -161,7 +200,7 @@ Authorization: Bearer <access-token>
 
 接入系统应以 `id` 作为 SSO 用户唯一标识，并在获取用户信息后创建自己的登录会话。
 
-### 3.6 退出登录
+### 4.6 退出登录
 
 系统退出分为接入系统本地会话退出和 SSO 全局会话退出：
 
@@ -183,7 +222,7 @@ Cookie: order_session=<local-session>
 
 响应可返回 `204 No Content` 或轻量 HTML，SSO 不会读取响应内容。
 
-## 4. Python / Flask 示例
+## 5. Python / Flask 示例
 
 安装依赖：
 
@@ -290,11 +329,11 @@ if __name__ == "__main__":
 
 访问 `http://localhost:5000/login` 即可发起 SSO 登录。
 
-## 5. 注意事项
+## 6. 注意事项
 
 - `client_secret` 只能用于 `confidential` 服务端客户端并存放在接入系统后端；`public` 客户端不使用 secret。
 - 每次登录必须生成并校验 `state`。
-- 当前 SSO 不签发 `refresh_token`，令牌过期后需要重新登录。
+- OAuth Refresh Token 每次使用后轮换，客户端必须保存新值并丢弃旧值。
 - 公共客户端必须使用 PKCE `S256`；服务端客户端可继续使用现有 secret 流程，也可选用 PKCE `S256`。
 - `redirect_uri` 必须与管理端登记的地址完全一致。服务端回调生产环境应使用 HTTPS；原生公共客户端可登记精确的自定义 Scheme 回调。
 - 退出登录携带的 `redirect` 只校验域名是否与已登记的 `homepage_url` 一致，不要求路径与 `homepage_url` 相同。

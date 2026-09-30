@@ -18,7 +18,7 @@ import (
 
 func TestService_IssuedGrantIsReusableAndSessionBound(t *testing.T) {
 	store := kv.NewMemoryStore()
-	config := &conf.Config{Auth: conf.AuthConfig{ReauthTokenTTL: time.Minute}}
+	config := &conf.Config{Tokens: conf.TokenConfig{Reauth: conf.ReauthTokenConfig{GrantTTL: time.Minute}}}
 	service := NewService(Deps{Config: config, Store: store})
 	result, err := service.Issue(context.Background(), "user-1", "session-1", MethodPasskey, "credential-1")
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestService_RecentLoginAuthorizesSessionWithoutEmail(t *testing.T) {
 		ID: "session-1", UserID: "user-1", DeviceID: "device-1", AuthMethod: "GITHUB",
 		RefreshTokenHash: "hash", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour),
 	}).Error)
-	service := NewService(Deps{Config: &conf.Config{Auth: conf.AuthConfig{ReauthTokenTTL: 5 * time.Minute}}, DB: database, Store: kv.NewMemoryStore()})
+	service := NewService(Deps{Config: &conf.Config{Tokens: conf.TokenConfig{Reauth: conf.ReauthTokenConfig{GrantTTL: 5 * time.Minute}}}, DB: database, Store: kv.NewMemoryStore()})
 
 	grant, err := service.AuthorizeSession(t.Context(), "user-1", "session-1")
 	require.NoError(t, err)
@@ -80,7 +80,7 @@ func TestService_DescribeOrdersAvailableMethodsAndMasksEmail(t *testing.T) {
 		AttestationType: "none", AttestationFormat: "none", TransportsJSON: "[]", Attachment: "platform", ExtensionsJSON: "{}", Name: "Passkey",
 	}).Error)
 	service := NewService(Deps{
-		Config: &conf.Config{Auth: conf.AuthConfig{ReauthTokenTTL: 5 * time.Minute}, Passkey: conf.PasskeyConfig{RPID: "example.com"}},
+		Config: &conf.Config{Tokens: conf.TokenConfig{Reauth: conf.ReauthTokenConfig{GrantTTL: 5 * time.Minute}}, Passkey: conf.PasskeyConfig{RPID: "example.com"}},
 		DB:     database, Store: kv.NewMemoryStore(),
 	})
 
@@ -94,7 +94,6 @@ func TestService_DescribeOrdersAvailableMethodsAndMasksEmail(t *testing.T) {
 }
 
 func TestService_EmailChallengeIsSessionBoundSingleUseAndIssuesGrant(t *testing.T) {
-	t.Setenv("ENV", "local")
 	database := newReauthTestDB(t)
 	email := "owner@example.com"
 	require.NoError(t, database.Create(&model.User{ID: "user-1", Email: &email, IsActive: true}).Error)
@@ -102,8 +101,9 @@ func TestService_EmailChallengeIsSessionBoundSingleUseAndIssuesGrant(t *testing.
 	require.NoError(t, database.Create(&model.UserEmail{ID: "secondary", UserID: "user-1", Email: "secondary@example.com", VerifiedAt: &verifiedAt}).Error)
 	store := kv.NewMemoryStore()
 	config := &conf.Config{
-		Auth: conf.AuthConfig{OTPSecret: "test-secret", OTPExpire: time.Minute, OTPMaxAttempts: 5, ReauthTokenTTL: 5 * time.Minute},
-		Dev:  conf.DevConfig{SkipSendMessage: true, FixedEmailOTP: "123456"},
+		Auth:   conf.AuthConfig{OTPSecret: "test-secret", OTPExpire: time.Minute, OTPMaxAttempts: 5},
+		Tokens: conf.TokenConfig{Reauth: conf.ReauthTokenConfig{GrantTTL: 5 * time.Minute}},
+		Dev:    conf.DevConfig{SkipSendMessage: true, FixedEmailOTP: "123456"},
 	}
 	authService := serviceauth.NewAuthService(config, database, store, nil, nil)
 	service := NewService(Deps{Config: config, DB: database, Store: store, Auth: authService})
@@ -128,7 +128,6 @@ func TestService_EmailChallengeIsSessionBoundSingleUseAndIssuesGrant(t *testing.
 }
 
 func TestService_BeginEmailRequiresValidCaptcha(t *testing.T) {
-	t.Setenv("ENV", "local")
 	database := newReauthTestDB(t)
 	email := "owner@example.com"
 	require.NoError(t, database.Create(&model.User{ID: "user-1", Email: &email, IsActive: true}).Error)
@@ -150,7 +149,7 @@ func newReauthTestDB(t *testing.T) *gorm.DB {
 }
 
 func TestService_MissingAndExpiredToken(t *testing.T) {
-	service := NewService(Deps{Config: &conf.Config{Auth: conf.AuthConfig{ReauthTokenTTL: time.Millisecond}}, Store: kv.NewMemoryStore()})
+	service := NewService(Deps{Config: &conf.Config{Tokens: conf.TokenConfig{Reauth: conf.ReauthTokenConfig{GrantTTL: time.Millisecond}}}, Store: kv.NewMemoryStore()})
 	_, err := service.Authorize(context.Background(), "", "user-1", "session-1")
 	require.ErrorIs(t, err, common.ErrReauthRequired)
 

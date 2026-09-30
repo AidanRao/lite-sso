@@ -34,6 +34,8 @@ type AuthHandler struct {
 	db                *gorm.DB
 	kv                kv.Store
 	trustProxyHeaders bool
+	cookieSecure      bool
+	oauth2            *oauth2.OAuth2
 }
 
 func NewAuthHandler(deps AuthDeps) *AuthHandler {
@@ -51,6 +53,8 @@ func NewAuthHandler(deps AuthDeps) *AuthHandler {
 		db:                deps.DB,
 		kv:                kvStore,
 		trustProxyHeaders: trustProxyHeaders,
+		cookieSecure:      cfg != nil && cfg.Server.CookieSecure,
+		oauth2:            deps.OAuth2,
 	}
 }
 
@@ -87,7 +91,7 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 	audit.Email(c, req.Email)
 	deviceID, isNewDevice := auth.EnsureDeviceID(c.Request)
 	if isNewDevice {
-		WriteDeviceCookie(c, deviceID)
+		WriteDeviceCookie(c, deviceID, h.cookieSecure)
 	}
 	purpose := auth.ChallengePurpose(req.Purpose)
 	if purpose != auth.ChallengePurposeLogin && purpose != auth.ChallengePurposeRegister && purpose != auth.ChallengePurposePasswordReset {
@@ -122,9 +126,9 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 	c.JSON(http.StatusOK, ecode.OKResponse(data))
 }
 
-func WriteDeviceCookie(c *gin.Context, deviceID string) {
+func WriteDeviceCookie(c *gin.Context, deviceID string, secure bool) {
 	audit.Device(c, deviceID)
-	auth.WriteDeviceCookie(c.Writer, deviceID, conf.GetEnv() == conf.EnvProd)
+	auth.WriteDeviceCookie(c.Writer, deviceID, secure)
 }
 
 func writeRateLimited(c *gin.Context, err error, message string) {

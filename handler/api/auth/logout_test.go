@@ -38,7 +38,8 @@ func TestAuthLogout_PersistentSessionCookieRevokesSessionAndClearsLoginCookies(t
 	if err := database.Create(&model.User{ID: "u1", Email: &email, IsActive: true}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	authService := serviceauth.NewAuthService(&conf.Config{}, database, nil, nil, nil)
+	cfg := &conf.Config{Tokens: conf.TokenConfig{Session: conf.SessionTokenConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour}}, Auth: conf.AuthConfig{JWTSecret: "logout-test-jwt-secret"}}
+	authService := serviceauth.NewAuthService(cfg, database, nil, nil, nil)
 	_, pair, err := authService.CompleteLoginWithContext(context.Background(), "u1", "", serviceauth.LoginMetadata{
 		DeviceID:  "dev-logout",
 		IP:        "192.0.2.1",
@@ -48,7 +49,7 @@ func TestAuthLogout_PersistentSessionCookieRevokesSessionAndClearsLoginCookies(t
 		t.Fatalf("create login: %v", err)
 	}
 
-	handler := apiauth.NewAuthHandler(apiauth.AuthDeps{Config: &conf.Config{}, DB: database})
+	handler := apiauth.NewAuthHandler(apiauth.AuthDeps{Config: cfg, DB: database})
 	router := gin.New()
 	router.POST("/api/auth/logout", handler.Logout)
 	router.GET("/oauth/authorize", serverhandler.RequireSessionAuthOrRedirect(authService), func(c *gin.Context) {

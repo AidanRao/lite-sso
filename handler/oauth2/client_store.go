@@ -25,15 +25,6 @@ func (s *ClientStore) GetByID(ctx context.Context, id string) (gooauth2.ClientIn
 		return nil, oauth2errors.ErrInvalidClient
 	}
 
-	if id == "api" {
-		return &models.Client{
-			ID:     "api",
-			Secret: "",
-			Domain: `[""]`,
-			Public: true,
-		}, nil
-	}
-
 	clientRepo := db.NewOAuthClientRepository(s.db)
 	client, err := clientRepo.FindByClientID(ctx, id)
 	if err != nil {

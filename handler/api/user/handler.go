@@ -38,6 +38,7 @@ type UserHandler struct {
 	permissions       *feature.Service
 	config            *conf.Config
 	trustProxyHeaders bool
+	cookieSecure      bool
 }
 
 func NewUserHandler(deps UserDeps) *UserHandler {
@@ -49,6 +50,7 @@ func NewUserHandler(deps UserDeps) *UserHandler {
 		auth:              serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
 		emails:            serviceuser.NewEmailService(serviceuser.EmailDeps{Config: deps.Config, DB: deps.DB, MessageSender: deps.MessageSender}),
 		trustProxyHeaders: trustProxyHeaders,
+		cookieSecure:      deps.Config != nil && deps.Config.Server.CookieSecure,
 	}
 }
 
@@ -119,12 +121,12 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 	if isNewDevice {
-		apiauth.WriteDeviceCookie(c, deviceID)
+		apiauth.WriteDeviceCookie(c, deviceID, h.cookieSecure)
 	}
 	audit.Actor(c, user.ID, pair.SessionID)
 	audit.AuthMethod(c, "password")
 	audit.Completed(c, "session_created")
-	apiauth.WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
+	apiauth.WriteLoginCookies(c, pair, h.cookieSecure, h.auth.RefreshTokenTTL())
 	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }
@@ -213,7 +215,7 @@ func (h *UserHandler) ResetPassword(c *gin.Context) {
 	}
 
 	if isNewDevice {
-		apiauth.WriteDeviceCookie(c, deviceID)
+		apiauth.WriteDeviceCookie(c, deviceID, h.cookieSecure)
 	}
 	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"reset": true}))

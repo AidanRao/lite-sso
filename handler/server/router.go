@@ -1,8 +1,6 @@
 package server
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"sso-server/conf"
@@ -21,7 +19,7 @@ import (
 	"sso-server/service/reauth"
 )
 
-func (s *Server) registerRoutes() {
+func (s *Server) registerRoutes() error {
 	// Static files
 	s.engine.Static("/assets", "./web/assets")
 	s.engine.StaticFile("/register.html", "./web/register.html")
@@ -37,10 +35,7 @@ func (s *Server) registerRoutes() {
 
 	o, err := oauth2.New(s.cfg)
 	if err != nil {
-		s.engine.GET("/oauth/authorize", func(c *gin.Context) { c.Status(http.StatusInternalServerError) })
-		s.engine.POST("/oauth/token", func(c *gin.Context) { c.Status(http.StatusInternalServerError) })
-		s.engine.GET("/oauth/userinfo", func(c *gin.Context) { c.Status(http.StatusInternalServerError) })
-		o = nil
+		return err
 	}
 
 	baseKVStore := kv.Store(kv.NewMemoryStore())
@@ -182,9 +177,9 @@ func (s *Server) registerRoutes() {
 		}
 	}
 
-	if o != nil {
-		s.engine.GET("/oauth/authorize", authRequiredOrRedirect, o.HandleAuthorize)
-		s.engine.POST("/oauth/token", o.HandleToken)
-		s.engine.GET("/oauth/userinfo", oauthHandler.HandleUserinfo)
-	}
+	s.engine.GET("/.well-known/jwks.json", o.HandleJWKS)
+	s.engine.GET("/oauth/authorize", authRequiredOrRedirect, o.HandleAuthorize)
+	s.engine.POST("/oauth/token", o.HandleToken)
+	s.engine.GET("/oauth/userinfo", oauthHandler.HandleUserinfo)
+	return nil
 }

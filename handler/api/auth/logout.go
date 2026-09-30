@@ -9,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"sso-server/common/ecode"
-	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
 	"sso-server/handler/audit"
@@ -18,7 +17,7 @@ import (
 )
 
 func (h *AuthHandler) Logout(c *gin.Context) {
-	ClearLoginCookies(c, conf.GetEnv() == conf.EnvProd)
+	ClearLoginCookies(c, h.cookieSecure)
 
 	sessionID := c.GetString("session_id")
 	refreshTokenRevoked := false
@@ -68,6 +67,12 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	if sessionID == "" {
 		c.JSON(http.StatusUnauthorized, ecode.Response[any]{Code: ecode.Unauthorized, Message: "未授权", Data: nil})
 		return
+	}
+	if h.oauth2 != nil && c.GetString("user_id") != "" {
+		if err := h.oauth2.RevokeUserRefreshTokens(c.Request.Context(), c.GetString("user_id")); err != nil {
+			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "退出失败", Data: nil})
+			return
+		}
 	}
 	audit.Actor(c, c.GetString("user_id"), sessionID)
 	if c.GetBool("fixture_session") {

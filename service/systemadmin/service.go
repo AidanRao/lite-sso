@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -235,6 +236,14 @@ func (s *AdminService) CreateOAuthClient(ctx context.Context, req dto.CreateOAut
 	if clientType.IsPublic() {
 		clientSecret = ""
 	}
+	audiences, err := normalizeClaimValues(req.Audiences)
+	if err != nil {
+		return nil, err
+	}
+	scopes, err := normalizeClaimValues(req.AllowedScopes)
+	if err != nil {
+		return nil, err
+	}
 
 	exists, err := s.clientRepo.ExistsClientID(ctx, clientID, 0)
 	if err != nil {
@@ -245,13 +254,15 @@ func (s *AdminService) CreateOAuthClient(ctx context.Context, req dto.CreateOAut
 	}
 
 	client := &model.OAuthClient{
-		Name:         name,
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-		ClientType:   clientType,
-		HomepageURL:  homepageURL,
-		RedirectURI:  redirectURI,
-		LogoutURI:    logoutURI,
+		Name:          name,
+		ClientID:      clientID,
+		ClientSecret:  clientSecret,
+		ClientType:    clientType,
+		Audiences:     audiences,
+		AllowedScopes: scopes,
+		HomepageURL:   homepageURL,
+		RedirectURI:   redirectURI,
+		LogoutURI:     logoutURI,
 	}
 	if err := s.clientRepo.Create(ctx, client); err != nil {
 		return nil, err
@@ -287,12 +298,22 @@ func (s *AdminService) UpdateOAuthClient(ctx context.Context, id uint, req dto.U
 	if name == "" || !clientType.IsValid() {
 		return nil, common.ErrInvalidOAuthClient
 	}
+	audiences, err := normalizeClaimValues(req.Audiences)
+	if err != nil {
+		return nil, err
+	}
+	scopes, err := normalizeClaimValues(req.AllowedScopes)
+	if err != nil {
+		return nil, err
+	}
 
 	client.Name = name
 	client.HomepageURL = homepageURL
 	client.RedirectURI = redirectURI
 	client.LogoutURI = logoutURI
 	client.ClientType = clientType
+	client.Audiences = audiences
+	client.AllowedScopes = scopes
 	if clientType.IsPublic() {
 		client.ClientSecret = ""
 	} else if req.ClientSecret != nil && strings.TrimSpace(*req.ClientSecret) != "" {
@@ -311,15 +332,31 @@ func (s *AdminService) UpdateOAuthClient(ctx context.Context, id uint, req dto.U
 
 func toOAuthClientResponse(client *model.OAuthClient) dto.OAuthClientResponse {
 	return dto.OAuthClientResponse{
-		ID:          client.ID,
-		Name:        client.Name,
-		ClientID:    client.ClientID,
-		ClientType:  string(client.ClientType),
-		HomepageURL: client.HomepageURL,
-		RedirectURI: client.RedirectURI,
-		LogoutURI:   client.LogoutURI,
-		LogoURL:     client.LogoURL,
+		ID:            client.ID,
+		Name:          client.Name,
+		ClientID:      client.ClientID,
+		ClientType:    string(client.ClientType),
+		Audiences:     append([]string{}, client.Audiences...),
+		AllowedScopes: append([]string{}, client.AllowedScopes...),
+		HomepageURL:   client.HomepageURL,
+		RedirectURI:   client.RedirectURI,
+		LogoutURI:     client.LogoutURI,
+		LogoURL:       client.LogoURL,
 	}
+}
+
+func normalizeClaimValues(values []string) ([]string, error) {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || strings.ContainsAny(value, " \t\r\n") || len(value) > 128 {
+			return nil, common.ErrInvalidOAuthClient
+		}
+		if !slices.Contains(result, value) {
+			result = append(result, value)
+		}
+	}
+	return result, nil
 }
 
 func normalizeURI(value string) (string, error) {

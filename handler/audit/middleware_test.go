@@ -137,7 +137,6 @@ func Test_Middleware_RedirectsPanicAndPartialCompletion(t *testing.T) {
 }
 
 func Test_Middleware_RealPasswordEmailQRCodeAndLogoutFlows(t *testing.T) {
-	t.Setenv("ENV", "local")
 	database, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
 	sqlDB, err := database.DB()
@@ -149,7 +148,11 @@ func Test_Middleware_RealPasswordEmailQRCodeAndLogoutFlows(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, database.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &hash, IsActive: true}).Error)
 	store := kv.NewMemoryStore()
-	cfg := &conf.Config{Dev: conf.DevConfig{FixedEmailOTP: "123456", SkipSendMessage: true}}
+	cfg := &conf.Config{
+		Tokens: conf.TokenConfig{Session: conf.SessionTokenConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour}},
+		Auth:   conf.AuthConfig{OTPSecret: "audit-test-otp-secret", JWTSecret: "audit-test-jwt-secret"},
+		Dev:    conf.DevConfig{FixedEmailOTP: "123456", SkipSendMessage: true},
+	}
 	h := apiauth.NewAuthHandler(apiauth.AuthDeps{Config: cfg, DB: database, KV: store})
 	r, sink := router(cfg)
 	r.POST("/api/auth/login/password", h.LoginWithPassword)

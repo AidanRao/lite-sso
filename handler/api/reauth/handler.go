@@ -19,6 +19,7 @@ type Handler struct {
 	passkey           *servicepasskey.Service
 	reauth            *servicereauth.Service
 	trustProxyHeaders bool
+	cookieSecure      bool
 }
 
 // NewHandler creates a re-authentication handler.
@@ -27,5 +28,6 @@ func NewHandler(deps Deps) *Handler {
 		passkey:           deps.Passkey,
 		reauth:            deps.Reauth,
 		trustProxyHeaders: deps.Config != nil && deps.Config.Server.TrustProxyHeaders,
+		cookieSecure:      deps.Config != nil && deps.Config.Server.CookieSecure,
 	}
 }

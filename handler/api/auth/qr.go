@@ -8,7 +8,6 @@ import (
 
 	"sso-server/common"
 	"sso-server/common/ecode"
-	"sso-server/conf"
 	"sso-server/handler/audit"
 	serviceauth "sso-server/service/auth"
 )
@@ -27,7 +26,7 @@ func (h *AuthHandler) GenerateQRCode(c *gin.Context) {
 		return
 	}
 	if isNewDevice {
-		WriteDeviceCookie(c, deviceID)
+		WriteDeviceCookie(c, deviceID, h.cookieSecure)
 	}
 
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{
@@ -169,12 +168,12 @@ func (h *AuthHandler) CompleteQRCode(c *gin.Context) {
 	}
 
 	if isNewDevice {
-		WriteDeviceCookie(c, deviceID)
+		WriteDeviceCookie(c, deviceID, h.cookieSecure)
 	}
 	audit.Actor(c, result.User.ID, pair.SessionID)
 	audit.Device(c, deviceID)
 	audit.Completed(c, "session_created")
-	WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.auth.RefreshTokenTTL())
+	WriteLoginCookies(c, pair, h.cookieSecure, h.auth.RefreshTokenTTL())
 	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }

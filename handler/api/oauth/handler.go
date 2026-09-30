@@ -34,6 +34,7 @@ type OAuthHandler struct {
 	oauth2            *oauth2.OAuth2
 	db                *gorm.DB
 	trustProxyHeaders bool
+	cookieSecure      bool
 }
 
 func NewOAuthHandler(deps OAuthDeps) *OAuthHandler {
@@ -45,6 +46,7 @@ func NewOAuthHandler(deps OAuthDeps) *OAuthHandler {
 		oauth2:            deps.OAuth2,
 		db:                deps.DB,
 		trustProxyHeaders: trustProxyHeaders,
+		cookieSecure:      deps.Config != nil && deps.Config.Server.CookieSecure,
 	}
 }
 
@@ -109,7 +111,7 @@ func (h *OAuthHandler) ThirdPartyLogin(c *gin.Context) {
 		return
 	}
 	if isNewDevice {
-		apiauth.WriteDeviceCookie(c, deviceID)
+		apiauth.WriteDeviceCookie(c, deviceID, h.cookieSecure)
 	}
 
 	audit.Success(c)
@@ -141,7 +143,7 @@ func (h *OAuthHandler) ThirdPartyBind(c *gin.Context) {
 		return
 	}
 	if isNewDevice {
-		apiauth.WriteDeviceCookie(c, deviceID)
+		apiauth.WriteDeviceCookie(c, deviceID, h.cookieSecure)
 	}
 
 	audit.Success(c)
@@ -290,13 +292,13 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 	}
 
 	if isNewDevice {
-		apiauth.WriteDeviceCookie(c, deviceID)
+		apiauth.WriteDeviceCookie(c, deviceID, h.cookieSecure)
 	}
 	audit.Actor(c, result.User.ID, pair.SessionID)
 	audit.AuthMethod(c, string(providerAuthMethod(provider)))
 	audit.Completed(c, "session_created")
 	audit.Success(c)
-	apiauth.WriteLoginCookies(c, pair, conf.GetEnv() == conf.EnvProd, h.authService.RefreshTokenTTL())
+	apiauth.WriteLoginCookies(c, pair, h.cookieSecure, h.authService.RefreshTokenTTL())
 	c.Redirect(http.StatusTemporaryRedirect, result.Redirect)
 }
 

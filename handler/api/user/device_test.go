@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
@@ -35,7 +36,7 @@ func TestLoginDevices_ListRevokeAndInvalidateTargetTokens(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 
-	cfg := &conf.Config{Auth: conf.AuthConfig{JWTSecret: "device-test-jwt-secret"}}
+	cfg := &conf.Config{Tokens: conf.TokenConfig{Session: conf.SessionTokenConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour}}, Auth: conf.AuthConfig{JWTSecret: "device-test-jwt-secret"}}
 	authService := serviceauth.NewAuthService(cfg, database, kv.NewMemoryStore(), nil, nil)
 	currentResult, _, err := authService.CompleteLoginWithContext(context.Background(), "u1", "", serviceauth.LoginMetadata{
 		DeviceID:  "dev-current",
