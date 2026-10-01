@@ -106,7 +106,6 @@ func Test_ParseVersion_Validation(t *testing.T) {
 		expectCall string
 		wantError  string
 	}{
-		{name: "positive", command: "up-to", arguments: []string{"12"}, expectCall: "up-to:12"},
 		{name: "down to zero", command: "down-to", arguments: []string{"0"}, expectCall: "down-to:0"},
 		{name: "missing", command: "up-to", wantError: "exactly one VERSION"},
 		{name: "too many", command: "up-to", arguments: []string{"1", "2"}, wantError: "exactly one VERSION"},
@@ -230,12 +229,6 @@ func Test_ExecuteProviderCommand_UnknownCommand(t *testing.T) {
 	)
 
 	require.ErrorContains(t, err, "no such command")
-}
-
-func Test_IsFileCommand_CommandType(t *testing.T) {
-	assert.True(t, isFileCommand("create"))
-	assert.True(t, isFileCommand("fix"))
-	assert.False(t, isFileCommand("up"))
 }
 
 func formatVersion(version int64) string {

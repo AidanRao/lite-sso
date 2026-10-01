@@ -1,75 +1,77 @@
+// Package kv provides Redis operations and the shared SSO key layout.
 package kv
 
-import "fmt"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+)
 
 func KeyCaptcha(captchaID string) string {
-	return fmt.Sprintf("captcha:%s", captchaID)
-}
-
-func KeyOTP(email string) string {
-	return fmt.Sprintf("otp:%s", email)
+	return "captcha:" + captchaID
 }
 
 func KeyChallenge(challengeID string) string {
-	return fmt.Sprintf("auth:challenge:%s", challengeID)
+	return "auth:challenge:" + challengeID
 }
 
 func KeyAuthRateLimit(scope string, value string) string {
-	return fmt.Sprintf("auth:rate:%s:%s", scope, value)
+	return "auth:rate:" + scope + ":" + value
 }
 
 func KeyAuthFailure(scope string, value string) string {
-	return fmt.Sprintf("auth:fail:%s:%s", scope, value)
+	return "auth:fail:" + scope + ":" + value
 }
 
 func KeyAuthDistinctAccounts(scope string, value string) string {
-	return fmt.Sprintf("auth:accounts:%s:%s", scope, value)
-}
-
-func KeyAuthCooldown(scope string, value string) string {
-	return fmt.Sprintf("auth:cooldown:%s:%s", scope, value)
-}
-
-func KeyRateLimitEmail(email string) string {
-	return fmt.Sprintf("ratelimit:email:%s", email)
-}
-
-func KeyPasswordLoginFailures(email string) string {
-	return fmt.Sprintf("password:failures:%s", email)
-}
-
-func KeyPasswordLoginLock(email string) string {
-	return fmt.Sprintf("password:lock:%s", email)
+	return "auth:accounts:" + scope + ":" + value
 }
 
 func KeyQR(uuid string) string {
-	return fmt.Sprintf("qr:%s", uuid)
+	return "qr:" + uuid
 }
 
 func KeySession(sessionID string) string {
-	return fmt.Sprintf("session:%s", sessionID)
+	return "session:" + sessionID
 }
 
 func KeyOAuthState(state string) string {
-	return fmt.Sprintf("oauth:state:%s", state)
+	return "oauth:state:" + state
 }
 
 func KeyOAuthPendingBinding(bindingID string) string {
-	return fmt.Sprintf("oauth:pending-binding:%s", bindingID)
+	return "oauth:pending-binding:" + bindingID
+}
+
+// KeyOAuthAuthorizationCode keeps the bearer code out of Redis key names.
+func KeyOAuthAuthorizationCode(code string) string {
+	digest := sha256.Sum256([]byte(code))
+	return "oauth:authorization-code:" + hex.EncodeToString(digest[:])
+}
+
+func KeyOAuthRefreshToken(tokenDigest string) string {
+	return "oauth:refresh:token:" + tokenDigest
+}
+
+func KeyOAuthRefreshUser(userID string) string {
+	return "oauth:refresh:user:" + userID
+}
+
+func KeyOAuthRefreshRevoked(userID string) string {
+	return "oauth:refresh:revoked:" + userID
 }
 
 func KeyWebAuthnCeremony(ceremonyID string) string {
-	return fmt.Sprintf("webauthn:ceremony:%s", ceremonyID)
+	return "webauthn:ceremony:" + ceremonyID
 }
 
 func KeyReauthGrant(tokenHash string) string {
-	return fmt.Sprintf("reauth:grant:%s", tokenHash)
+	return "reauth:grant:" + tokenHash
 }
 
 func KeyReauthSession(sessionID string) string {
-	return fmt.Sprintf("reauth:session:%s", sessionID)
+	return "reauth:session:" + sessionID
 }
 
 func KeyReauthEmailChallenge(challengeID string) string {
-	return fmt.Sprintf("reauth:email:%s", challengeID)
+	return "reauth:email:" + challengeID
 }

@@ -7,8 +7,6 @@ require (
 	github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.6.0
 	github.com/gin-gonic/gin v1.9.1
 	github.com/go-oauth2/oauth2/v4 v4.5.4
-	github.com/go-oauth2/redis/v4 v4.1.1
-	github.com/go-redis/redis/v8 v8.11.5
 	github.com/go-redis/redis_rate/v10 v10.0.1
 	github.com/go-webauthn/webauthn v0.17.4
 	github.com/golang-jwt/jwt/v5 v5.3.1
