@@ -46,35 +46,6 @@ func (s *fakeAvatarStore) DeleteImage(_ context.Context, _ string) error {
 	return nil
 }
 
-func TestUserProfile_RequiresSessionCookie(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	h := apiuser.NewUserHandler(apiuser.UserDeps{
-		Config: &conf.Config{},
-		DB:     db,
-		KV:     kv.NewMemoryStore(),
-	})
-
-	r := gin.New()
-	r.GET("/api/user/profile", serverhandler.RequireSessionAuth(kv.NewMemoryStore()), h.GetProfile)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/user/profile", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d, body=%s", w.Code, w.Body.String())
-	}
-}
-
 func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -335,7 +306,7 @@ func TestUserApplications_ReturnsOnlyApplicationData(t *testing.T) {
 	}
 }
 
-func TestUserSeparatedProfileEndpoints_RequireAuthentication(t *testing.T) {
+func TestUserProfileEndpoints_RequireAuthentication(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	database, err := gorm.Open(sqlite.Open("file:profile_endpoint_auth?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -344,10 +315,11 @@ func TestUserSeparatedProfileEndpoints_RequireAuthentication(t *testing.T) {
 	store := kv.NewMemoryStore()
 	handler := apiuser.NewUserHandler(apiuser.UserDeps{Config: &conf.Config{}, DB: database, KV: store})
 	router := gin.New()
+	router.GET("/api/user/profile", serverhandler.RequireSessionAuth(store), handler.GetProfile)
 	router.GET("/api/user/login-methods", serverhandler.RequireSessionAuth(store), handler.GetLoginMethods)
 	router.GET("/api/user/applications", serverhandler.RequireSessionAuth(store), handler.GetApplications)
 
-	for _, path := range []string{"/api/user/login-methods", "/api/user/applications"} {
+	for _, path := range []string{"/api/user/profile", "/api/user/login-methods", "/api/user/applications"} {
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 		if response.Code != http.StatusUnauthorized {

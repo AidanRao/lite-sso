@@ -17,15 +17,13 @@ import (
 	"github.com/go-oauth2/oauth2/v4/models"
 	oauth2server "github.com/go-oauth2/oauth2/v4/server"
 	"github.com/go-oauth2/oauth2/v4/store"
-	oredis "github.com/go-oauth2/redis/v4"
-	"github.com/go-redis/redis/v8"
 	"gorm.io/gorm"
 
 	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
 	"sso-server/handler/audit"
-	"sso-server/manager/oauthrefresh"
+	"sso-server/manager/oauth"
 )
 
 type OAuth2 struct {
@@ -35,24 +33,24 @@ type OAuth2 struct {
 	server  *oauth2server.Server
 	clients *db.OAuthClientRepository
 	signer  *tokenSigner
-	refresh oauthrefresh.Store
+	refresh oauth.RefreshStore
 }
 
 type authorizationSessionKey struct{}
 
 func New(cfg *conf.Config) (*OAuth2, error) {
-	tokenStore := oredis.NewRedisStore(toRedisV8Options(cfg), kv.NamespacePrefix(conf.GetEnvironmentName()))
 	if kv.Client == nil {
 		return nil, errors.New("Redis is required for OAuth refresh tokens")
 	}
-	return newWithStores(cfg, db.DB, tokenStore, oauthrefresh.NewRedisStore(kv.Client))
+	tokenStore := oauth.NewAuthorizationCodeStore(kv.NewNamespacedStore(kv.NewRedisStore(kv.Client), conf.GetEnvironmentName()))
+	return newWithStores(cfg, db.DB, tokenStore, oauth.NewRedisRefreshStore(kv.Client))
 }
 
 func NewWithStores(cfg *conf.Config, database *gorm.DB, tokenStore gooauth2.TokenStore) (*OAuth2, error) {
-	return newWithStores(cfg, database, tokenStore, oauthrefresh.NewMemoryStore())
+	return newWithStores(cfg, database, tokenStore, oauth.NewMemoryRefreshStore())
 }
 
-func newWithStores(cfg *conf.Config, database *gorm.DB, tokenStore gooauth2.TokenStore, refresh oauthrefresh.Store) (*OAuth2, error) {
+func newWithStores(cfg *conf.Config, database *gorm.DB, tokenStore gooauth2.TokenStore, refresh oauth.RefreshStore) (*OAuth2, error) {
 	if cfg == nil {
 		return nil, oauth2errors.ErrServerError
 	}
@@ -223,7 +221,7 @@ func (o *OAuth2) HandleToken(c *gin.Context) {
 		o.writeTokenError(c, oauth2errors.ErrInvalidScope)
 		return
 	}
-	refreshToken, err := oauthrefresh.NewToken()
+	refreshToken, err := oauth.NewRefreshToken()
 	if err != nil {
 		o.writeTokenError(c, err)
 		return
@@ -238,9 +236,9 @@ func (o *OAuth2) HandleToken(c *gin.Context) {
 		o.writeTokenError(c, oauth2errors.ErrInvalidGrant)
 		return
 	}
-	grant := oauthrefresh.Grant{UserID: info.GetUserID(), ClientID: info.GetClientID(), Audiences: client.Audiences, Scopes: strings.Fields(info.GetScope()), AuthorizedAt: authorizedAt, ExpiresAt: time.Now().Add(o.cfg.Tokens.OAuth.RefreshTokenTTL)}
+	grant := oauth.RefreshGrant{UserID: info.GetUserID(), ClientID: info.GetClientID(), Audiences: client.Audiences, Scopes: strings.Fields(info.GetScope()), AuthorizedAt: authorizedAt, ExpiresAt: time.Now().Add(o.cfg.Tokens.OAuth.RefreshTokenTTL)}
 	if err := o.refresh.Issue(c.Request.Context(), refreshToken, grant); err != nil {
-		if errors.Is(err, oauthrefresh.ErrInvalidRefresh) {
+		if errors.Is(err, oauth.ErrInvalidRefresh) {
 			o.writeTokenError(c, oauth2errors.ErrInvalidGrant)
 		} else {
 			o.writeTokenError(c, err)
@@ -318,14 +316,14 @@ func (o *OAuth2) handleRefresh(c *gin.Context, request *gooauth2.TokenGenerateRe
 		o.writeTokenError(c, err)
 		return
 	}
-	newRefresh, err := oauthrefresh.NewToken()
+	newRefresh, err := oauth.NewRefreshToken()
 	if err != nil {
 		o.writeTokenError(c, err)
 		return
 	}
 	grant.Audiences, grant.Scopes = audiences, allowedScopes
 	if err := o.refresh.Rotate(ctx, request.Refresh, newRefresh, grant); err != nil {
-		if errors.Is(err, oauthrefresh.ErrInvalidRefresh) {
+		if errors.Is(err, oauth.ErrInvalidRefresh) {
 			o.writeTokenError(c, oauth2errors.ErrInvalidGrant)
 		} else {
 			o.writeTokenError(c, err)
@@ -391,15 +389,4 @@ func clientInfoHandler(clientStore *ClientStore) oauth2server.ClientInfoHandler 
 		}
 		return clientID, clientSecret, nil
 	}
-}
-
-func toRedisV8Options(cfg *conf.Config) *redis.Options {
-	raw := cfg.Cache.URL
-	opt, err := redis.ParseURL(raw)
-	if err == nil {
-		return opt
-	}
-
-	opt = &redis.Options{Addr: raw}
-	return opt
 }

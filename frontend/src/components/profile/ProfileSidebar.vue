@@ -11,32 +11,64 @@
       </div>
     </div>
 
-    <nav>
-      <ul class="navigation-root">
-        <ProfileSidebarItem
-          v-for="item in navigation"
-          :key="item.to || item.label"
-          :item="item"
-        />
-      </ul>
-    </nav>
+    <button
+      ref="menuButton"
+      class="menu-button"
+      type="button"
+      aria-controls="profile-settings-menu"
+      :aria-expanded="menuOpen"
+      @click="openMenu"
+    >
+      <PanelLeft :size="18" aria-hidden="true" />
+      菜单
+    </button>
 
-    <div class="sidebar-actions">
-      <RouterLink v-if="isAdmin" class="sidebar-action" to="/admin">
-        <Shield :size="16" aria-hidden="true" />
-        管理后台
-      </RouterLink>
-      <RouterLink class="sidebar-action" to="/logout">
-        <LogOut :size="16" aria-hidden="true" />
-        退出登录
-      </RouterLink>
+    <div v-if="menuOpen" class="menu-backdrop" @click="closeMenu" />
+    <div
+      id="profile-settings-menu"
+      ref="menuPanel"
+      class="sidebar-panel"
+      :class="{ 'is-open': menuOpen }"
+      :role="isMobile ? 'dialog' : undefined"
+      :aria-modal="isMobile && menuOpen ? 'true' : undefined"
+      :aria-label="isMobile ? '设置菜单' : undefined"
+      @keydown="handleMenuKeydown"
+    >
+      <div class="menu-header">
+        <strong>设置菜单</strong>
+        <button ref="closeButton" class="menu-close" type="button" aria-label="关闭菜单" @click="closeMenu">
+          <X :size="20" aria-hidden="true" />
+        </button>
+      </div>
+
+      <nav aria-label="账号设置页面">
+        <ul class="navigation-root" @click="handleNavigationClick">
+          <ProfileSidebarItem
+            v-for="item in navigation"
+            :key="item.to || item.label"
+            :item="item"
+          />
+        </ul>
+      </nav>
+
+      <div class="sidebar-actions" @click="handleNavigationClick">
+        <RouterLink v-if="isAdmin" class="sidebar-action" to="/admin">
+          <Shield :size="16" aria-hidden="true" />
+          管理后台
+        </RouterLink>
+        <RouterLink class="sidebar-action" to="/logout">
+          <LogOut :size="16" aria-hidden="true" />
+          退出登录
+        </RouterLink>
+      </div>
     </div>
   </aside>
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { AppWindow, KeyRound, LogOut, Mail, Paintbrush, RadioTower, ScrollText, Shield, UserRound } from 'lucide-vue-next'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { AppWindow, KeyRound, LogOut, Mail, Paintbrush, PanelLeft, RadioTower, ScrollText, Shield, UserRound, X } from 'lucide-vue-next'
 import ProfileSidebarItem from './ProfileSidebarItem.vue'
 import { filterFeatureNavigation } from '../../utils/features'
 
@@ -105,6 +137,70 @@ const navigation = computed(() => filterFeatureNavigation(navigationItems, props
 
 const displayName = computed(() => props.user?.username || props.user?.email || 'Lite SSO 用户')
 const avatarInitial = computed(() => displayName.value.slice(0, 1).toUpperCase())
+const route = useRoute()
+const menuOpen = ref(false)
+const isMobile = ref(false)
+const menuButton = ref(null)
+const menuPanel = ref(null)
+const closeButton = ref(null)
+let mobileQuery
+let previousBodyOverflow = ''
+
+const closeMenu = (restoreFocus = true) => {
+  if (!menuOpen.value) return
+  menuOpen.value = false
+  document.body.style.overflow = previousBodyOverflow
+  if (restoreFocus && isMobile.value) nextTick(() => menuButton.value?.focus())
+}
+
+const openMenu = async () => {
+  if (!isMobile.value || menuOpen.value) return
+  previousBodyOverflow = document.body.style.overflow
+  document.body.style.overflow = 'hidden'
+  menuOpen.value = true
+  await nextTick()
+  closeButton.value?.focus()
+}
+
+const handleNavigationClick = (event) => {
+  if (event.target.closest('a')) closeMenu(false)
+}
+
+const handleMenuKeydown = (event) => {
+  if (!isMobile.value || !menuOpen.value) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeMenu()
+    return
+  }
+  if (event.key !== 'Tab') return
+  const focusable = [...menuPanel.value.querySelectorAll('a[href], button:not([disabled])')]
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last?.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
+
+const handleViewportChange = () => {
+  isMobile.value = mobileQuery.matches
+  if (!isMobile.value) closeMenu(false)
+}
+
+watch(() => route.fullPath, () => closeMenu(false))
+onMounted(() => {
+  mobileQuery = window.matchMedia('(max-width: 760px)')
+  handleViewportChange()
+  mobileQuery.addEventListener('change', handleViewportChange)
+})
+onBeforeUnmount(() => {
+  closeMenu(false)
+  mobileQuery?.removeEventListener('change', handleViewportChange)
+})
 </script>
 
 <style scoped>
@@ -172,6 +268,12 @@ const avatarInitial = computed(() => displayName.value.slice(0, 1).toUpperCase()
   font-size: 13px;
 }
 
+.menu-button,
+.menu-header,
+.menu-backdrop {
+  display: none;
+}
+
 .navigation-root {
   display: grid;
   gap: 2px;
@@ -218,7 +320,83 @@ const avatarInitial = computed(() => displayName.value.slice(0, 1).toUpperCase()
   }
 
   .identity {
-    padding-inline: 0;
+    padding: 0 0 18px;
+  }
+
+  .menu-button {
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    gap: 8px;
+    align-self: flex-start;
+    border: 1px solid var(--profile-border);
+    border-radius: 6px;
+    background: var(--profile-surface-subtle);
+    color: var(--profile-text-strong);
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 6px 12px;
+  }
+
+  .menu-button:hover,
+  .menu-close:hover {
+    background: var(--profile-surface-hover);
+  }
+
+  .menu-button:focus-visible,
+  .menu-close:focus-visible {
+    outline: 2px solid var(--profile-accent);
+    outline-offset: 2px;
+  }
+
+  .menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: block;
+    background: var(--profile-overlay);
+  }
+
+  .sidebar-panel {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 101;
+    display: none;
+    width: min(360px, calc(100vw - 56px));
+    box-sizing: border-box;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 0 12px 12px 0;
+    background: var(--profile-surface);
+    box-shadow: var(--profile-shadow);
+    padding: 12px 12px 24px;
+  }
+
+  .sidebar-panel.is-open {
+    display: block;
+  }
+
+  .menu-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+    color: var(--profile-text-strong);
+    font-size: 16px;
+  }
+
+  .menu-close {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    border: 1px solid var(--profile-border);
+    border-radius: 6px;
+    background: var(--profile-surface-subtle);
+    color: var(--profile-text-muted);
+    cursor: pointer;
   }
 
   .navigation-root,
@@ -228,7 +406,7 @@ const avatarInitial = computed(() => displayName.value.slice(0, 1).toUpperCase()
   }
 
   .sidebar-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

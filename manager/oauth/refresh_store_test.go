@@ -1,4 +1,4 @@
-package oauthrefresh
+package oauth
 
 import (
 	"context"
@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-func Test_RefreshStore_AtomicRotationAndRevocation(t *testing.T) {
-	store := NewMemoryStore()
-	grant := Grant{UserID: "usr_1", ClientID: "android-app", Audiences: []string{"classhopper-api"}, Scopes: []string{"courses:read"}, AuthorizedAt: time.Now().UnixMicro(), ExpiresAt: time.Now().Add(time.Hour)}
+func TestRefreshStore_AtomicRotationAndRevocation(t *testing.T) {
+	store := NewMemoryRefreshStore()
+	grant := RefreshGrant{UserID: "usr_1", ClientID: "android-app", Audiences: []string{"classhopper-api"}, Scopes: []string{"courses:read"}, AuthorizedAt: time.Now().UnixMicro(), ExpiresAt: time.Now().Add(time.Hour)}
 	if err := store.Issue(context.Background(), "old", grant); err != nil {
 		t.Fatal(err)
 	}

@@ -1,5 +1,4 @@
-// Package oauthrefresh manages opaque OAuth refresh grants and atomic rotation.
-package oauthrefresh
+package oauth
 
 import (
 	"context"
@@ -20,8 +19,8 @@ import (
 
 var ErrInvalidRefresh = errors.New("invalid OAuth refresh token")
 
-// Grant binds a refresh token to the original OAuth authorization.
-type Grant struct {
+// RefreshGrant binds a refresh token to the original OAuth authorization.
+type RefreshGrant struct {
 	UserID       string    `json:"user_id"`
 	ClientID     string    `json:"client_id"`
 	Audiences    []string  `json:"audiences"`
@@ -30,16 +29,16 @@ type Grant struct {
 	ExpiresAt    time.Time `json:"expires_at"`
 }
 
-// Store persists and rotates OAuth refresh grants.
-type Store interface {
-	Issue(context.Context, string, Grant) error
-	Load(context.Context, string) (Grant, error)
-	Rotate(context.Context, string, string, Grant) error
+// RefreshStore persists and rotates OAuth refresh grants.
+type RefreshStore interface {
+	Issue(context.Context, string, RefreshGrant) error
+	Load(context.Context, string) (RefreshGrant, error)
+	Rotate(context.Context, string, string, RefreshGrant) error
 	RevokeUser(context.Context, string) error
 }
 
-// NewToken creates a random opaque refresh token.
-func NewToken() (string, error) {
+// NewRefreshToken creates a random opaque refresh token.
+func NewRefreshToken() (string, error) {
 	value := make([]byte, 32)
 	if _, err := rand.Read(value); err != nil {
 		return "", err
@@ -52,21 +51,26 @@ func refreshDigest(token string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-type RedisStore struct {
+// RedisRefreshStore persists refresh grants with atomic Redis operations.
+type RedisRefreshStore struct {
 	client *redis.Client
 	prefix string
 }
 
-// NewRedisStore creates the production Redis-backed refresh store.
-func NewRedisStore(client *redis.Client) *RedisStore {
-	return &RedisStore{client: client, prefix: kv.NamespacePrefix(conf.GetEnvironmentName()) + "oauth:refresh:"}
+// NewRedisRefreshStore creates the production Redis-backed refresh store.
+func NewRedisRefreshStore(client *redis.Client) *RedisRefreshStore {
+	return &RedisRefreshStore{client: client, prefix: kv.NamespacePrefix(conf.GetEnvironmentName())}
 }
 
-func (s *RedisStore) key(token string) string {
-	return s.prefix + "token:" + refreshDigest(token)
+func (s *RedisRefreshStore) key(token string) string {
+	return s.prefix + kv.KeyOAuthRefreshToken(refreshDigest(token))
 }
-func (s *RedisStore) userKey(userID string) string    { return s.prefix + "user:" + userID }
-func (s *RedisStore) revokedKey(userID string) string { return s.prefix + "revoked:" + userID }
+func (s *RedisRefreshStore) userKey(userID string) string {
+	return s.prefix + kv.KeyOAuthRefreshUser(userID)
+}
+func (s *RedisRefreshStore) revokedKey(userID string) string {
+	return s.prefix + kv.KeyOAuthRefreshRevoked(userID)
+}
 
 const issueRefreshScript = `
 if tonumber(ARGV[3]) <= tonumber(redis.call('GET', KEYS[3]) or '0') then return 0 end
@@ -91,7 +95,7 @@ redis.call('DEL', KEYS[1])
 redis.call('SET', KEYS[2], ARGV[1], 'PX', ARGV[2])
 return #keys`
 
-func (s *RedisStore) Issue(ctx context.Context, token string, grant Grant) error {
+func (s *RedisRefreshStore) Issue(ctx context.Context, token string, grant RefreshGrant) error {
 	payload, err := json.Marshal(grant)
 	if err != nil {
 		return err
@@ -110,8 +114,8 @@ func (s *RedisStore) Issue(ctx context.Context, token string, grant Grant) error
 	return nil
 }
 
-func (s *RedisStore) Load(ctx context.Context, token string) (Grant, error) {
-	var grant Grant
+func (s *RedisRefreshStore) Load(ctx context.Context, token string) (RefreshGrant, error) {
+	var grant RefreshGrant
 	payload, err := s.client.Get(ctx, s.key(token)).Bytes()
 	if errors.Is(err, redis.Nil) {
 		return grant, ErrInvalidRefresh
@@ -128,7 +132,7 @@ func (s *RedisStore) Load(ctx context.Context, token string) (Grant, error) {
 	return grant, nil
 }
 
-func (s *RedisStore) Rotate(ctx context.Context, oldToken, newToken string, grant Grant) error {
+func (s *RedisRefreshStore) Rotate(ctx context.Context, oldToken, newToken string, grant RefreshGrant) error {
 	oldPayload, err := s.client.Get(ctx, s.key(oldToken)).Bytes()
 	if errors.Is(err, redis.Nil) {
 		return ErrInvalidRefresh
@@ -154,22 +158,23 @@ func (s *RedisStore) Rotate(ctx context.Context, oldToken, newToken string, gran
 	return nil
 }
 
-func (s *RedisStore) RevokeUser(ctx context.Context, userID string) error {
+func (s *RedisRefreshStore) RevokeUser(ctx context.Context, userID string) error {
 	return s.client.Eval(ctx, revokeUserRefreshScript, []string{s.userKey(userID), s.revokedKey(userID)}, time.Now().UnixMicro(), int64((30*24*time.Hour)/time.Millisecond)).Err()
 }
 
-type MemoryStore struct {
+// MemoryRefreshStore is an isolated refresh store for tests.
+type MemoryRefreshStore struct {
 	mu      sync.Mutex
-	grants  map[string]Grant
+	grants  map[string]RefreshGrant
 	revoked map[string]int64
 }
 
-// NewMemoryStore creates an isolated store for tests.
-func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{grants: make(map[string]Grant), revoked: make(map[string]int64)}
+// NewMemoryRefreshStore creates an isolated store for tests.
+func NewMemoryRefreshStore() *MemoryRefreshStore {
+	return &MemoryRefreshStore{grants: make(map[string]RefreshGrant), revoked: make(map[string]int64)}
 }
 
-func (s *MemoryStore) Issue(ctx context.Context, token string, grant Grant) error {
+func (s *MemoryRefreshStore) Issue(ctx context.Context, token string, grant RefreshGrant) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !time.Now().Before(grant.ExpiresAt) || grant.AuthorizedAt <= s.revoked[grant.UserID] {
@@ -179,7 +184,7 @@ func (s *MemoryStore) Issue(ctx context.Context, token string, grant Grant) erro
 	return nil
 }
 
-func (s *MemoryStore) Load(ctx context.Context, token string) (Grant, error) {
+func (s *MemoryRefreshStore) Load(ctx context.Context, token string) (RefreshGrant, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	grant, ok := s.grants[refreshDigest(token)]
@@ -189,7 +194,7 @@ func (s *MemoryStore) Load(ctx context.Context, token string) (Grant, error) {
 	return grant, nil
 }
 
-func (s *MemoryStore) Rotate(ctx context.Context, oldToken, newToken string, grant Grant) error {
+func (s *MemoryRefreshStore) Rotate(ctx context.Context, oldToken, newToken string, grant RefreshGrant) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	old, ok := s.grants[refreshDigest(oldToken)]
@@ -201,7 +206,7 @@ func (s *MemoryStore) Rotate(ctx context.Context, oldToken, newToken string, gra
 	return nil
 }
 
-func (s *MemoryStore) RevokeUser(ctx context.Context, userID string) error {
+func (s *MemoryRefreshStore) RevokeUser(ctx context.Context, userID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for token, grant := range s.grants {

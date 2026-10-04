@@ -28,6 +28,7 @@ import (
 	"sso-server/handler/api/oauth"
 	"sso-server/handler/oauth2"
 	serverhandler "sso-server/handler/server"
+	manageroauth "sso-server/manager/oauth"
 	"sso-server/model"
 	serviceauth "sso-server/service/auth"
 )
@@ -116,13 +117,9 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 		t.Fatalf("create client: %v", err)
 	}
 
-	tokenStore, err := gooauth2store.NewMemoryTokenStore()
-	if err != nil {
-		t.Fatalf("token store: %v", err)
-	}
-
 	cfg := testOAuthConfig(t)
 	cfg.Server.Port = "0"
+	tokenStore := manageroauth.NewAuthorizationCodeStore(kv.NewNamespacedStore(kv.NewMemoryStore(), "test"))
 
 	o, err := oauth2.NewWithStores(cfg, db, tokenStore)
 	if err != nil {
@@ -155,6 +152,14 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	confidentialAuthorizeURL := "/oauth/authorize?response_type=code&client_id=" + url.QueryEscape(clientID) + "&redirect_uri=" + url.QueryEscape(redirectURI) + "&state=xyz&scope=courses%3Aread&code_challenge=" + url.QueryEscape(codeChallenge) + "&code_challenge_method=S256"
+	invalidRedirectURL := strings.Replace(confidentialAuthorizeURL, url.QueryEscape(redirectURI), url.QueryEscape("http://localhost:8000/auth/sso/other"), 1)
+	invalidRedirectRequest := httptest.NewRequest(http.MethodGet, invalidRedirectURL, nil)
+	invalidRedirectRequest.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
+	r.ServeHTTP(w, invalidRedirectRequest)
+	if w.Code < http.StatusBadRequest || w.Header().Get("Location") != "" {
+		t.Fatalf("expected mismatched redirect URI to be rejected without redirect, got %d: %s", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, confidentialAuthorizeURL, nil)
 	req.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
 	r.ServeHTTP(w, req)

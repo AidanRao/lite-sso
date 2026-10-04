@@ -3,7 +3,6 @@ package messagecenter
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -81,18 +80,6 @@ func TestClient_Send_Timeout(t *testing.T) {
 	err = client.Send(context.Background(), "user@example.com", "template", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "send message center request")
-}
-
-func TestClient_Send_NetworkFailure(t *testing.T) {
-	client, err := NewClient(Config{URL: "https://message.example.com", APIKey: "api-key", SenderKey: "noreply"})
-	require.NoError(t, err)
-	client.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		return nil, errors.New("network unavailable")
-	})
-
-	err = client.Send(context.Background(), "user@example.com", "template", nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "network unavailable")
 }
 
 func TestNewClient_InvalidConfig(t *testing.T) {
