@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	qrCodeExpire = 5 * time.Minute
+	qrCodeExpire = 3 * time.Minute
 	// QRLoginScope allows an application to approve browser SSO login.
 	QRLoginScope = "qr:login"
 	// QRLoginAudience identifies the API accepting scanner OAuth tokens.
@@ -94,7 +94,7 @@ func (s *AuthService) GenerateQRCode(ctx context.Context, redirect string, metad
 	if err != nil {
 		return nil, err
 	}
-	target := "Lite SSO"
+	target := "SSO"
 	parsed, _ := url.Parse(redirect)
 	if parsed.Path == "/oauth/authorize" {
 		client, lookupErr := db.NewOAuthClientRepository(s.db).FindByClientID(ctx, parsed.Query().Get("client_id"))

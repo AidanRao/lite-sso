@@ -28,7 +28,7 @@
             </button>
           </div>
 
-          <div class="login-form-panel min-h-[260px] xl:min-h-[292px] overflow-hidden">
+          <div class="login-form-panel min-h-[260px] xl:min-h-[292px] overflow-y-auto">
             <div v-show="activeTab === 'password'" class="space-y-5">
               <el-form :model="passwordForm" :rules="passwordRules" ref="pwdFormRef" @submit.prevent="handlePasswordLogin">
                 <el-form-item prop="email" class="mb-5">
@@ -144,21 +144,29 @@
             </el-form>
           </div>
 
-          <div v-show="activeTab === 'qr'" class="flex flex-col items-center justify-center py-4">
-            <div class="w-44 h-44 mx-auto bg-gray-50 rounded-xl flex items-center justify-center mb-6 shadow-inner">
+          <div v-show="activeTab === 'qr'" class="login-qr-panel flex h-full flex-col items-center justify-center">
+            <div class="w-44 h-44 mx-auto bg-gray-50 rounded-xl flex items-center justify-center mb-3 shadow-inner">
               <img v-if="qrCodeUrl" :src="qrCodeUrl" alt="扫码登录二维码" class="w-44 h-44 rounded-xl" />
+              <button
+                v-else-if="qrExpired"
+                type="button"
+                class="h-full w-full rounded-xl text-sm font-medium text-[#0891b2] hover:bg-cyan-50 transition-colors"
+                aria-label="二维码已过期，点击刷新二维码"
+                @click="refreshQRCode"
+              >
+                二维码已过期<br />点击刷新
+              </button>
               <div v-else class="flex flex-col items-center text-gray-400">
                 <svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
-                <span class="text-sm">{{ qrLoading ? '加载中…' : '请刷新二维码' }}</span>
+                <span class="text-sm">{{ qrLoading ? '加载中…' : '二维码暂不可用' }}</span>
               </div>
             </div>
-            <p class="text-gray-600 text-sm mb-2">{{ qrStatus }}</p>
-            <p v-if="qrTimer > 0" class="text-gray-400 text-xs">{{ Math.floor(qrTimer / 60) }}:{{ String(qrTimer % 60).padStart(2, '0') }}</p>
-            <el-button type="default" @click="refreshQRCode" :disabled="qrLoading" class="mt-4">
-              刷新二维码
-            </el-button>
+            <div class="min-h-5 flex flex-wrap items-center justify-center text-center">
+              <span v-if="!qrExpired" class="text-gray-600 text-sm">{{ qrStatus }}</span>
+              <span v-if="qrTimer > 0" class="text-gray-600 text-sm">，有效期：{{ Math.floor(qrTimer / 60) }}:{{ String(qrTimer % 60).padStart(2, '0') }}</span>
+            </div>
           </div>
         </div>
 
@@ -168,15 +176,16 @@
             <div class="flex-1 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent"></div>
           </div>
 
-          <div class="grid grid-cols-3 gap-2">
+          <div class="login-provider-list flex items-center justify-around">
             <button
               v-for="provider in oauthProviders"
               :key="provider.id"
               @click="oauthLogin(provider.id)"
-              class="login-provider-button w-full flex items-center justify-center gap-2 border-2 border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm transition-all duration-200 text-gray-700 font-medium"
+              :aria-label="`${provider.name}登录`"
+              :title="`${provider.name}登录`"
+              class="login-provider-button flex items-center justify-center border-2 border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm transition-all duration-200"
             >
-              <ThirdPartyProviderIcon :provider="provider.id" :size="20" class="login-provider-icon flex-shrink-0" />
-              <span>{{ provider.name }}</span>
+              <ThirdPartyProviderIcon :provider="provider.id" :size="24" class="login-provider-icon flex-shrink-0" />
             </button>
           </div>
 
@@ -224,7 +233,7 @@ const updateMobileViewport = () => {
 const redirectUrl = ref(getLoginRedirect(route))
 const targetClient = ref(null)
 const targetClientName = computed(() => targetClient.value?.name || '')
-const targetClientLogo = computed(() => targetClient.value?.logo_url || '')
+const targetClientLogo = computed(() => targetClient.value?.logo_url || (targetClient.value ? '' : `${import.meta.env.BASE_URL}assets/sso.png`))
 
 const tabs = [
   { key: 'password', label: '密码登录' },
@@ -259,6 +268,7 @@ const qrCodeUrl = ref('')
 const qrStatus = ref('')
 const qrLoading = ref(false)
 const qrTimer = ref(0)
+const qrExpired = ref(false)
 const passwordLockInterval = ref(null)
 const passwordCaptchaRequired = ref(false)
 const passwordCaptchaInput = ref('')
@@ -283,7 +293,7 @@ const passwordValueValid = computed(() => Boolean(passwordForm.value.password))
 const passwordFormValid = computed(() => passwordEmailValid.value && passwordValueValid.value)
 const passwordLoginInvalid = computed(() => !passwordFormValid.value && passwordLockSeconds.value <= 0 && !loading.value)
 const passwordLoginDisabled = computed(() => loading.value || passwordLockSeconds.value > 0)
-const targetPlatformName = computed(() => targetClientName.value || 'Lite SSO')
+const targetPlatformName = computed(() => targetClientName.value || 'SSO')
 const registerRoute = computed(() => {
   if (!redirectUrl.value || redirectUrl.value === '/profile') {
     return '/register'
@@ -488,6 +498,7 @@ const qrController = createQRLoginController({
     qrStatus.value = state.message
     qrTimer.value = state.seconds
     qrLoading.value = state.loading
+    qrExpired.value = state.expired
   },
   onComplete: finishLogin
 })
@@ -522,6 +533,11 @@ watch(activeTab, (tab) => {
 </script>
 
 <style scoped>
+.login-form-panel {
+  height: 292px;
+  min-height: 292px;
+}
+
 @media (max-height: 760px) and (min-width: 768px) {
   .login-auth-pane {
     align-items: flex-start;
@@ -544,6 +560,7 @@ watch(activeTab, (tab) => {
   }
 
   .login-form-panel {
+    height: 238px;
     min-height: 238px;
   }
 
@@ -563,14 +580,16 @@ watch(activeTab, (tab) => {
 }
 
 .login-provider-button {
-  height: 48px;
-  border-radius: 8px;
-  padding: 0 14px;
+  width: 60px;
+  height: 60px;
+  flex: 0 0 60px;
+  border-radius: 50%;
+  padding: 0;
 }
 
 .login-brand-logo {
-  --profile-border: #cffafe;
-  --profile-success-soft: #ecfeff;
+  border: 0;
+  background: transparent;
   --profile-success: #0891b2;
 }
 
@@ -623,7 +642,8 @@ watch(activeTab, (tab) => {
   }
 
   .login-form-panel {
-    min-height: 0;
+    height: 260px;
+    min-height: 260px;
   }
 
   .login-form-panel :deep(.el-input__inner) {
@@ -639,9 +659,9 @@ watch(activeTab, (tab) => {
   }
 
   .login-provider-button {
-    padding-inline: 10px;
-    font-size: 14px;
-    white-space: nowrap;
+    width: 54px;
+    height: 54px;
+    flex-basis: 54px;
   }
 
   .login-register-link {
@@ -653,13 +673,13 @@ watch(activeTab, (tab) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
 }
 
 .login-provider-icon :deep(svg) {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
 }
 
 @media (max-height: 680px) and (min-width: 768px) {
@@ -673,6 +693,7 @@ watch(activeTab, (tab) => {
   }
 
   .login-form-panel {
+    height: 226px;
     min-height: 226px;
   }
 }

@@ -83,7 +83,7 @@
 
         <p class="binding-summary">
           <ShieldCheck :size="18" />
-          {{ currentStep === 1 ? `授权完成后，可使用 ${providerName} 登录当前 Lite SSO 账号` : `确认后，可使用 ${providerName} 登录当前 Lite SSO 账号` }}
+          {{ currentStep === 1 ? `授权完成后，可使用 ${providerName} 登录当前统一身份认证账号` : `确认后，可使用 ${providerName} 登录当前统一身份认证账号` }}
         </p>
 
         <aside class="notice">

@@ -152,7 +152,7 @@ const form = ref({
   code: ''
 })
 
-const targetPlatformName = computed(() => targetClientName.value || 'Lite SSO')
+const targetPlatformName = computed(() => targetClientName.value || 'SSO')
 const loginRoute = computed(() => {
   if (!redirectUrl.value || redirectUrl.value === '/profile') {
     return '/login'

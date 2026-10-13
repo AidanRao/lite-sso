@@ -5,7 +5,7 @@ export const createQRLoginController = ({ api, render, onChange, onComplete,
   let active = null
   let pollTimer = null
   let countdownTimer = null
-  let state = { image: '', message: '', seconds: 0, loading: false }
+  let state = { image: '', message: '', seconds: 0, loading: false, expired: false }
   const publish = patch => { state = { ...state, ...patch }; onChange(state) }
   const clearTimers = () => {
     cancelTimer(pollTimer)
@@ -13,13 +13,17 @@ export const createQRLoginController = ({ api, render, onChange, onComplete,
     pollTimer = countdownTimer = null
   }
   const current = (version, request) => generation === version && active === request
-  const terminal = message => { ++generation; clearTimers(); publish({ image: '', message, seconds: 0, loading: false }) }
+  const terminal = (message, expired = false) => {
+    ++generation
+    clearTimers()
+    publish({ image: '', message, seconds: 0, loading: false, expired })
+  }
   const cancel = request => api.cancelQRCode(request.code, request.browser_token)
   const countdown = (version, request) => {
     if (!current(version, request)) return
     const seconds = Math.max(0, Math.ceil((Date.parse(request.expires_at) - now()) / 1000))
     publish({ seconds })
-    if (!seconds) { terminal('二维码已过期，请刷新'); return }
+    if (!seconds) { terminal('二维码已过期', true); return }
     countdownTimer = schedule(() => countdown(version, request), 1000)
   }
   const poll = async (version, request) => {
@@ -45,10 +49,13 @@ export const createQRLoginController = ({ api, render, onChange, onComplete,
         }
         return
       }
-      publish({ message: data.status === 'scanned' ? '已扫描，请在 App 中确认' : '请使用已获授权的 App（如 ClassHopper）扫码' })
+      publish({ message: data.status === 'scanned' ? '已扫描，请在 App 中确认' : '请使用 BUAA ClassHopper 扫码' })
     } catch (error) {
       if (!current(version, request)) return
-      if ([400, 403, 409, 410].includes(error.status)) { terminal(error.message); return }
+      if ([400, 403, 409, 410].includes(error.status)) {
+        terminal(error.status === 410 ? '二维码已过期' : error.message, error.status === 410)
+        return
+      }
       publish({ message: '连接暂时中断，正在重试…' })
     }
     if (current(version, request) && state.seconds > 0) pollTimer = schedule(() => poll(version, request), 2000)
@@ -57,7 +64,7 @@ export const createQRLoginController = ({ api, render, onChange, onComplete,
     async start(redirect) {
       const version = ++generation
       clearTimers()
-      publish({ image: '', seconds: 0, loading: true, message: '正在生成二维码…' })
+      publish({ image: '', seconds: 0, loading: true, message: '正在生成二维码…', expired: false })
       try {
         if (active) {
           try { await cancel(active) } catch (error) { if (![409, 410].includes(error.status)) throw error }
@@ -70,7 +77,7 @@ export const createQRLoginController = ({ api, render, onChange, onComplete,
         active = request
         const image = await render(request.qr_payload)
         if (!current(version, request)) return
-        publish({ image, loading: false, message: '请使用已获授权的 App（如 ClassHopper）扫码' })
+        publish({ image, loading: false, message: '请使用 BUAA ClassHopper 扫码' })
         countdown(version, request)
         if (state.seconds > 0) void poll(version, request)
       } catch (error) {
@@ -83,7 +90,7 @@ export const createQRLoginController = ({ api, render, onChange, onComplete,
       const request = active
       active = null
       if (request) void cancel(request).catch(() => {})
-      publish({ image: '', message: '', seconds: 0, loading: false })
+      publish({ image: '', message: '', seconds: 0, loading: false, expired: false })
     }
   }
 }
