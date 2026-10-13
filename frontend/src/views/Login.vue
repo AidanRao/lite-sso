@@ -4,13 +4,13 @@
 
     <div class="login-auth-pane flex-1 min-h-screen md:h-screen bg-gradient-to-br from-[#ecfeff] to-[#f0fdfa] flex items-center justify-center overflow-y-auto p-4 sm:p-6 lg:p-8">
       <div class="login-stack w-full max-w-md py-6 md:py-0">
-        <div class="login-card bg-white rounded-2xl shadow-xl shadow-[#0891b2]/5 p-6 sm:p-8 xl:p-10">
+        <div class="login-card bg-white rounded-2xl shadow-xl shadow-[#0891b2]/5 p-6 sm:p-8 xl:p-10" :class="{ 'login-card--expanded': errorMessage || (activeTab === 'password' && passwordCaptchaRequired) }">
           <div class="login-header text-center mb-6 xl:mb-8">
             <ApplicationLogo class="login-brand-logo" :label="targetPlatformName" :src="targetClientLogo" size="large" />
             <h1 class="login-title">登录 {{ targetPlatformName }}</h1>
           </div>
 
-          <div v-if="errorMessage" class="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm flex items-center gap-2">
+          <div v-if="errorMessage" class="login-error mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm flex items-center gap-2">
             <AlertTriangle class="w-4 h-4 flex-shrink-0" />
             {{ errorMessage }}
           </div>
@@ -41,7 +41,7 @@
                     class="h-12"
                   />
                 </el-form-item>
-                <div class="mb-3">
+                <div class="login-password-field mb-3">
                   <div class="flex w-full items-center justify-between mb-2">
                     <label class="block text-sm font-medium text-gray-700">密码</label>
                     <router-link to="/reset-password" class="text-sm font-medium text-[#0891b2] hover:text-[#0e7490] transition-colors">
@@ -70,7 +70,7 @@
                     </el-input>
                   </el-form-item>
                 </div>
-                <div v-if="passwordCaptchaRequired" class="mb-4">
+                <div v-if="passwordCaptchaRequired" class="login-captcha mb-4">
                   <label class="block text-sm font-medium text-gray-700 mb-2">图形验证码</label>
                   <div class="flex items-center gap-3">
                     <el-input v-model="passwordCaptchaInput" maxlength="4" placeholder="请输入验证码" class="h-12 flex-1" />
@@ -82,7 +82,7 @@
                     />
                   </div>
                 </div>
-                <div class="pt-4">
+                <div class="login-submit pt-4">
                   <button
                     type="submit"
                     class="w-full h-12 text-white rounded-xl font-semibold text-base transition-colors flex items-center justify-center disabled:cursor-not-allowed"
@@ -132,7 +132,7 @@
                   </el-button>
                 </div>
               </el-form-item>
-              <div class="pt-1">
+              <div class="login-submit pt-1">
                 <button type="submit" class="w-full h-12 bg-[#0891b2] text-white rounded-xl font-semibold text-base hover:bg-[#0e7490] transition-colors flex items-center justify-center" :disabled="loading">
                   <svg v-if="loading" class="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -618,7 +618,8 @@ watch(activeTab, (tab) => {
     height: 100%;
     flex-direction: column;
     justify-content: flex-start;
-    overscroll-behavior-y: contain;
+    overflow: hidden;
+    overscroll-behavior: none;
     background: #fff;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
@@ -642,8 +643,9 @@ watch(activeTab, (tab) => {
   }
 
   .login-form-panel {
-    height: 240px;
-    min-height: 240px;
+    height: auto;
+    min-height: 248px;
+    overflow: visible;
   }
 
   .login-form-panel :deep(.el-input__inner) {
@@ -656,7 +658,7 @@ watch(activeTab, (tab) => {
 
   .login-divider {
     margin-bottom: 16px;
-    margin-top: 8px;
+    margin-top: 20px;
   }
 
   .login-provider-button {
@@ -667,6 +669,113 @@ watch(activeTab, (tab) => {
 
   .login-register-link {
     margin-top: 16px;
+  }
+}
+
+@media (max-width: 767px) and (max-height: 640px) {
+  .login-card {
+    padding: 16px 24px;
+  }
+
+  .login-header,
+  .login-tabs {
+    margin-bottom: 12px;
+  }
+
+  .login-brand-logo {
+    width: 36px;
+    height: 36px;
+  }
+
+  .login-title {
+    margin-top: 8px;
+    font-size: 22px;
+  }
+
+  .login-divider {
+    margin-bottom: 12px;
+    margin-top: 12px;
+  }
+
+  .login-provider-button {
+    width: 48px;
+    height: 48px;
+    flex-basis: 48px;
+  }
+
+  .login-register-link {
+    margin-top: 12px;
+  }
+}
+
+@media (max-width: 767px) and (max-height: 760px) {
+  .login-card--expanded {
+    padding-block: 8px;
+  }
+
+  .login-card--expanded .login-header,
+  .login-card--expanded .login-tabs {
+    margin-bottom: 6px;
+  }
+
+  .login-card--expanded .login-brand-logo {
+    width: 28px;
+    height: 28px;
+  }
+
+  .login-card--expanded .login-title {
+    margin-top: 4px;
+    font-size: 22px;
+  }
+
+  .login-card--expanded .login-error {
+    margin-bottom: 8px;
+    padding: 4px 8px;
+  }
+
+  .login-card--expanded .login-tabs button {
+    padding-block: 8px;
+  }
+
+  .login-card--expanded .login-form-panel {
+    min-height: 0;
+  }
+
+  .login-card--expanded .login-form-panel :deep(.el-form-item.mb-5),
+  .login-card--expanded .login-form-panel :deep(.el-form-item.mb-6) {
+    margin-bottom: 12px;
+  }
+
+  .login-card--expanded .login-form-panel .mb-2 {
+    margin-bottom: 4px;
+  }
+
+  .login-card--expanded .login-password-field,
+  .login-card--expanded .login-captcha {
+    margin-bottom: 8px;
+  }
+
+  .login-card--expanded .login-submit {
+    padding-top: 4px;
+  }
+
+  .login-card--expanded .login-form-panel :deep(.h-12) {
+    height: 44px;
+  }
+
+  .login-card--expanded .login-divider {
+    margin-bottom: 8px;
+    margin-top: 12px;
+  }
+
+  .login-card--expanded .login-provider-button {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+
+  .login-card--expanded .login-register-link {
+    margin-top: 8px;
   }
 }
 
