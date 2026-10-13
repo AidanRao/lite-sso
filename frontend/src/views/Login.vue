@@ -28,7 +28,7 @@
             </button>
           </div>
 
-          <div class="login-form-panel min-h-[260px] xl:min-h-[292px] overflow-y-auto">
+          <div class="login-form-panel min-h-[252px] overflow-y-auto">
             <div v-show="activeTab === 'password'" class="space-y-5">
               <el-form :model="passwordForm" :rules="passwordRules" ref="pwdFormRef" @submit.prevent="handlePasswordLogin">
                 <el-form-item prop="email" class="mb-5">
@@ -170,7 +170,7 @@
           </div>
         </div>
 
-        <div class="login-divider my-4 xl:my-6 flex items-center gap-4">
+        <div class="login-divider mt-2 mb-4 xl:mt-3 xl:mb-6 flex items-center gap-4">
             <div class="flex-1 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent"></div>
             <span class="text-gray-400 text-sm font-medium">其他登录方式</span>
             <div class="flex-1 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent"></div>
@@ -534,8 +534,8 @@ watch(activeTab, (tab) => {
 
 <style scoped>
 .login-form-panel {
-  height: 292px;
-  min-height: 292px;
+  height: 252px;
+  min-height: 252px;
 }
 
 @media (max-height: 760px) and (min-width: 768px) {
@@ -642,8 +642,8 @@ watch(activeTab, (tab) => {
   }
 
   .login-form-panel {
-    height: 260px;
-    min-height: 260px;
+    height: 240px;
+    min-height: 240px;
   }
 
   .login-form-panel :deep(.el-input__inner) {
@@ -655,7 +655,8 @@ watch(activeTab, (tab) => {
   }
 
   .login-divider {
-    margin-block: 16px;
+    margin-bottom: 16px;
+    margin-top: 8px;
   }
 
   .login-provider-button {
