@@ -213,18 +213,17 @@ func (s *OAuthService) HandleThirdPartyCallbackWithState(ctx context.Context, pr
 		log.Printf("OAuthService: invalid third party state, provider=%s, has_state=%t, state_provider=%s, err=%v", provider, state != "", stateProvider(stateData), err)
 		return nil, common.ErrProviderAuthFailed
 	}
+	if stateData.Action == "" {
+		stateData.Action = ThirdPartyActionLogin
+	}
 
 	profile, err := p.FetchProfile(ctx, code)
 	if err != nil {
-		log.Printf("OAuthService: failed to get provider profile, provider=%s, err=%v", provider, err)
+		log.Printf("OAuthService: failed to get provider profile, provider=%s, action=%s, err=%v", provider, stateData.Action, err)
 		return nil, common.ErrProviderAuthFailed
 	}
 	if profile == nil || profile.Provider != provider || profile.ProviderUID == "" {
 		return nil, common.ErrProviderAuthFailed
-	}
-
-	if stateData.Action == "" {
-		stateData.Action = ThirdPartyActionLogin
 	}
 
 	if stateData.Action == ThirdPartyActionBind {
@@ -250,7 +249,7 @@ func (s *OAuthService) HandleThirdPartyCallbackWithState(ctx context.Context, pr
 
 	user, err := s.findOrCreateUser(ctx, profile)
 	if err != nil {
-		log.Printf("OAuthService: failed to find or create third party user, provider=%s, provider_uid=%s, has_email=%t, err=%v", provider, profile.ProviderUID, profile.Email != "", err)
+		log.Printf("OAuthService: failed to find or create third party user, provider=%s, action=%s, provider_uid=%s, has_email=%t, err=%v", provider, stateData.Action, profile.ProviderUID, profile.Email != "", err)
 		return nil, common.ErrProviderAuthFailed
 	}
 

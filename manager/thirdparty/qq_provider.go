@@ -3,6 +3,7 @@ package thirdparty
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,18 +22,21 @@ type qqOAuthProvider struct {
 }
 
 type qqTokenResponse struct {
-	AccessToken string `json:"access_token"`
-	Error       any    `json:"error"`
+	AccessToken      string `json:"access_token"`
+	Error            any    `json:"error"`
+	ErrorDescription string `json:"error_description"`
 }
 
 type qqOpenIDResponse struct {
-	ClientID string `json:"client_id"`
-	OpenID   string `json:"openid"`
-	Error    any    `json:"error"`
+	ClientID         string `json:"client_id"`
+	OpenID           string `json:"openid"`
+	Error            any    `json:"error"`
+	ErrorDescription string `json:"error_description"`
 }
 
 type qqUserResponse struct {
 	Ret          int    `json:"ret"`
+	Msg          string `json:"msg"`
 	Nickname     string `json:"nickname"`
 	FigureURLQQ2 string `json:"figureurl_qq_2"`
 	FigureURLQQ1 string `json:"figureurl_qq_1"`
@@ -74,8 +78,11 @@ func (p *qqOAuthProvider) FetchProfile(ctx context.Context, code string) (*Profi
 	if err := p.getJSON(ctx, "/oauth2.0/token", tokenQuery, &token); err != nil {
 		return nil, fmt.Errorf("qq token exchange: %w", err)
 	}
-	if token.Error != nil || token.AccessToken == "" {
-		return nil, fmt.Errorf("qq token exchange failed")
+	if token.Error != nil {
+		return nil, fmt.Errorf("qq token exchange failed: error=%v description=%q", token.Error, truncateQQErrorMessage(token.ErrorDescription))
+	}
+	if token.AccessToken == "" {
+		return nil, fmt.Errorf("qq token exchange returned empty access_token")
 	}
 
 	openIDQuery := url.Values{"access_token": {token.AccessToken}, "fmt": {"json"}}
@@ -84,7 +91,7 @@ func (p *qqOAuthProvider) FetchProfile(ctx context.Context, code string) (*Profi
 		return nil, fmt.Errorf("qq openid lookup: %w", err)
 	}
 	if identity.Error != nil || identity.OpenID == "" || identity.ClientID != p.cfg.ClientID {
-		return nil, fmt.Errorf("qq openid lookup failed")
+		return nil, fmt.Errorf("qq openid lookup failed: error=%v description=%q has_openid=%t client_id_match=%t", identity.Error, truncateQQErrorMessage(identity.ErrorDescription), identity.OpenID != "", identity.ClientID == p.cfg.ClientID)
 	}
 
 	userQuery := url.Values{
@@ -97,7 +104,7 @@ func (p *qqOAuthProvider) FetchProfile(ctx context.Context, code string) (*Profi
 		return nil, fmt.Errorf("qq user info: %w", err)
 	}
 	if user.Ret != 0 {
-		return nil, fmt.Errorf("qq user info failed: ret=%d", user.Ret)
+		return nil, fmt.Errorf("qq user info failed: ret=%d msg=%q", user.Ret, truncateQQErrorMessage(user.Msg))
 	}
 
 	avatarURL := user.FigureURLQQ2
@@ -112,6 +119,15 @@ func (p *qqOAuthProvider) FetchProfile(ctx context.Context, code string) (*Profi
 	}, nil
 }
 
+func truncateQQErrorMessage(message string) string {
+	const maxLength = 256
+	runes := []rune(message)
+	if len(runes) > maxLength {
+		return string(runes[:maxLength])
+	}
+	return message
+}
+
 func (p *qqOAuthProvider) getJSON(ctx context.Context, path string, query url.Values, result any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL+path+"?"+query.Encode(), nil)
 	if err != nil {
@@ -122,7 +138,11 @@ func (p *qqOAuthProvider) getJSON(ctx context.Context, path string, query url.Va
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return fmt.Errorf("qq request failed")
+		var requestErr *url.Error
+		if errors.As(err, &requestErr) {
+			return fmt.Errorf("qq request failed: %w", requestErr.Err)
+		}
+		return fmt.Errorf("qq request failed: error_type=%T", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
