@@ -45,7 +45,7 @@ type qqUserResponse struct {
 func newQQProvider(cfg conf.QQOAuthConfig) *qqOAuthProvider {
 	return &qqOAuthProvider{
 		cfg:     cfg,
-		client:  &http.Client{Timeout: 10 * time.Second},
+		client:  &http.Client{Timeout: 20 * time.Second},
 		baseURL: qqAPIBaseURL,
 	}
 }
