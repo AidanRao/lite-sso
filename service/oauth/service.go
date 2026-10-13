@@ -18,6 +18,7 @@ import (
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
 	"sso-server/dto"
+	"sso-server/manager/thirdparty"
 	"sso-server/model"
 	serviceauth "sso-server/service/auth"
 	serviceuser "sso-server/service/user"
@@ -36,7 +37,7 @@ type OAuthService struct {
 	cfg                *conf.Config
 	database           *gorm.DB
 	kv                 kv.Store
-	providers          map[string]thirdPartyProvider
+	registry           *thirdparty.Registry
 	userRepo           *db.UserRepository
 	userThirdPartyRepo *db.UserThirdPartyRepository
 }
@@ -77,20 +78,27 @@ type ThirdPartyBindingResult struct {
 	Provider string
 }
 
-func NewOAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, userRepo *db.UserRepository) *OAuthService {
-	providers := map[string]thirdPartyProvider{
-		githubProvider: newGitHubProvider(cfg.OAuth.GitHub),
-		feishuProvider: newFeishuProvider(cfg.OAuth.Feishu),
+func NewOAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, userRepo *db.UserRepository, registries ...*thirdparty.Registry) *OAuthService {
+	var registry *thirdparty.Registry
+	if len(registries) > 0 && registries[0] != nil {
+		registry = registries[0]
+	} else {
+		registry = thirdparty.NewBuiltins(cfg)
 	}
 
 	return &OAuthService{
 		cfg:                cfg,
 		database:           database,
 		kv:                 kvStore,
-		providers:          providers,
+		registry:           registry,
 		userRepo:           userRepo,
 		userThirdPartyRepo: db.NewUserThirdPartyRepository(database),
 	}
+}
+
+// AuthMethod returns the session authentication method for a registered provider.
+func (s *OAuthService) AuthMethod(provider string) (string, bool) {
+	return s.registry.AuthMethod(provider)
 }
 
 // GetUserInfo 获取用户信息，避免 handler 直接访问数据层。
@@ -211,6 +219,9 @@ func (s *OAuthService) HandleThirdPartyCallbackWithState(ctx context.Context, pr
 		log.Printf("OAuthService: failed to get provider profile, provider=%s, err=%v", provider, err)
 		return nil, common.ErrProviderAuthFailed
 	}
+	if profile == nil || profile.Provider != provider || profile.ProviderUID == "" {
+		return nil, common.ErrProviderAuthFailed
+	}
 
 	if stateData.Action == "" {
 		stateData.Action = ThirdPartyActionLogin
@@ -284,7 +295,7 @@ func (s *OAuthService) ConfirmThirdPartyBinding(ctx context.Context, userID, bin
 }
 
 func (s *OAuthService) getProvider(provider string) (thirdPartyProvider, bool) {
-	p, ok := s.providers[provider]
+	p, ok := s.registry.Get(provider)
 	if !ok || p == nil {
 		return nil, false
 	}

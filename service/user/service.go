@@ -18,10 +18,9 @@ import (
 	"sso-server/dto"
 	"sso-server/handler/oauth2"
 	manageross "sso-server/manager/oss"
+	"sso-server/manager/thirdparty"
 	"sso-server/model"
 )
-
-var supportedThirdPartyProviders = []string{"github", "feishu"}
 
 type UserService struct {
 	cfg        *conf.Config
@@ -29,15 +28,23 @@ type UserService struct {
 	kv         kv.Store
 	oauth2     *oauth2.OAuth2
 	imageStore manageross.ImageStore
+	registry   *thirdparty.Registry
 }
 
-func NewUserService(cfg *conf.Config, db *gorm.DB, kvStore kv.Store, oauth2Impl *oauth2.OAuth2, imageStore manageross.ImageStore) *UserService {
+func NewUserService(cfg *conf.Config, db *gorm.DB, kvStore kv.Store, oauth2Impl *oauth2.OAuth2, imageStore manageross.ImageStore, registries ...*thirdparty.Registry) *UserService {
+	var registry *thirdparty.Registry
+	if len(registries) > 0 && registries[0] != nil {
+		registry = registries[0]
+	} else {
+		registry = thirdparty.NewBuiltins(cfg)
+	}
 	return &UserService{
 		cfg:        cfg,
 		db:         db,
 		kv:         kvStore,
 		oauth2:     oauth2Impl,
 		imageStore: imageStore,
+		registry:   registry,
 	}
 }
 
@@ -100,8 +107,9 @@ func (s *UserService) GetLoginMethods(ctx context.Context, userID string) ([]dto
 		boundProviders[binding.Provider] = true
 	}
 
-	for _, provider := range supportedThirdPartyProviders {
-		if !s.isThirdPartyProviderConfigured(provider) {
+	for _, provider := range s.registry.Names() {
+		adapter, _ := s.registry.Get(provider)
+		if !adapter.Configured() {
 			continue
 		}
 		bound := boundProviders[provider]
@@ -141,7 +149,7 @@ func (s *UserService) GetApplications(ctx context.Context, userID string) ([]dto
 
 // UnbindThirdParty removes a third-party login method from the current user.
 func (s *UserService) UnbindThirdParty(ctx context.Context, userID string, provider string) error {
-	if !isSupportedThirdPartyProvider(provider) {
+	if !s.registry.IsRegistered(provider) {
 		return common.ErrInvalidProvider
 	}
 
@@ -256,27 +264,4 @@ func stringPtr(s string) *string {
 		return nil
 	}
 	return &s
-}
-
-func isSupportedThirdPartyProvider(provider string) bool {
-	for _, supportedProvider := range supportedThirdPartyProviders {
-		if provider == supportedProvider {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *UserService) isThirdPartyProviderConfigured(provider string) bool {
-	if s.cfg == nil {
-		return false
-	}
-	switch provider {
-	case "github":
-		return s.cfg.OAuth.GitHub.IsConfigured()
-	case "feishu":
-		return s.cfg.OAuth.Feishu.IsConfigured()
-	default:
-		return false
-	}
 }

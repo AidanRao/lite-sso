@@ -97,8 +97,11 @@ var (
 
 // QR Code related errors
 var (
-	ErrQRCodeExpired       = errors.New("qr code expired")
-	ErrQRCodeInvalidStatus = errors.New("qr code invalid status")
-	ErrQRCodeInvalidUser   = errors.New("qr code invalid user")
-	ErrQRCodeInvalidTicket = errors.New("qr code invalid ticket")
+	ErrQRCodeClientForbidden   = errors.New("qr client forbidden")
+	ErrQRCodePermissionMissing = errors.New("qr token permission missing")
+	ErrQRCodeBrowserInvalid    = errors.New("qr browser credential invalid")
+	ErrQRCodeExpired           = errors.New("qr code expired")
+	ErrQRCodeInvalidStatus     = errors.New("qr code invalid status")
+	ErrQRCodeInvalidUser       = errors.New("qr code invalid user")
+	ErrQRCodeInvalidTicket     = errors.New("qr code invalid ticket")
 )

@@ -2,7 +2,11 @@ package audit_test
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
@@ -21,7 +26,7 @@ import (
 	"sso-server/dal/kv"
 	apiauth "sso-server/handler/api/auth"
 	"sso-server/handler/audit"
-	"sso-server/handler/server"
+	"sso-server/handler/oauth2"
 	"sso-server/model"
 	"sso-server/service/auth"
 )
@@ -94,6 +99,20 @@ func Test_Middleware_AllRegisteredOperationsCaptureEarlyRejection(t *testing.T) 
 	}
 }
 
+func Test_Middleware_RecordsQQProvider(t *testing.T) {
+	r, sink := router(&conf.Config{})
+	r.GET("/api/auth/third/:provider", func(c *gin.Context) {
+		audit.AuthMethod(c, c.Param("provider"))
+		c.Status(http.StatusOK)
+	})
+	request(r, http.MethodGet, "/api/auth/third/qq", "", "")
+	require.Len(t, sink.records, 1)
+	var details model.AuditDetails
+	require.NoError(t, json.Unmarshal([]byte(sink.records[0].Details), &details))
+	require.Equal(t, "qq", details.Provider)
+	require.Equal(t, "qq", details.AuthMethod)
+}
+
 func Test_Middleware_ExcludesReadPollingAndTokenEndpoints(t *testing.T) {
 	r, sink := router(&conf.Config{})
 	for _, path := range []string{"/healthz", "/api/user/profile", "/api/auth/qr/poll", "/api/auth/captcha"} {
@@ -153,15 +172,25 @@ func Test_Middleware_RealPasswordEmailQRCodeAndLogoutFlows(t *testing.T) {
 		Auth:   conf.AuthConfig{OTPSecret: "audit-test-otp-secret", JWTSecret: "audit-test-jwt-secret"},
 		Dev:    conf.DevConfig{FixedEmailOTP: "123456", SkipSendMessage: true},
 	}
-	h := apiauth.NewAuthHandler(apiauth.AuthDeps{Config: cfg, DB: database, KV: store})
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	cfg.Tokens.OAuth = conf.OAuthTokenConfig{Issuer: "https://sso.test", SigningKID: "test-key", SigningPrivateKeyPEM: string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})), AccessTokenTTL: time.Hour, RefreshTokenTTL: time.Hour, AuthorizationCodeTTL: time.Minute}
+	require.NoError(t, database.Create(&model.OAuthClient{ClientID: "scanner", Name: "Scanner", Audiences: []string{auth.QRLoginAudience}, AllowedScopes: []string{auth.QRLoginScope}}).Error)
+	oauthServer, err := oauth2.NewWithStores(cfg, database, nil)
+	require.NoError(t, err)
+	scannerJWT := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{"iss": "https://sso.test", "sub": "u1", "client_id": "scanner", "aud": []string{auth.QRLoginAudience}, "scope": auth.QRLoginScope, "exp": time.Now().Add(time.Hour).Unix()})
+	scannerJWT.Header["kid"] = "test-key"
+	scannerToken, err := scannerJWT.SignedString(key)
+	require.NoError(t, err)
+	h := apiauth.NewAuthHandler(apiauth.AuthDeps{Config: cfg, DB: database, KV: store, OAuth2: oauthServer})
 	r, sink := router(cfg)
 	r.POST("/api/auth/login/password", h.LoginWithPassword)
 	r.POST("/api/auth/login/email", h.LoginWithEmailOTP)
 	r.POST("/api/auth/email/send", h.SendEmailOTP)
 	r.GET("/api/auth/qr/generate", h.GenerateQRCode)
 	r.GET("/api/auth/qr/poll", h.PollQRCode)
-	r.POST("/api/auth/qr/scan", server.RequireSessionAuth(h.Service()), h.ScanQRCode)
-	r.POST("/api/auth/qr/confirm", server.RequireSessionAuth(h.Service()), h.ConfirmQRCode)
+	r.POST("/api/auth/qr/scan", h.ScanQRCode)
+	r.POST("/api/auth/qr/confirm", h.ConfirmQRCode)
 	r.POST("/api/auth/qr/complete", h.CompleteQRCode)
 	r.POST("/api/auth/logout", h.Logout)
 	failed := request(r, "POST", "/api/auth/login/password", `{"email":"private@example.com","password":"incorrect"}`, "forged")
@@ -175,11 +204,24 @@ func Test_Middleware_RealPasswordEmailQRCodeAndLogoutFlows(t *testing.T) {
 	require.NoError(t, store.Set(context.Background(), kv.KeyCaptcha("audit-captcha"), "1234", time.Minute))
 	challenge := responseData(t, request(r, "POST", "/api/auth/email/send", `{"email":"private@example.com","captcha_id":"audit-captcha","captcha":"1234","purpose":"LOGIN"}`, ""))["challenge_id"].(string)
 	responseData(t, request(r, "POST", "/api/auth/login/email", `{"challenge_id":"`+challenge+`","code":"123456"}`, ""))
-	qr := responseData(t, request(r, "GET", "/api/auth/qr/generate", "", ""))["code"].(string)
-	responseData(t, request(r, "POST", "/api/auth/qr/scan", `{"code":"`+qr+`"}`, token))
-	responseData(t, request(r, "POST", "/api/auth/qr/confirm", `{"code":"`+qr+`"}`, token))
-	ticket := responseData(t, request(r, "GET", "/api/auth/qr/poll?code="+qr, "", ""))["login_ticket"].(string)
-	responseData(t, request(r, "POST", "/api/auth/qr/complete", `{"code":"`+qr+`","login_ticket":"`+ticket+`"}`, ""))
+	qrResponse := request(r, "GET", "/api/auth/qr/generate", "", "")
+	qrData := responseData(t, qrResponse)
+	qr := qrData["code"].(string)
+	browserToken := qrData["browser_token"].(string)
+	deviceCookie := &http.Cookie{Name: "device_id", Value: "dev_audit"}
+	responseData(t, request(r, "POST", "/api/auth/qr/scan", `{"code":"`+qr+`"}`, scannerToken))
+	responseData(t, request(r, "POST", "/api/auth/qr/confirm", `{"code":"`+qr+`"}`, scannerToken))
+	browserRequest := func(method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-QR-Browser-Token", browserToken)
+		req.AddCookie(deviceCookie)
+		recorder := httptest.NewRecorder()
+		r.ServeHTTP(recorder, req)
+		return recorder
+	}
+	ticket := responseData(t, browserRequest("GET", "/api/auth/qr/poll?code="+qr, ""))["login_ticket"].(string)
+	responseData(t, browserRequest("POST", "/api/auth/qr/complete", `{"code":"`+qr+`","login_ticket":"`+ticket+`"}`))
 	responseData(t, request(r, "POST", "/api/auth/logout", "", token))
 	require.Len(t, sink.records, 8)
 	for _, record := range sink.records[3:] {
@@ -188,7 +230,7 @@ func Test_Middleware_RealPasswordEmailQRCodeAndLogoutFlows(t *testing.T) {
 	}
 	encoded, err := json.Marshal(sink.records)
 	require.NoError(t, err)
-	for _, secret := range []string{email, "Password12345", "123456", challenge, qr, ticket, token, "forged-user"} {
+	for _, secret := range []string{email, "Password12345", "123456", challenge, qr, ticket, token, scannerToken, browserToken, "forged-user"} {
 		require.NotContains(t, string(encoded), secret)
 	}
 }

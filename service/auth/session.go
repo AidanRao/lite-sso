@@ -34,8 +34,6 @@ const (
 	AuthMethodPassword AuthMethod = "PASSWORD"
 	AuthMethodEmailOTP AuthMethod = "EMAIL_OTP"
 	AuthMethodQR       AuthMethod = "QR"
-	AuthMethodGitHub   AuthMethod = "GITHUB"
-	AuthMethodFeishu   AuthMethod = "FEISHU"
 )
 
 type LoginMetadata struct {

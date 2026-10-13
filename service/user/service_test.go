@@ -41,7 +41,7 @@ func (s *fakeAvatarStore) DeleteImage(_ context.Context, objectKey string) error
 }
 
 func Test_UnbindThirdParty_SupportedProvider(t *testing.T) {
-	for _, provider := range []string{"github", "feishu"} {
+	for _, provider := range []string{"github", "feishu", "qq"} {
 		t.Run(provider, func(t *testing.T) {
 			database := newUnbindTestDB(t)
 			email := provider + "@example.com"

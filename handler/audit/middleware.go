@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"sso-server/conf"
+	"sso-server/manager/thirdparty"
 	"sso-server/model"
 	"sso-server/util/mask"
 	"sso-server/util/useragent"
@@ -37,10 +38,17 @@ type operation struct {
 	event     model.AuditLog
 	details   model.AuditDetails
 	sessionID string
+	registry  *thirdparty.Registry
 }
 
 // Middleware surrounds recovery and authorization so rejected requests are recorded too.
-func Middleware(sink Sink, cfg *conf.Config, source func(*http.Request) (string, string)) gin.HandlerFunc {
+func Middleware(sink Sink, cfg *conf.Config, source func(*http.Request) (string, string), registries ...*thirdparty.Registry) gin.HandlerFunc {
+	var registry *thirdparty.Registry
+	if len(registries) > 0 && registries[0] != nil {
+		registry = registries[0]
+	} else {
+		registry = thirdparty.NewBuiltins(cfg)
+	}
 	rules := make(map[string]Rule)
 	for _, rule := range Rules() {
 		rules[rule.Method+" "+rule.Route] = rule
@@ -58,7 +66,7 @@ func Middleware(sink Sink, cfg *conf.Config, source func(*http.Request) (string,
 			TargetType: rule.TargetType, Method: c.Request.Method, Route: c.FullPath(),
 			IP: ip, DeviceID: deviceID,
 			DeviceLabel: useragent.Parse(c.Request.UserAgent()).Label,
-		}, details: model.AuditDetails{AuthMethod: rule.AuthMethod}}
+		}, details: model.AuditDetails{AuthMethod: rule.AuthMethod}, registry: registry}
 		if rule.TargetParam != "" {
 			op.event.TargetID = c.Param(rule.TargetParam)
 		}
@@ -150,7 +158,7 @@ func Email(c *gin.Context, email string) {
 
 // Provider selects only supported provider names and never retains arbitrary parameters.
 func Provider(c *gin.Context, provider string) {
-	if op := current(c); op != nil && (provider == "github" || provider == "feishu") {
+	if op := current(c); op != nil && op.registry.IsRegistered(provider) {
 		op.details.Provider = provider
 	}
 }

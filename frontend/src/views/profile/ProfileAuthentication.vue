@@ -178,7 +178,8 @@ const enrollmentOpen = ref(false)
 
 const providerNames = {
   github: 'GitHub',
-  feishu: '飞书'
+  feishu: '飞书',
+  qq: 'QQ'
 }
 
 const boundProviderCount = computed(() => loginMethods.value.filter(method => method.type === 'third_party' && method.bound).length)

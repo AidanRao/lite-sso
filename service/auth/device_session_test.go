@@ -29,7 +29,7 @@ func TestListLoginDevices_GroupsAndFiltersActiveSessions(t *testing.T) {
 		newDeviceSession("ses-foreign", "u2", "dev-foreign", now, now.Add(time.Hour)),
 		newDeviceSession("ses-revoked", "u1", "dev-revoked", now, now.Add(time.Hour)),
 	}
-	sessions[1].AuthMethod = string(AuthMethodGitHub)
+	sessions[1].AuthMethod = "GITHUB"
 	sessions[5].RevokedAt = &revokedAt
 	if err := database.Create(&sessions).Error; err != nil {
 		t.Fatalf("seed sessions: %v", err)
@@ -46,7 +46,7 @@ func TestListLoginDevices_GroupsAndFiltersActiveSessions(t *testing.T) {
 	if devices[0].DeviceID != "dev-current" || !devices[0].Current {
 		t.Fatalf("expected current device first, got %#v", devices)
 	}
-	if devices[0].AuthMethod != string(AuthMethodGitHub) {
+	if devices[0].AuthMethod != "GITHUB" {
 		t.Fatalf("expected latest session metadata, got %#v", devices[0])
 	}
 	if devices[1].DeviceID != "dev-other" || devices[1].Current {

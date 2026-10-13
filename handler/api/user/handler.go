@@ -17,18 +17,20 @@ import (
 	"sso-server/handler/audit"
 	"sso-server/handler/oauth2"
 	manageross "sso-server/manager/oss"
+	"sso-server/manager/thirdparty"
 	serviceauth "sso-server/service/auth"
 	"sso-server/service/feature"
 	serviceuser "sso-server/service/user"
 )
 
 type UserDeps struct {
-	Config        *conf.Config
-	DB            *gorm.DB
-	KV            kv.Store
-	OAuth2        *oauth2.OAuth2
-	ImageStore    manageross.ImageStore
-	MessageSender serviceauth.MessageSender
+	Config           *conf.Config
+	DB               *gorm.DB
+	KV               kv.Store
+	OAuth2           *oauth2.OAuth2
+	ImageStore       manageross.ImageStore
+	MessageSender    serviceauth.MessageSender
+	ProviderRegistry *thirdparty.Registry
 }
 
 type UserHandler struct {
@@ -46,7 +48,7 @@ func NewUserHandler(deps UserDeps) *UserHandler {
 	return &UserHandler{
 		permissions:       feature.NewService(deps.DB),
 		config:            deps.Config,
-		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2, deps.ImageStore),
+		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2, deps.ImageStore, deps.ProviderRegistry),
 		auth:              serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
 		emails:            serviceuser.NewEmailService(serviceuser.EmailDeps{Config: deps.Config, DB: deps.DB, MessageSender: deps.MessageSender}),
 		trustProxyHeaders: trustProxyHeaders,

@@ -1,4 +1,4 @@
-package oauth
+package thirdparty
 
 import (
 	"context"
@@ -8,10 +8,10 @@ import (
 	"log"
 	"net/http"
 
-	lark "github.com/larksuite/oapi-sdk-go/v3"
-	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
-	larkauthen "github.com/larksuite/oapi-sdk-go/v3/service/authen/v1"
-	gxoauth2 "golang.org/x/oauth2"
+	"github.com/larksuite/oapi-sdk-go/v3"
+	core "github.com/larksuite/oapi-sdk-go/v3/core"
+	authen "github.com/larksuite/oapi-sdk-go/v3/service/authen/v1"
+	oauth2 "golang.org/x/oauth2"
 
 	"sso-server/conf"
 )
@@ -32,7 +32,7 @@ func (p *feishuOAuthProvider) AuthCodeURL(state string) string {
 	return p.oauthConfig().AuthCodeURL(state)
 }
 
-func (p *feishuOAuthProvider) FetchProfile(ctx context.Context, code string) (*thirdPartyProfile, error) {
+func (p *feishuOAuthProvider) FetchProfile(ctx context.Context, code string) (*Profile, error) {
 	accessToken, err := p.exchangeToken(ctx, code)
 	if err != nil {
 		log.Printf("OAuthService: feishu token exchange failed, err=%v", err)
@@ -48,13 +48,13 @@ func (p *feishuOAuthProvider) FetchProfile(ctx context.Context, code string) (*t
 	return profile, nil
 }
 
-func (p *feishuOAuthProvider) oauthConfig() *gxoauth2.Config {
-	return &gxoauth2.Config{
+func (p *feishuOAuthProvider) oauthConfig() *oauth2.Config {
+	return &oauth2.Config{
 		ClientID:     p.cfg.ClientID,
 		ClientSecret: p.cfg.ClientSecret,
 		RedirectURL:  p.cfg.RedirectURI,
 		Scopes:       []string{"contact:user.email:readonly"},
-		Endpoint: gxoauth2.Endpoint{
+		Endpoint: oauth2.Endpoint{
 			AuthURL:  "https://accounts.feishu.cn/open-apis/authen/v1/authorize",
 			TokenURL: "https://open.feishu.cn/open-apis/authen/v2/oauth/token",
 		},
@@ -74,7 +74,7 @@ func (p *feishuOAuthProvider) exchangeToken(ctx context.Context, code string) (s
 		RedirectURI:  p.cfg.RedirectURI,
 	}
 
-	resp, err := p.client().Post(ctx, "/open-apis/authen/v2/oauth/token", reqBody, larkcore.AccessTokenTypeNone)
+	resp, err := p.client().Post(ctx, "/open-apis/authen/v2/oauth/token", reqBody, core.AccessTokenTypeNone)
 	if err != nil {
 		return "", formatFeishuSDKError("feishu token api", err)
 	}
@@ -101,8 +101,8 @@ func (p *feishuOAuthProvider) exchangeToken(ctx context.Context, code string) (s
 	return accessToken, nil
 }
 
-func (p *feishuOAuthProvider) getUser(ctx context.Context, accessToken string) (*thirdPartyProfile, error) {
-	resp, err := p.client().Authen.UserInfo.Get(ctx, larkcore.WithUserAccessToken(accessToken))
+func (p *feishuOAuthProvider) getUser(ctx context.Context, accessToken string) (*Profile, error) {
+	resp, err := p.client().Authen.UserInfo.Get(ctx, core.WithUserAccessToken(accessToken))
 	if err != nil {
 		return nil, formatFeishuSDKError("feishu user api", err)
 	}
@@ -166,7 +166,7 @@ type feishuUserData struct {
 	AvatarMiddle    string `json:"avatar_middle"`
 }
 
-func feishuRespDataToProfile(data *larkauthen.GetUserInfoRespData) (*thirdPartyProfile, error) {
+func feishuRespDataToProfile(data *authen.GetUserInfoRespData) (*Profile, error) {
 	if data == nil {
 		return nil, fmt.Errorf("feishu user info returned empty data")
 	}
@@ -184,7 +184,7 @@ func feishuRespDataToProfile(data *larkauthen.GetUserInfoRespData) (*thirdPartyP
 	}.toProfile()
 }
 
-func (d feishuUserData) toProfile() (*thirdPartyProfile, error) {
+func (d feishuUserData) toProfile() (*Profile, error) {
 	providerUID := d.UnionID
 	if providerUID == "" {
 		providerUID = d.OpenID
@@ -218,8 +218,8 @@ func (d feishuUserData) toProfile() (*thirdPartyProfile, error) {
 		)
 	}
 
-	return &thirdPartyProfile{
-		Provider:    feishuProvider,
+	return &Profile{
+		Provider:    Feishu,
 		ProviderUID: providerUID,
 		Email:       email,
 		Username:    d.Name,
@@ -235,7 +235,7 @@ func truncateForLog(body []byte, max int) string {
 }
 
 func formatFeishuSDKError(prefix string, err error) error {
-	if codeError, ok := errors.AsType[*larkcore.CodeError](err); ok {
+	if codeError, ok := errors.AsType[*core.CodeError](err); ok {
 		return fmt.Errorf("%s code=%d msg=%s detail=%s", prefix, codeError.Code, codeError.Msg, codeError.ErrorResp())
 	}
 	return err

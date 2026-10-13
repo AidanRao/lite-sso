@@ -16,6 +16,7 @@ import (
 	manageraudit "sso-server/manager/audit"
 	"sso-server/manager/messagecenter"
 	manageross "sso-server/manager/oss"
+	"sso-server/manager/thirdparty"
 	"sso-server/service/auth"
 )
 
@@ -25,6 +26,7 @@ type Server struct {
 	engine              *gin.Engine
 	messageCenterClient *messagecenter.Client
 	imageStore          manageross.ImageStore
+	providerRegistry    *thirdparty.Registry
 }
 
 func New(cfg *conf.Config) (*Server, error) {
@@ -70,14 +72,15 @@ func New(cfg *conf.Config) (*Server, error) {
 	if db.DB == nil {
 		return nil, fmt.Errorf("database is required")
 	}
-	recorder, err := manageraudit.New(db.NewAuditRepository(db.DB), cfg.Audit)
+	providerRegistry := thirdparty.NewBuiltins(cfg)
+	recorder, err := manageraudit.New(db.NewAuditRepository(db.DB), cfg.Audit, providerRegistry)
 	if err != nil {
 		return nil, err
 	}
 	engine.Use(audit.Middleware(recorder, cfg, func(r *http.Request) (string, string) {
 		deviceID, _ := auth.DeviceIDFromRequest(r)
 		return auth.RequestIP(r, cfg.Server.TrustProxyHeaders), deviceID
-	}))
+	}, providerRegistry))
 	engine.Use(gin.CustomRecoveryWithWriter(io.Discard, func(c *gin.Context, _ any) {
 		audit.Failure(c, "PANIC")
 		log.Printf("http panic recovered: method=%s route=%s", c.Request.Method, c.FullPath())
@@ -89,6 +92,7 @@ func New(cfg *conf.Config) (*Server, error) {
 		engine:              engine,
 		messageCenterClient: messageCenterClient,
 		imageStore:          imageStore,
+		providerRegistry:    providerRegistry,
 	}
 	if err := srv.registerRoutes(); err != nil {
 		return nil, fmt.Errorf("initialize OAuth: %w", err)

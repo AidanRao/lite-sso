@@ -146,20 +146,17 @@
 
           <div v-show="activeTab === 'qr'" class="flex flex-col items-center justify-center py-4">
             <div class="w-44 h-44 mx-auto bg-gray-50 rounded-xl flex items-center justify-center mb-6 shadow-inner">
-              <div v-if="qrCodeUrl" class="p-4 text-center">
-                <div class="text-xs text-gray-400 mb-2">登录码</div>
-                <div class="text-sm font-mono text-gray-700 break-all">{{ qrCodeUrl }}</div>
-              </div>
+              <img v-if="qrCodeUrl" :src="qrCodeUrl" alt="扫码登录二维码" class="w-44 h-44 rounded-xl" />
               <div v-else class="flex flex-col items-center text-gray-400">
                 <svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
-                <span class="text-sm">加载中...</span>
+                <span class="text-sm">{{ qrLoading ? '加载中…' : '请刷新二维码' }}</span>
               </div>
             </div>
             <p class="text-gray-600 text-sm mb-2">{{ qrStatus }}</p>
             <p v-if="qrTimer > 0" class="text-gray-400 text-xs">{{ Math.floor(qrTimer / 60) }}:{{ String(qrTimer % 60).padStart(2, '0') }}</p>
-            <el-button type="default" @click="refreshQRCode" class="mt-4">
+            <el-button type="default" @click="refreshQRCode" :disabled="qrLoading" class="mt-4">
               刷新二维码
             </el-button>
           </div>
@@ -171,7 +168,7 @@
             <div class="flex-1 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent"></div>
           </div>
 
-          <div class="grid grid-cols-2 gap-2">
+          <div class="grid grid-cols-3 gap-2">
             <button
               v-for="provider in oauthProviders"
               :key="provider.id"
@@ -179,7 +176,7 @@
               class="login-provider-button w-full flex items-center justify-center gap-2 border-2 border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm transition-all duration-200 text-gray-700 font-medium"
             >
               <ThirdPartyProviderIcon :provider="provider.id" :size="20" class="login-provider-icon flex-shrink-0" />
-              <span>{{ provider.name }} 登录</span>
+              <span>{{ provider.name }}</span>
             </button>
           </div>
 
@@ -202,6 +199,8 @@
 
 <script setup>
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
+import QRCode from 'qrcode'
+import { createQRLoginController } from '../utils/qrLogin.js'
 import { useRoute } from 'vue-router'
 import { Mail, Lock, Eye, EyeOff, MessageSquare, AlertTriangle } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
@@ -241,6 +240,10 @@ const oauthProviders = [
   {
     id: 'feishu',
     name: '飞书'
+  },
+  {
+    id: 'qq',
+    name: 'QQ'
   }
 ]
 
@@ -253,12 +256,10 @@ const countdown = ref(0)
 const emailChallengeId = ref('')
 const showSendCodeModal = ref(false)
 const qrCodeUrl = ref('')
-const qrStatus = ref('请使用 Lite SSO App 扫描二维码')
+const qrStatus = ref('')
+const qrLoading = ref(false)
 const qrTimer = ref(0)
-const qrCheckInterval = ref(null)
-const qrTimerInterval = ref(null)
 const passwordLockInterval = ref(null)
-const currentQRID = ref('')
 const passwordCaptchaRequired = ref(false)
 const passwordCaptchaInput = ref('')
 const passwordCaptchaID = ref('')
@@ -479,60 +480,25 @@ const oauthLogin = (provider) => {
   window.location.href = `/api/auth/third/${provider}${redirectParam}`
 }
 
-const refreshQRCode = async () => {
-  try {
-    const response = await authAPI.getQRCode(redirectUrl.value)
-    const data = responseData(response)
-    qrCodeUrl.value = data.code
-    currentQRID.value = data.code
-    qrStatus.value = '请使用 Lite SSO App 扫描二维码'
-    qrTimer.value = 300
-
-    if (qrCheckInterval.value) clearInterval(qrCheckInterval.value)
-    if (qrTimerInterval.value) clearInterval(qrTimerInterval.value)
-
-    qrCheckInterval.value = setInterval(async () => {
-      try {
-        const checkResponse = await authAPI.checkQRCode(currentQRID.value)
-        const checkData = responseData(checkResponse)
-        if (checkData.status === 'scanned') {
-          qrStatus.value = '已扫描，请在 App 中确认'
-        }
-        if (checkData.status === 'confirmed' && checkData.login_ticket) {
-          clearInterval(qrCheckInterval.value)
-          clearInterval(qrTimerInterval.value)
-          const completeResponse = await authAPI.completeQRCode({
-            code: currentQRID.value,
-            login_ticket: checkData.login_ticket
-          })
-          qrStatus.value = '登录成功'
-          ElMessage.success('登录成功，正在跳转...')
-          setTimeout(() => {
-            finishLogin(completeResponse)
-          }, 1000)
-        }
-      } catch (error) {
-        console.error('检查二维码状态失败:', error)
-      }
-    }, 2000)
-
-    qrTimerInterval.value = setInterval(() => {
-      qrTimer.value--
-      if (qrTimer.value <= 0) {
-        clearInterval(qrCheckInterval.value)
-        clearInterval(qrTimerInterval.value)
-        qrStatus.value = '二维码已过期，请刷新'
-      }
-    }, 1000)
-  } catch (error) {
-    ElMessage.error(error.message || '获取二维码失败')
-  }
-}
+const qrController = createQRLoginController({
+  api: authAPI,
+  render: payload => QRCode.toDataURL(payload, { width: 352, margin: 4, errorCorrectionLevel: 'M' }),
+  onChange: state => {
+    qrCodeUrl.value = state.image
+    qrStatus.value = state.message
+    qrTimer.value = state.seconds
+    qrLoading.value = state.loading
+  },
+  onComplete: finishLogin
+})
+const refreshQRCode = () => qrController.start(redirectUrl.value)
+const stopQRCode = () => qrController.stop()
 
 onMounted(() => {
   updateMobileViewport()
   window.visualViewport?.addEventListener('resize', updateMobileViewport)
   window.visualViewport?.addEventListener('scroll', updateMobileViewport)
+  window.addEventListener('pagehide', stopQRCode)
   loadTargetClient()
   if (activeTab.value === 'qr') {
     refreshQRCode()
@@ -542,17 +508,16 @@ onMounted(() => {
 onUnmounted(() => {
   window.visualViewport?.removeEventListener('resize', updateMobileViewport)
   window.visualViewport?.removeEventListener('scroll', updateMobileViewport)
-  if (qrCheckInterval.value) clearInterval(qrCheckInterval.value)
-  if (qrTimerInterval.value) clearInterval(qrTimerInterval.value)
+  window.removeEventListener('pagehide', stopQRCode)
+  stopQRCode()
   if (passwordLockInterval.value) clearInterval(passwordLockInterval.value)
 })
 
 watch(activeTab, (tab) => {
   stopPasswordLockCountdown()
   errorMessage.value = ''
-  if (tab === 'qr' && !currentQRID.value) {
-    refreshQRCode()
-  }
+  if (tab === 'qr') refreshQRCode()
+  else stopQRCode()
 })
 </script>
 

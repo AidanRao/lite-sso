@@ -2,7 +2,6 @@ package oauth
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/url"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
+	"sso-server/manager/thirdparty"
 	"sso-server/model"
 )
 
@@ -34,6 +34,48 @@ func (p *fakeThirdPartyProvider) FetchProfile(ctx context.Context, code string) 
 	return p.profile, nil
 }
 
+func Test_OAuthService_RegistersEverySupportedProvider(t *testing.T) {
+	service := NewOAuthService(&conf.Config{}, nil, kv.NewMemoryStore(), nil)
+	providers := service.registry.Names()
+	if len(providers) != 3 {
+		t.Fatalf("expected three provider implementations, got %d", len(providers))
+	}
+	for _, provider := range providers {
+		if adapter, ok := service.registry.Get(provider); !ok || adapter == nil {
+			t.Fatalf("missing implementation for %s", provider)
+		}
+	}
+}
+
+func Test_OAuthService_HandleThirdPartyLogin_RegisteredCustomProvider(t *testing.T) {
+	registry := thirdparty.NewRegistry()
+	if err := registry.Register("custom", "CUSTOM", &fakeThirdPartyProvider{profile: &thirdPartyProfile{Provider: "custom", ProviderUID: "user"}}); err != nil {
+		t.Fatal(err)
+	}
+	registry.Freeze()
+	service := NewOAuthService(&conf.Config{}, nil, kv.NewMemoryStore(), nil, registry)
+	authURL, err := service.HandleThirdPartyLogin(context.Background(), "custom", "/profile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(authURL, "https://provider.example/oauth?state=") {
+		t.Fatalf("unexpected authorization URL: %s", authURL)
+	}
+	if method, ok := service.AuthMethod("custom"); !ok || method != "CUSTOM" {
+		t.Fatalf("unexpected authentication method: %q, %t", method, ok)
+	}
+}
+
+func useFakeGitHubProvider(t *testing.T, service *OAuthService, profile *thirdPartyProfile) {
+	t.Helper()
+	registry := thirdparty.NewRegistry()
+	if err := registry.Register(thirdparty.GitHub, "GITHUB", &fakeThirdPartyProvider{profile: profile}); err != nil {
+		t.Fatal(err)
+	}
+	registry.Freeze()
+	service.registry = registry
+}
+
 func TestOAuthService_HandleThirdPartyLogin_FeishuBuildsAuthURL(t *testing.T) {
 	cfg := &conf.Config{
 		OAuth: conf.ThirdPartyOAuthConfig{
@@ -46,7 +88,7 @@ func TestOAuthService_HandleThirdPartyLogin_FeishuBuildsAuthURL(t *testing.T) {
 	}
 	service := NewOAuthService(cfg, nil, kv.NewMemoryStore(), nil)
 
-	authURL, err := service.HandleThirdPartyLogin(context.Background(), feishuProvider, "/profile")
+	authURL, err := service.HandleThirdPartyLogin(context.Background(), thirdparty.Feishu, "/profile")
 	if err != nil {
 		t.Fatalf("handle feishu login: %v", err)
 	}
@@ -74,59 +116,21 @@ func TestOAuthService_HandleThirdPartyLogin_FeishuBuildsAuthURL(t *testing.T) {
 	}
 }
 
-func TestFeishuUserData_ToProfile(t *testing.T) {
-	profile, err := (feishuUserData{
-		OpenID:          "ou_x",
-		UnionID:         "on_x",
-		Name:            "Alice",
-		EnterpriseEmail: "alice@example.com",
-		AvatarBig:       "https://example.com/avatar.png",
-	}).toProfile()
+func Test_OAuthService_HandleThirdPartyLogin_QQBuildsAuthURL(t *testing.T) {
+	cfg := &conf.Config{OAuth: conf.ThirdPartyOAuthConfig{QQ: conf.QQOAuthConfig{
+		ClientID: "qq-app-id", ClientSecret: "qq-app-key", RedirectURI: "https://sso.example.com/api/auth/third/qq/callback",
+	}}}
+	service := NewOAuthService(cfg, nil, kv.NewMemoryStore(), nil)
+	authURL, err := service.HandleThirdPartyLogin(context.Background(), thirdparty.QQ, "/profile")
 	if err != nil {
-		t.Fatalf("to profile: %v", err)
+		t.Fatal(err)
 	}
-
-	if profile.Provider != feishuProvider {
-		t.Fatalf("expected provider %q, got %q", feishuProvider, profile.Provider)
-	}
-	if profile.ProviderUID != "on_x" {
-		t.Fatalf("expected union id, got %q", profile.ProviderUID)
-	}
-	if profile.Email != "alice@example.com" {
-		t.Fatalf("expected enterprise email, got %q", profile.Email)
-	}
-	if profile.AvatarURL != "https://example.com/avatar.png" {
-		t.Fatalf("expected avatar url, got %q", profile.AvatarURL)
-	}
-}
-
-func TestFeishuUserData_ToProfileAllowsMissingEmail(t *testing.T) {
-	profile, err := (feishuUserData{
-		OpenID:  "ou_x",
-		UnionID: "on_x",
-		Name:    "Alice",
-	}).toProfile()
+	parsed, err := url.Parse(authURL)
 	if err != nil {
-		t.Fatalf("to profile: %v", err)
+		t.Fatal(err)
 	}
-
-	if profile.ProviderUID != "on_x" {
-		t.Fatalf("expected union id, got %q", profile.ProviderUID)
-	}
-	if profile.Email != "" {
-		t.Fatalf("expected empty email, got %q", profile.Email)
-	}
-}
-
-func TestFeishuTokenResponse_TopLevelAccessToken(t *testing.T) {
-	var token feishuTokenResponse
-	err := json.Unmarshal([]byte(`{"code":0,"msg":"success","access_token":"u-token"}`), &token)
-	if err != nil {
-		t.Fatalf("unmarshal token: %v", err)
-	}
-
-	if token.AccessToken != "u-token" {
-		t.Fatalf("expected top-level access token, got %q", token.AccessToken)
+	if parsed.Host != "graph.qq.com" || parsed.Query().Get("state") == "" || parsed.Query().Get("client_id") != "qq-app-id" {
+		t.Fatalf("unexpected QQ authorization URL: %s", authURL)
 	}
 }
 
@@ -139,16 +143,14 @@ func Test_OAuthService_ThirdPartyBind_PreviewsBeforeConfirmation(t *testing.T) {
 
 	kvStore := kv.NewMemoryStore()
 	service := NewOAuthService(&conf.Config{}, gormDB, kvStore, db.NewUserRepository(gormDB))
-	service.providers[githubProvider] = &fakeThirdPartyProvider{
-		profile: &thirdPartyProfile{
-			Provider:    githubProvider,
-			ProviderUID: "gh_1",
-			Username:    "alice",
-			Email:       "alice@example.com",
-		},
-	}
+	useFakeGitHubProvider(t, service, &thirdPartyProfile{
+		Provider:    thirdparty.GitHub,
+		ProviderUID: "gh_1",
+		Username:    "alice",
+		Email:       "alice@example.com",
+	})
 
-	authURL, err := service.HandleThirdPartyBind(ctx, "u1", githubProvider, "/profile")
+	authURL, err := service.HandleThirdPartyBind(ctx, "u1", thirdparty.GitHub, "/profile")
 	if err != nil {
 		t.Fatalf("handle bind: %v", err)
 	}
@@ -159,15 +161,15 @@ func Test_OAuthService_ThirdPartyBind_PreviewsBeforeConfirmation(t *testing.T) {
 	}
 
 	state := parsed.Query().Get("state")
-	if !service.IsThirdPartyBindingState(ctx, githubProvider, state) {
+	if !service.IsThirdPartyBindingState(ctx, thirdparty.GitHub, state) {
 		t.Fatal("expected binding state to be recognized before callback")
 	}
 
-	result, err := service.HandleThirdPartyCallbackWithState(ctx, githubProvider, "code", state)
+	result, err := service.HandleThirdPartyCallbackWithState(ctx, thirdparty.GitHub, "code", state)
 	if err != nil {
 		t.Fatalf("handle bind callback: %v", err)
 	}
-	if service.IsThirdPartyBindingState(ctx, githubProvider, state) {
+	if service.IsThirdPartyBindingState(ctx, thirdparty.GitHub, state) {
 		t.Fatal("expected callback to consume binding state")
 	}
 
@@ -176,7 +178,7 @@ func Test_OAuthService_ThirdPartyBind_PreviewsBeforeConfirmation(t *testing.T) {
 	}
 
 	var binding model.UserThirdParty
-	if err := gormDB.First(&binding, "user_id = ? AND provider = ?", "u1", githubProvider).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := gormDB.First(&binding, "user_id = ? AND provider = ?", "u1", thirdparty.GitHub).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("expected no binding before confirmation, got %v", err)
 	}
 
@@ -184,14 +186,14 @@ func Test_OAuthService_ThirdPartyBind_PreviewsBeforeConfirmation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get binding preview: %v", err)
 	}
-	if preview.Provider != githubProvider || preview.Username != "alice" {
+	if preview.Provider != thirdparty.GitHub || preview.Username != "alice" {
 		t.Fatalf("unexpected preview: %#v", preview)
 	}
 
 	if _, err := service.ConfirmThirdPartyBinding(ctx, "u1", result.PendingBindingID); err != nil {
 		t.Fatalf("confirm binding: %v", err)
 	}
-	if err := gormDB.First(&binding, "user_id = ? AND provider = ?", "u1", githubProvider).Error; err != nil {
+	if err := gormDB.First(&binding, "user_id = ? AND provider = ?", "u1", thirdparty.GitHub).Error; err != nil {
 		t.Fatalf("expected confirmed binding: %v", err)
 	}
 	if binding.ProviderUID != "gh_1" {
@@ -224,10 +226,8 @@ func Test_OAuthService_ThirdPartyBind_RejectsPreviewOwnedByAnotherUser(t *testin
 
 	kvStore := kv.NewMemoryStore()
 	service := NewOAuthService(&conf.Config{}, gormDB, kvStore, db.NewUserRepository(gormDB))
-	service.providers[githubProvider] = &fakeThirdPartyProvider{
-		profile: &thirdPartyProfile{Provider: githubProvider, ProviderUID: "gh_1"},
-	}
-	authURL, err := service.HandleThirdPartyBind(ctx, "u1", githubProvider, "/profile")
+	useFakeGitHubProvider(t, service, &thirdPartyProfile{Provider: thirdparty.GitHub, ProviderUID: "gh_1"})
+	authURL, err := service.HandleThirdPartyBind(ctx, "u1", thirdparty.GitHub, "/profile")
 	if err != nil {
 		t.Fatalf("start third party bind: %v", err)
 	}
@@ -235,7 +235,7 @@ func Test_OAuthService_ThirdPartyBind_RejectsPreviewOwnedByAnotherUser(t *testin
 	if err != nil {
 		t.Fatalf("parse auth url: %v", err)
 	}
-	result, err := service.HandleThirdPartyCallbackWithState(ctx, githubProvider, "code", parsed.Query().Get("state"))
+	result, err := service.HandleThirdPartyCallbackWithState(ctx, thirdparty.GitHub, "code", parsed.Query().Get("state"))
 	if err != nil {
 		t.Fatalf("handle callback: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestOAuthService_ThirdPartyBind_RejectsAccountBoundToAnotherUser(t *testing
 	}
 	if err := gormDB.Create(&model.UserThirdParty{
 		UserID:      "u2",
-		Provider:    githubProvider,
+		Provider:    thirdparty.GitHub,
 		ProviderUID: "gh_1",
 	}).Error; err != nil {
 		t.Fatalf("create binding: %v", err)
@@ -264,14 +264,12 @@ func TestOAuthService_ThirdPartyBind_RejectsAccountBoundToAnotherUser(t *testing
 
 	kvStore := kv.NewMemoryStore()
 	service := NewOAuthService(&conf.Config{}, gormDB, kvStore, db.NewUserRepository(gormDB))
-	service.providers[githubProvider] = &fakeThirdPartyProvider{
-		profile: &thirdPartyProfile{
-			Provider:    githubProvider,
-			ProviderUID: "gh_1",
-		},
-	}
+	useFakeGitHubProvider(t, service, &thirdPartyProfile{
+		Provider:    thirdparty.GitHub,
+		ProviderUID: "gh_1",
+	})
 
-	authURL, err := service.HandleThirdPartyBind(ctx, "u1", githubProvider, "/profile")
+	authURL, err := service.HandleThirdPartyBind(ctx, "u1", thirdparty.GitHub, "/profile")
 	if err != nil {
 		t.Fatalf("handle bind: %v", err)
 	}
@@ -280,7 +278,7 @@ func TestOAuthService_ThirdPartyBind_RejectsAccountBoundToAnotherUser(t *testing
 		t.Fatalf("parse auth url: %v", err)
 	}
 
-	_, err = service.HandleThirdPartyCallbackWithState(ctx, githubProvider, "code", parsed.Query().Get("state"))
+	_, err = service.HandleThirdPartyCallbackWithState(ctx, thirdparty.GitHub, "code", parsed.Query().Get("state"))
 	if !errors.Is(err, common.ErrThirdPartyBoundToAnother) {
 		t.Fatalf("expected ErrThirdPartyBoundToAnother, got %v", err)
 	}
@@ -290,7 +288,7 @@ func Test_FindOrCreateUser_AllowsNewProviderAccountWithoutEmail(t *testing.T) {
 	gormDB := newOAuthTestDB(t)
 	service := NewOAuthService(&conf.Config{}, gormDB, kv.NewMemoryStore(), db.NewUserRepository(gormDB))
 
-	user, err := service.findOrCreateUser(context.Background(), &thirdPartyProfile{Provider: githubProvider, ProviderUID: "gh-new"})
+	user, err := service.findOrCreateUser(context.Background(), &thirdPartyProfile{Provider: thirdparty.GitHub, ProviderUID: "gh-new"})
 	if err != nil {
 		t.Fatalf("create provider-only account: %v", err)
 	}
@@ -312,12 +310,12 @@ func Test_FindOrCreateUser_DoesNotResyncEmailForEstablishedBinding(t *testing.T)
 	if err := gormDB.Create(&model.User{ID: "u1", Email: &primary, IsActive: true}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	if err := gormDB.Create(&model.UserThirdParty{UserID: "u1", Provider: githubProvider, ProviderUID: "gh-1"}).Error; err != nil {
+	if err := gormDB.Create(&model.UserThirdParty{UserID: "u1", Provider: thirdparty.GitHub, ProviderUID: "gh-1"}).Error; err != nil {
 		t.Fatalf("create binding: %v", err)
 	}
 	service := NewOAuthService(&conf.Config{}, gormDB, kv.NewMemoryStore(), db.NewUserRepository(gormDB))
 
-	if _, err := service.findOrCreateUser(context.Background(), &thirdPartyProfile{Provider: githubProvider, ProviderUID: "gh-1", Email: "changed@example.com"}); err != nil {
+	if _, err := service.findOrCreateUser(context.Background(), &thirdPartyProfile{Provider: thirdparty.GitHub, ProviderUID: "gh-1", Email: "changed@example.com"}); err != nil {
 		t.Fatalf("find established user: %v", err)
 	}
 	var count int64
