@@ -48,7 +48,7 @@ defineProps({
   },
   targetName: {
     type: String,
-    default: 'Lite SSO'
+    default: 'SSO'
   },
   imageSrc: {
     type: String,

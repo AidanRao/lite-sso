@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"sso-server/conf"
+	"sso-server/manager/thirdparty"
 	"sso-server/model"
 )
 
@@ -31,6 +32,7 @@ type Store interface {
 // Recorder owns the queue and its two fixed background workers.
 type Recorder struct {
 	store         Store
+	registry      *thirdparty.Registry
 	config        conf.AuditConfig
 	queue         chan model.AuditLog
 	mu            sync.RWMutex
@@ -46,16 +48,19 @@ type Recorder struct {
 }
 
 // New validates settings and starts a writer and a retention worker.
-func New(store Store, config conf.AuditConfig) (*Recorder, error) {
+func New(store Store, config conf.AuditConfig, registry *thirdparty.Registry) (*Recorder, error) {
 	if store == nil {
 		return nil, fmt.Errorf("audit store is required")
+	}
+	if registry == nil {
+		return nil, fmt.Errorf("third-party registry is required")
 	}
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
 	writeCtx, cancelWrite := context.WithCancel(context.Background())
 	cleanupCtx, cancelCleanup := context.WithCancel(context.Background())
-	r := &Recorder{store: store, config: config.WithDefaults(), writeCtx: writeCtx, cancelWrite: cancelWrite, cancelCleanup: cancelCleanup, done: make(chan struct{})}
+	r := &Recorder{store: store, registry: registry, config: config.WithDefaults(), writeCtx: writeCtx, cancelWrite: cancelWrite, cancelCleanup: cancelCleanup, done: make(chan struct{})}
 	r.queue = make(chan model.AuditLog, r.config.QueueCapacity)
 	var workers sync.WaitGroup
 	workers.Add(2)
@@ -67,7 +72,7 @@ func New(store Store, config conf.AuditConfig) (*Recorder, error) {
 
 // TryRecord sanitizes and snapshots an event, then attempts a nonblocking enqueue.
 func (r *Recorder) TryRecord(event model.AuditLog) bool {
-	event, ok := snapshot(event)
+	event, ok := snapshot(event, r.registry)
 	if !ok {
 		r.counters[5].Add(1)
 		return false

@@ -154,6 +154,9 @@ func (o *OAuth2) HandleAuthorize(c *gin.Context) {
 		return
 	}
 	requestedScopes := strings.Fields(req.Scope)
+	if !c.Request.URL.Query().Has("scope") {
+		requestedScopes = append([]string{}, configured.AllowedScopes...)
+	}
 	for _, scope := range requestedScopes {
 		if !slices.Contains(configured.AllowedScopes, scope) {
 			o.redirectOrWriteAuthorizeError(c, req, oauth2errors.ErrInvalidScope)
@@ -285,13 +288,8 @@ func (o *OAuth2) handleRefresh(c *gin.Context, request *gooauth2.TokenGenerateRe
 		o.writeTokenError(c, oauth2errors.ErrInvalidGrant)
 		return
 	}
-	allowedScopes := make([]string, 0, len(grant.Scopes))
-	for _, scope := range grant.Scopes {
-		if slices.Contains(client.AllowedScopes, scope) {
-			allowedScopes = append(allowedScopes, scope)
-		}
-	}
-	if request.Scope != "" {
+	allowedScopes := append([]string{}, client.AllowedScopes...)
+	if c.Request.Form.Has("scope") {
 		selected := strings.Fields(request.Scope)
 		for _, scope := range selected {
 			if !slices.Contains(allowedScopes, scope) {
@@ -301,12 +299,7 @@ func (o *OAuth2) handleRefresh(c *gin.Context, request *gooauth2.TokenGenerateRe
 		}
 		allowedScopes = selected
 	}
-	audiences := make([]string, 0, len(grant.Audiences))
-	for _, audience := range grant.Audiences {
-		if slices.Contains(client.Audiences, audience) {
-			audiences = append(audiences, audience)
-		}
-	}
+	audiences := append([]string{}, client.Audiences...)
 	if len(audiences) == 0 {
 		o.writeTokenError(c, oauth2errors.ErrInvalidGrant)
 		return

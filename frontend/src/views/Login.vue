@@ -4,13 +4,13 @@
 
     <div class="login-auth-pane flex-1 min-h-screen md:h-screen bg-gradient-to-br from-[#ecfeff] to-[#f0fdfa] flex items-center justify-center overflow-y-auto p-4 sm:p-6 lg:p-8">
       <div class="login-stack w-full max-w-md py-6 md:py-0">
-        <div class="login-card bg-white rounded-2xl shadow-xl shadow-[#0891b2]/5 p-6 sm:p-8 xl:p-10">
+        <div class="login-card bg-white rounded-2xl shadow-xl shadow-[#0891b2]/5 p-6 sm:p-8 xl:p-10" :class="{ 'login-card--expanded': errorMessage || (activeTab === 'password' && passwordCaptchaRequired) }">
           <div class="login-header text-center mb-6 xl:mb-8">
             <ApplicationLogo class="login-brand-logo" :label="targetPlatformName" :src="targetClientLogo" size="large" />
             <h1 class="login-title">登录 {{ targetPlatformName }}</h1>
           </div>
 
-          <div v-if="errorMessage" class="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm flex items-center gap-2">
+          <div v-if="errorMessage" class="login-error mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm flex items-center gap-2">
             <AlertTriangle class="w-4 h-4 flex-shrink-0" />
             {{ errorMessage }}
           </div>
@@ -28,7 +28,7 @@
             </button>
           </div>
 
-          <div class="login-form-panel min-h-[260px] xl:min-h-[292px] overflow-hidden">
+          <div class="login-form-panel min-h-[252px] overflow-y-auto">
             <div v-show="activeTab === 'password'" class="space-y-5">
               <el-form :model="passwordForm" :rules="passwordRules" ref="pwdFormRef" @submit.prevent="handlePasswordLogin">
                 <el-form-item prop="email" class="mb-5">
@@ -41,7 +41,7 @@
                     class="h-12"
                   />
                 </el-form-item>
-                <div class="mb-3">
+                <div class="login-password-field mb-3">
                   <div class="flex w-full items-center justify-between mb-2">
                     <label class="block text-sm font-medium text-gray-700">密码</label>
                     <router-link to="/reset-password" class="text-sm font-medium text-[#0891b2] hover:text-[#0e7490] transition-colors">
@@ -70,7 +70,7 @@
                     </el-input>
                   </el-form-item>
                 </div>
-                <div v-if="passwordCaptchaRequired" class="mb-4">
+                <div v-if="passwordCaptchaRequired" class="login-captcha mb-4">
                   <label class="block text-sm font-medium text-gray-700 mb-2">图形验证码</label>
                   <div class="flex items-center gap-3">
                     <el-input v-model="passwordCaptchaInput" maxlength="4" placeholder="请输入验证码" class="h-12 flex-1" />
@@ -82,7 +82,7 @@
                     />
                   </div>
                 </div>
-                <div class="pt-4">
+                <div class="login-submit pt-4">
                   <button
                     type="submit"
                     class="w-full h-12 text-white rounded-xl font-semibold text-base transition-colors flex items-center justify-center disabled:cursor-not-allowed"
@@ -132,7 +132,7 @@
                   </el-button>
                 </div>
               </el-form-item>
-              <div class="pt-1">
+              <div class="login-submit pt-1">
                 <button type="submit" class="w-full h-12 bg-[#0891b2] text-white rounded-xl font-semibold text-base hover:bg-[#0e7490] transition-colors flex items-center justify-center" :disabled="loading">
                   <svg v-if="loading" class="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -144,42 +144,48 @@
             </el-form>
           </div>
 
-          <div v-show="activeTab === 'qr'" class="flex flex-col items-center justify-center py-4">
-            <div class="w-44 h-44 mx-auto bg-gray-50 rounded-xl flex items-center justify-center mb-6 shadow-inner">
-              <div v-if="qrCodeUrl" class="p-4 text-center">
-                <div class="text-xs text-gray-400 mb-2">登录码</div>
-                <div class="text-sm font-mono text-gray-700 break-all">{{ qrCodeUrl }}</div>
-              </div>
+          <div v-show="activeTab === 'qr'" class="login-qr-panel flex h-full flex-col items-center justify-center">
+            <div class="w-44 h-44 mx-auto bg-gray-50 rounded-xl flex items-center justify-center mb-3 shadow-inner">
+              <img v-if="qrCodeUrl" :src="qrCodeUrl" alt="扫码登录二维码" class="w-44 h-44 rounded-xl" />
+              <button
+                v-else-if="qrExpired"
+                type="button"
+                class="h-full w-full rounded-xl text-sm font-medium text-[#0891b2] hover:bg-cyan-50 transition-colors"
+                aria-label="二维码已过期，点击刷新二维码"
+                @click="refreshQRCode"
+              >
+                二维码已过期<br />点击刷新
+              </button>
               <div v-else class="flex flex-col items-center text-gray-400">
                 <svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
-                <span class="text-sm">加载中...</span>
+                <span class="text-sm">{{ qrLoading ? '加载中…' : '二维码暂不可用' }}</span>
               </div>
             </div>
-            <p class="text-gray-600 text-sm mb-2">{{ qrStatus }}</p>
-            <p v-if="qrTimer > 0" class="text-gray-400 text-xs">{{ Math.floor(qrTimer / 60) }}:{{ String(qrTimer % 60).padStart(2, '0') }}</p>
-            <el-button type="default" @click="refreshQRCode" class="mt-4">
-              刷新二维码
-            </el-button>
+            <div class="min-h-5 flex flex-wrap items-center justify-center text-center">
+              <span v-if="!qrExpired" class="text-gray-600 text-sm">{{ qrStatus }}</span>
+              <span v-if="qrTimer > 0" class="text-gray-600 text-sm">，有效期：{{ Math.floor(qrTimer / 60) }}:{{ String(qrTimer % 60).padStart(2, '0') }}</span>
+            </div>
           </div>
         </div>
 
-        <div class="login-divider my-4 xl:my-6 flex items-center gap-4">
+        <div class="login-divider mt-2 mb-4 xl:mt-3 xl:mb-6 flex items-center gap-4">
             <div class="flex-1 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent"></div>
             <span class="text-gray-400 text-sm font-medium">其他登录方式</span>
             <div class="flex-1 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent"></div>
           </div>
 
-          <div class="grid grid-cols-2 gap-2">
+          <div class="login-provider-list flex items-center justify-around">
             <button
               v-for="provider in oauthProviders"
               :key="provider.id"
               @click="oauthLogin(provider.id)"
-              class="login-provider-button w-full flex items-center justify-center gap-2 border-2 border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm transition-all duration-200 text-gray-700 font-medium"
+              :aria-label="`${provider.name}登录`"
+              :title="`${provider.name}登录`"
+              class="login-provider-button flex items-center justify-center border-2 border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm transition-all duration-200"
             >
-              <ThirdPartyProviderIcon :provider="provider.id" :size="20" class="login-provider-icon flex-shrink-0" />
-              <span>{{ provider.name }} 登录</span>
+              <ThirdPartyProviderIcon :provider="provider.id" :size="24" class="login-provider-icon flex-shrink-0" />
             </button>
           </div>
 
@@ -202,6 +208,8 @@
 
 <script setup>
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
+import QRCode from 'qrcode'
+import { createQRLoginController } from '../utils/qrLogin.js'
 import { useRoute } from 'vue-router'
 import { Mail, Lock, Eye, EyeOff, MessageSquare, AlertTriangle } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
@@ -225,7 +233,7 @@ const updateMobileViewport = () => {
 const redirectUrl = ref(getLoginRedirect(route))
 const targetClient = ref(null)
 const targetClientName = computed(() => targetClient.value?.name || '')
-const targetClientLogo = computed(() => targetClient.value?.logo_url || '')
+const targetClientLogo = computed(() => targetClient.value?.logo_url || (targetClient.value ? '' : `${import.meta.env.BASE_URL}assets/sso.png`))
 
 const tabs = [
   { key: 'password', label: '密码登录' },
@@ -241,6 +249,10 @@ const oauthProviders = [
   {
     id: 'feishu',
     name: '飞书'
+  },
+  {
+    id: 'qq',
+    name: 'QQ'
   }
 ]
 
@@ -253,12 +265,11 @@ const countdown = ref(0)
 const emailChallengeId = ref('')
 const showSendCodeModal = ref(false)
 const qrCodeUrl = ref('')
-const qrStatus = ref('请使用 Lite SSO App 扫描二维码')
+const qrStatus = ref('')
+const qrLoading = ref(false)
 const qrTimer = ref(0)
-const qrCheckInterval = ref(null)
-const qrTimerInterval = ref(null)
+const qrExpired = ref(false)
 const passwordLockInterval = ref(null)
-const currentQRID = ref('')
 const passwordCaptchaRequired = ref(false)
 const passwordCaptchaInput = ref('')
 const passwordCaptchaID = ref('')
@@ -282,7 +293,7 @@ const passwordValueValid = computed(() => Boolean(passwordForm.value.password))
 const passwordFormValid = computed(() => passwordEmailValid.value && passwordValueValid.value)
 const passwordLoginInvalid = computed(() => !passwordFormValid.value && passwordLockSeconds.value <= 0 && !loading.value)
 const passwordLoginDisabled = computed(() => loading.value || passwordLockSeconds.value > 0)
-const targetPlatformName = computed(() => targetClientName.value || 'Lite SSO')
+const targetPlatformName = computed(() => targetClientName.value || 'SSO')
 const registerRoute = computed(() => {
   if (!redirectUrl.value || redirectUrl.value === '/profile') {
     return '/register'
@@ -479,60 +490,26 @@ const oauthLogin = (provider) => {
   window.location.href = `/api/auth/third/${provider}${redirectParam}`
 }
 
-const refreshQRCode = async () => {
-  try {
-    const response = await authAPI.getQRCode(redirectUrl.value)
-    const data = responseData(response)
-    qrCodeUrl.value = data.code
-    currentQRID.value = data.code
-    qrStatus.value = '请使用 Lite SSO App 扫描二维码'
-    qrTimer.value = 300
-
-    if (qrCheckInterval.value) clearInterval(qrCheckInterval.value)
-    if (qrTimerInterval.value) clearInterval(qrTimerInterval.value)
-
-    qrCheckInterval.value = setInterval(async () => {
-      try {
-        const checkResponse = await authAPI.checkQRCode(currentQRID.value)
-        const checkData = responseData(checkResponse)
-        if (checkData.status === 'scanned') {
-          qrStatus.value = '已扫描，请在 App 中确认'
-        }
-        if (checkData.status === 'confirmed' && checkData.login_ticket) {
-          clearInterval(qrCheckInterval.value)
-          clearInterval(qrTimerInterval.value)
-          const completeResponse = await authAPI.completeQRCode({
-            code: currentQRID.value,
-            login_ticket: checkData.login_ticket
-          })
-          qrStatus.value = '登录成功'
-          ElMessage.success('登录成功，正在跳转...')
-          setTimeout(() => {
-            finishLogin(completeResponse)
-          }, 1000)
-        }
-      } catch (error) {
-        console.error('检查二维码状态失败:', error)
-      }
-    }, 2000)
-
-    qrTimerInterval.value = setInterval(() => {
-      qrTimer.value--
-      if (qrTimer.value <= 0) {
-        clearInterval(qrCheckInterval.value)
-        clearInterval(qrTimerInterval.value)
-        qrStatus.value = '二维码已过期，请刷新'
-      }
-    }, 1000)
-  } catch (error) {
-    ElMessage.error(error.message || '获取二维码失败')
-  }
-}
+const qrController = createQRLoginController({
+  api: authAPI,
+  render: payload => QRCode.toDataURL(payload, { width: 352, margin: 4, errorCorrectionLevel: 'M' }),
+  onChange: state => {
+    qrCodeUrl.value = state.image
+    qrStatus.value = state.message
+    qrTimer.value = state.seconds
+    qrLoading.value = state.loading
+    qrExpired.value = state.expired
+  },
+  onComplete: finishLogin
+})
+const refreshQRCode = () => qrController.start(redirectUrl.value)
+const stopQRCode = () => qrController.stop()
 
 onMounted(() => {
   updateMobileViewport()
   window.visualViewport?.addEventListener('resize', updateMobileViewport)
   window.visualViewport?.addEventListener('scroll', updateMobileViewport)
+  window.addEventListener('pagehide', stopQRCode)
   loadTargetClient()
   if (activeTab.value === 'qr') {
     refreshQRCode()
@@ -542,21 +519,25 @@ onMounted(() => {
 onUnmounted(() => {
   window.visualViewport?.removeEventListener('resize', updateMobileViewport)
   window.visualViewport?.removeEventListener('scroll', updateMobileViewport)
-  if (qrCheckInterval.value) clearInterval(qrCheckInterval.value)
-  if (qrTimerInterval.value) clearInterval(qrTimerInterval.value)
+  window.removeEventListener('pagehide', stopQRCode)
+  stopQRCode()
   if (passwordLockInterval.value) clearInterval(passwordLockInterval.value)
 })
 
 watch(activeTab, (tab) => {
   stopPasswordLockCountdown()
   errorMessage.value = ''
-  if (tab === 'qr' && !currentQRID.value) {
-    refreshQRCode()
-  }
+  if (tab === 'qr') refreshQRCode()
+  else stopQRCode()
 })
 </script>
 
 <style scoped>
+.login-form-panel {
+  height: 252px;
+  min-height: 252px;
+}
+
 @media (max-height: 760px) and (min-width: 768px) {
   .login-auth-pane {
     align-items: flex-start;
@@ -579,6 +560,7 @@ watch(activeTab, (tab) => {
   }
 
   .login-form-panel {
+    height: 238px;
     min-height: 238px;
   }
 
@@ -598,14 +580,16 @@ watch(activeTab, (tab) => {
 }
 
 .login-provider-button {
-  height: 48px;
-  border-radius: 8px;
-  padding: 0 14px;
+  width: 60px;
+  height: 60px;
+  flex: 0 0 60px;
+  border-radius: 50%;
+  padding: 0;
 }
 
 .login-brand-logo {
-  --profile-border: #cffafe;
-  --profile-success-soft: #ecfeff;
+  border: 0;
+  background: transparent;
   --profile-success: #0891b2;
 }
 
@@ -634,7 +618,8 @@ watch(activeTab, (tab) => {
     height: 100%;
     flex-direction: column;
     justify-content: flex-start;
-    overscroll-behavior-y: contain;
+    overflow: hidden;
+    overscroll-behavior: none;
     background: #fff;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
@@ -658,7 +643,9 @@ watch(activeTab, (tab) => {
   }
 
   .login-form-panel {
-    min-height: 0;
+    height: auto;
+    min-height: 248px;
+    overflow: visible;
   }
 
   .login-form-panel :deep(.el-input__inner) {
@@ -670,13 +657,14 @@ watch(activeTab, (tab) => {
   }
 
   .login-divider {
-    margin-block: 16px;
+    margin-bottom: 16px;
+    margin-top: 20px;
   }
 
   .login-provider-button {
-    padding-inline: 10px;
-    font-size: 14px;
-    white-space: nowrap;
+    width: 54px;
+    height: 54px;
+    flex-basis: 54px;
   }
 
   .login-register-link {
@@ -684,17 +672,124 @@ watch(activeTab, (tab) => {
   }
 }
 
+@media (max-width: 767px) and (max-height: 640px) {
+  .login-card {
+    padding: 16px 24px;
+  }
+
+  .login-header,
+  .login-tabs {
+    margin-bottom: 12px;
+  }
+
+  .login-brand-logo {
+    width: 36px;
+    height: 36px;
+  }
+
+  .login-title {
+    margin-top: 8px;
+    font-size: 22px;
+  }
+
+  .login-divider {
+    margin-bottom: 12px;
+    margin-top: 12px;
+  }
+
+  .login-provider-button {
+    width: 48px;
+    height: 48px;
+    flex-basis: 48px;
+  }
+
+  .login-register-link {
+    margin-top: 12px;
+  }
+}
+
+@media (max-width: 767px) and (max-height: 760px) {
+  .login-card--expanded {
+    padding-block: 8px;
+  }
+
+  .login-card--expanded .login-header,
+  .login-card--expanded .login-tabs {
+    margin-bottom: 6px;
+  }
+
+  .login-card--expanded .login-brand-logo {
+    width: 28px;
+    height: 28px;
+  }
+
+  .login-card--expanded .login-title {
+    margin-top: 4px;
+    font-size: 22px;
+  }
+
+  .login-card--expanded .login-error {
+    margin-bottom: 8px;
+    padding: 4px 8px;
+  }
+
+  .login-card--expanded .login-tabs button {
+    padding-block: 8px;
+  }
+
+  .login-card--expanded .login-form-panel {
+    min-height: 0;
+  }
+
+  .login-card--expanded .login-form-panel :deep(.el-form-item.mb-5),
+  .login-card--expanded .login-form-panel :deep(.el-form-item.mb-6) {
+    margin-bottom: 12px;
+  }
+
+  .login-card--expanded .login-form-panel .mb-2 {
+    margin-bottom: 4px;
+  }
+
+  .login-card--expanded .login-password-field,
+  .login-card--expanded .login-captcha {
+    margin-bottom: 8px;
+  }
+
+  .login-card--expanded .login-submit {
+    padding-top: 4px;
+  }
+
+  .login-card--expanded .login-form-panel :deep(.h-12) {
+    height: 44px;
+  }
+
+  .login-card--expanded .login-divider {
+    margin-bottom: 8px;
+    margin-top: 12px;
+  }
+
+  .login-card--expanded .login-provider-button {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+
+  .login-card--expanded .login-register-link {
+    margin-top: 8px;
+  }
+}
+
 .login-provider-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
 }
 
 .login-provider-icon :deep(svg) {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
 }
 
 @media (max-height: 680px) and (min-width: 768px) {
@@ -708,6 +803,7 @@ watch(activeTab, (tab) => {
   }
 
   .login-form-panel {
+    height: 226px;
     min-height: 226px;
   }
 }

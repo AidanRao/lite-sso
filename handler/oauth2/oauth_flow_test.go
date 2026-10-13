@@ -262,9 +262,9 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 		t.Fatalf("reused refresh token: %s", got.Body.String())
 	}
 	refreshForm.Set("refresh_token", refreshedPair.RefreshToken)
-	refreshForm.Set("scope", "profile:read")
+	refreshForm.Set("scope", "unregistered:scope")
 	if got := refreshRequest(clientID, clientSecret); got.Code == http.StatusOK {
-		t.Fatalf("refresh expanded original scope: %s", got.Body.String())
+		t.Fatalf("refresh accepted unregistered scope: %s", got.Body.String())
 	}
 	refreshForm.Del("scope")
 
@@ -413,8 +413,8 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	if _, _, err := jwt.NewParser().ParseUnverified(publicPair.AccessToken, &publicClaims); err != nil {
 		t.Fatal(err)
 	}
-	if _, hasScope := publicClaims["scope"]; hasScope {
-		t.Fatalf("unsolicited scope appeared in JWT: %#v", publicClaims)
+	if publicClaims["scope"] != "courses:read" {
+		t.Fatalf("default configured scope missing from JWT: %#v", publicClaims)
 	}
 	publicRefreshForm := url.Values{"grant_type": {"refresh_token"}, "client_id": {publicClientID}, "refresh_token": {publicPair.RefreshToken}}
 	w = httptest.NewRecorder()

@@ -9,6 +9,8 @@ func Rules() []Rule {
 		{Method: "POST", Route: "/api/auth/email/send", Action: "auth.email.send", TargetType: "user"},
 		{Method: "POST", Route: "/api/auth/qr/scan", Action: "auth.qr.scan", TargetType: "user"},
 		{Method: "POST", Route: "/api/auth/qr/confirm", Action: "auth.qr.confirm", TargetType: "user"},
+		{Method: "POST", Route: "/api/auth/qr/reject", Action: "auth.qr.reject", TargetType: "user"},
+		{Method: "POST", Route: "/api/auth/qr/cancel", Action: "auth.qr.cancel", TargetType: "user"},
 		{Method: "POST", Route: "/api/auth/qr/complete", Action: "auth.login.qr", TargetType: "user", AuthMethod: "qr_code"},
 		{Method: "POST", Route: "/api/auth/logout", Action: "auth.logout", TargetType: "user"},
 		{Method: "GET", Route: "/api/auth/third/:provider", Action: "auth.third_party.start", TargetType: "provider", TargetParam: "provider"},

@@ -152,8 +152,9 @@
           <textarea v-model="form.audiences" rows="3" placeholder="classhopper-api" />
         </label>
         <label>
-          <span>允许的 Scope（每行一个）</span>
+          <span>允许的 Scope（每行一个；客户端未传 scope 时全部签发）</span>
           <textarea v-model="form.allowed_scopes" rows="3" placeholder="courses:read" />
+          <small>qr:login 允许用户通过此应用确认浏览器 SSO 登录，并进入其他接入系统；需同时配置 sso-api Audience。配置更新后刷新令牌即可获取新增权限，撤销扫码权限立即阻止未完成登录。</small>
         </label>
         <div v-if="form.client_type === 'confidential'" class="secret-field">
           <span>Client Secret</span>
@@ -580,7 +581,8 @@ const avatarInitial = (item) => {
 const providerName = (provider) => {
   const names = {
     github: 'GitHub',
-    feishu: '飞书'
+    feishu: '飞书',
+    qq: 'QQ'
   }
   return names[provider] || provider
 }

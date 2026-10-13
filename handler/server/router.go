@@ -64,25 +64,28 @@ func (s *Server) registerRoutes() error {
 	})
 
 	userHandler := user.NewUserHandler(user.UserDeps{
-		Config:        s.cfg,
-		DB:            db.DB,
-		KV:            kvStore,
-		OAuth2:        o,
-		ImageStore:    s.imageStore,
-		MessageSender: s.messageCenterClient,
+		Config:           s.cfg,
+		DB:               db.DB,
+		KV:               kvStore,
+		OAuth2:           o,
+		ImageStore:       s.imageStore,
+		MessageSender:    s.messageCenterClient,
+		ProviderRegistry: s.providerRegistry,
 	})
 
 	oauthHandler := oauth.NewOAuthHandler(oauth.OAuthDeps{
-		Config: s.cfg,
-		DB:     db.DB,
-		KV:     kvStore,
-		OAuth2: o,
+		Config:           s.cfg,
+		DB:               db.DB,
+		KV:               kvStore,
+		OAuth2:           o,
+		ProviderRegistry: s.providerRegistry,
 	})
 
 	adminHandler := admin.NewAdminHandler(admin.AdminDeps{
-		Config:     s.cfg,
-		DB:         db.DB,
-		ImageStore: s.imageStore,
+		Config:           s.cfg,
+		DB:               db.DB,
+		ImageStore:       s.imageStore,
+		ProviderRegistry: s.providerRegistry,
 	})
 
 	authRequired := RequireSessionAuth(authHandler.Service())
@@ -101,9 +104,11 @@ func (s *Server) registerRoutes() error {
 
 			authGroup.GET("/qr/generate", authHandler.GenerateQRCode)
 			authGroup.GET("/qr/poll", authHandler.PollQRCode)
-			authGroup.POST("/qr/scan", authRequired, authHandler.ScanQRCode)
-			authGroup.POST("/qr/confirm", authRequired, authHandler.ConfirmQRCode)
+			authGroup.POST("/qr/scan", authHandler.ScanQRCode)
+			authGroup.POST("/qr/confirm", authHandler.ConfirmQRCode)
 			authGroup.POST("/qr/complete", authHandler.CompleteQRCode)
+			authGroup.POST("/qr/reject", authHandler.RejectQRCode)
+			authGroup.POST("/qr/cancel", authHandler.CancelQRCode)
 
 			authGroup.GET("/third/:provider", oauthHandler.ThirdPartyLogin)
 			authGroup.GET("/third/:provider/callback", oauthHandler.ThirdPartyCallback)

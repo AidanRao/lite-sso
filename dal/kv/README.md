@@ -9,7 +9,7 @@ All production keys begin with `{environment}:sso:`. The environment comes from 
 | `auth:rate:{scope}:{id}` | OTP send and verify rate limits | Rate-limit window |
 | `auth:fail:{scope}:{id}` | Password and OTP failure counters | Guard window |
 | `auth:accounts:{scope}:{id}` | Distinct accounts attempted from a device or IP | Guard window |
-| `qr:{code}` | QR login state | 5 minutes |
+| `qr:{code}` | Browser-bound QR login state, scanner user/client and browser credential digest | Fixed 5 minutes from generation; transitions preserve TTL |
 | `oauth:state:{state}` | Third-party login state | 5 minutes |
 | `oauth:pending-binding:{id}` | Pending third-party account binding | 5 minutes |
 | `oauth:authorization-code:{sha256(code)}` | OAuth authorization code metadata | `tokens.oauth.authorization_code_ttl`, consumed on first exchange |

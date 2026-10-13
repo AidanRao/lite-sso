@@ -17,6 +17,7 @@ import (
 	"sso-server/dal/db"
 	"sso-server/dto"
 	manageross "sso-server/manager/oss"
+	"sso-server/manager/thirdparty"
 	"sso-server/model"
 )
 
@@ -27,10 +28,17 @@ type AdminService struct {
 	userOAuthRepo      *db.UserOAuthClientRepository
 	userThirdPartyRepo *db.UserThirdPartyRepository
 	imageStore         manageross.ImageStore
+	registry           *thirdparty.Registry
 }
 
 // NewAdminService creates a service for system administration workflows.
-func NewAdminService(cfg *conf.Config, database *gorm.DB, imageStore manageross.ImageStore) *AdminService {
+func NewAdminService(cfg *conf.Config, database *gorm.DB, imageStore manageross.ImageStore, registries ...*thirdparty.Registry) *AdminService {
+	var registry *thirdparty.Registry
+	if len(registries) > 0 && registries[0] != nil {
+		registry = registries[0]
+	} else {
+		registry = thirdparty.NewBuiltins(cfg)
+	}
 	return &AdminService{
 		cfg:                cfg,
 		userRepo:           db.NewUserRepository(database),
@@ -38,6 +46,7 @@ func NewAdminService(cfg *conf.Config, database *gorm.DB, imageStore manageross.
 		userOAuthRepo:      db.NewUserOAuthClientRepository(database),
 		userThirdPartyRepo: db.NewUserThirdPartyRepository(database),
 		imageStore:         imageStore,
+		registry:           registry,
 	}
 }
 
@@ -88,9 +97,13 @@ func (s *AdminService) GetUserDetail(ctx context.Context, userID string) (*dto.A
 		})
 	}
 
-	providerResponses := []dto.ThirdPartyProviderResponse{
-		{Provider: "github", Bound: boundProviders["github"]},
-		{Provider: "feishu", Bound: boundProviders["feishu"]},
+	providers := s.registry.Names()
+	providerResponses := make([]dto.ThirdPartyProviderResponse, 0, len(providers))
+	for _, provider := range providers {
+		providerResponses = append(providerResponses, dto.ThirdPartyProviderResponse{
+			Provider: provider,
+			Bound:    boundProviders[provider],
+		})
 	}
 
 	return &dto.AdminUserDetailResponse{

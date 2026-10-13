@@ -9,7 +9,8 @@ test('third-party redirects describe distinct business stages rather than HTTP s
   assert.match(auditSummary({ ...event, action: 'user.third_party.callback', details: { provider: 'github', completed_steps: ['binding_prepared'] } }), /等待确认/)
   assert.match(auditSummary({ ...event, action: 'user.third_party.bind', details: { provider: 'github', completed_steps: ['binding_created'] } }), /绑定已完成/)
   assert.match(auditSummary({ ...event, action: 'auth.login.third_party', details: { auth_method: 'github', completed_steps: ['session_created'] } }), /通过GitHub完成登录/)
-  assert.equal(auditSummary({ ...event, action: 'oauth.authorize', client_id: 'demo-app', details: { completed_steps: ['authorization_code_issued'] } }), '已为应用「demo-app」完成账号授权。')
+  assert.equal(auditSummary({ ...event, action: 'oauth.authorize', client_id: 'demo-app', details: { completed_steps: ['authorization_code_issued'] } }), '已为应用 demo-app 完成账号授权。')
+  assert.match(auditSummary({ ...event, action: 'auth.login.third_party', details: { provider: 'qq', auth_method: 'qq', completed_steps: ['session_created'] } }), /通过QQ完成登录/)
   assert.equal(auditSummary({ ...event, action: 'auth.login.third_party', outcome: 'failure', reason_code: 'UNCLASSIFIED_REDIRECT' }), '跳转结果未确认')
   assert.doesNotMatch(auditSummary({ ...event, action: 'auth.login.third_party', outcome: 'failure', reason_code: 'PROVIDER_AUTH_FAILED' }), /完成登录/)
 })
@@ -27,10 +28,10 @@ test('application display prefers current metadata and retains IDs for missing a
   const event = { action: 'oauth.authorize', outcome: 'success', client_id: 'demo-app', details: { completed_steps: ['authorization_code_issued'] } }
   const withApplication = { ...event, application: { client_id: 'demo-app', name: '示例应用', logo_url: 'https://example.com/logo.png' } }
   assert.equal(auditApplicationName(withApplication), '示例应用')
-  assert.equal(auditSummary(withApplication), '已为应用「示例应用」完成账号授权。')
+  assert.equal(auditSummary(withApplication), '已为应用 示例应用 完成账号授权。')
   assert.equal(auditDetailRows(withApplication).find(row => row.label === '应用名称（当前）').value, '示例应用')
   assert.equal(auditApplicationName({ ...event, application: null }), 'demo-app')
-  assert.equal(auditSummary({ ...event, application: null }), '已为应用「demo-app」完成账号授权。')
+  assert.equal(auditSummary({ ...event, application: null }), '已为应用 demo-app 完成账号授权。')
   assert.equal(auditApplicationName({}), '')
   assert.equal(auditSummary({ ...event, client_id: null }), '已完成应用授权。')
 })
@@ -38,9 +39,9 @@ test('application display prefers current metadata and retains IDs for missing a
 test('authorization summary embeds an application token with only safe homepage links', () => {
   const event = { action: 'oauth.authorize', outcome: 'success', details: { completed_steps: ['authorization_code_issued'] }, application: { name: '<b>devops-local</b>', logo_url: '/logo.png', homepage_url: 'http://localhost:8080/' } }
   assert.deepEqual(auditSummaryParts(event), [
-    { type: 'text', text: '已为应用「' },
+    { type: 'text', text: '已为应用 ' },
     { type: 'application', text: '<b>devops-local</b>', logo: '/logo.png', href: 'http://localhost:8080/' },
-    { type: 'text', text: '」完成账号授权。' }
+    { type: 'text', text: ' 完成账号授权。' }
   ])
   for (const homepage of ['', null, 'javascript:alert(1)', 'data:text/html,test', 'file:///tmp/test', 'https://user:password@example.com', '/relative', 'not a URL']) {
     const parts = auditSummaryParts({ ...event, application: { ...event.application, homepage_url: homepage } })

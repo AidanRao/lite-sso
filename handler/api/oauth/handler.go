@@ -17,15 +17,17 @@ import (
 	apiauth "sso-server/handler/api/auth"
 	"sso-server/handler/audit"
 	"sso-server/handler/oauth2"
+	"sso-server/manager/thirdparty"
 	serviceauth "sso-server/service/auth"
 	"sso-server/service/oauth"
 )
 
 type OAuthDeps struct {
-	Config *conf.Config
-	DB     *gorm.DB
-	KV     kv.Store
-	OAuth2 *oauth2.OAuth2
+	Config           *conf.Config
+	DB               *gorm.DB
+	KV               kv.Store
+	OAuth2           *oauth2.OAuth2
+	ProviderRegistry *thirdparty.Registry
 }
 
 type OAuthHandler struct {
@@ -41,7 +43,7 @@ func NewOAuthHandler(deps OAuthDeps) *OAuthHandler {
 	userRepo := db.NewUserRepository(deps.DB)
 	trustProxyHeaders := deps.Config != nil && deps.Config.Server.TrustProxyHeaders
 	return &OAuthHandler{
-		oauthService:      oauth.NewOAuthService(deps.Config, deps.DB, deps.KV, userRepo),
+		oauthService:      oauth.NewOAuthService(deps.Config, deps.DB, deps.KV, userRepo, deps.ProviderRegistry),
 		authService:       serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
 		oauth2:            deps.OAuth2,
 		db:                deps.DB,
@@ -279,11 +281,17 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 		return
 	}
 
+	authMethod, ok := h.oauthService.AuthMethod(provider)
+	if !ok {
+		audit.Denied(c, "INVALID_PROVIDER")
+		c.Redirect(http.StatusTemporaryRedirect, "/oauth/callback?error="+url.QueryEscape("不支持的第三方平台"))
+		return
+	}
 	_, pair, err := h.authService.CompleteLoginWithContext(c.Request.Context(), result.User.ID, result.Redirect, serviceauth.LoginMetadata{
 		DeviceID:  deviceID,
 		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
 		UserAgent: c.Request.UserAgent(),
-	}, providerAuthMethod(provider))
+	}, serviceauth.AuthMethod(authMethod))
 	if err != nil {
 		audit.Error(c, err)
 		log.Printf("ThirdPartyCallback: complete login failed, provider=%s, user_id=%s, err=%v", provider, result.User.ID, err)
@@ -295,7 +303,7 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 		apiauth.WriteDeviceCookie(c, deviceID, h.cookieSecure)
 	}
 	audit.Actor(c, result.User.ID, pair.SessionID)
-	audit.AuthMethod(c, string(providerAuthMethod(provider)))
+	audit.AuthMethod(c, provider)
 	audit.Completed(c, "session_created")
 	audit.Success(c)
 	apiauth.WriteLoginCookies(c, pair, h.cookieSecure, h.authService.RefreshTokenTTL())
@@ -308,11 +316,4 @@ func redirectThirdPartyBindingError(c *gin.Context, provider, message string) {
 		"error":    {message},
 	}
 	c.Redirect(http.StatusTemporaryRedirect, "/profile/third-party-bind?"+query.Encode())
-}
-
-func providerAuthMethod(provider string) serviceauth.AuthMethod {
-	if provider == "feishu" {
-		return serviceauth.AuthMethodFeishu
-	}
-	return serviceauth.AuthMethodGitHub
 }

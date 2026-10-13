@@ -12,7 +12,7 @@ SSO 管理员需为接入系统登记客户端信息：
 | `client_type` | `confidential` 服务端客户端，或 `public` 公共客户端 | `confidential` |
 | `client_secret` | 服务端客户端密钥，仅保存在后端；公共客户端不使用 | `replace-with-secret` |
 | `audiences` | 允许访问的业务 API 标识列表，至少配置一个才能签发令牌 | `["classhopper-api"]` |
-| `allowed_scopes` | 客户端可申请的权限列表 | `["courses:read"]` |
+| `allowed_scopes` | 应用权限列表；未传 scope 时全部签发 | `["courses:read"]` |
 | `homepage_url` | 系统首页地址，用于退出后的 `redirect` 域名校验 | `https://order.example.com` |
 | `redirect_uri` | 登录回调地址 | `https://order.example.com/auth/sso/callback` |
 | `logout_uri` | 可选，全局登出通知地址 | `https://order.example.com/auth/sso/logout` |
@@ -175,9 +175,9 @@ redirect_uri=https%3A%2F%2Forder.example.com%2Fauth%2Fsso%2Fcallback
 }
 ```
 
-JWT 的 `iss` 为当前环境 SSO 地址，`aud` 包含客户端登记的全部 API 标识，`scope` 只包含授权请求明确申请且已登记的权限。未传 `scope` 时令牌没有业务权限。业务 API 应按 JWT header 的 `kid` 从 JWKS 获取公钥，并验证 RS256 签名、`iss`、自身 `aud`、`exp` 和所需 `scope`。JWKS 响应可缓存 5 分钟。旧不透明 OAuth Access Token 在切换后不再受支持。
+JWT 的 `iss` 为当前环境 SSO 地址，`aud` 包含客户端登记的全部 API 标识，客户端未传 `scope` 参数时，`scope` 包含应用当前登记的全部 `allowed_scopes`；显式传入时只签发允许的子集，显式空字符串表示无业务权限，未登记权限返回 `invalid_scope`。授权码保存授权时确定的权限，兑换前重新校验，已撤销权限不能签发。业务 API 应按 JWT header 的 `kid` 从 JWKS 获取公钥，并验证 RS256 签名、`iss`、自身 `aud`、`exp` 和所需 `scope`。JWKS 响应可缓存 5 分钟。旧不透明 OAuth Access Token 在切换后不再受支持。
 
-Access Token 到期时使用同一客户端调用 `POST /oauth/token`，参数为 `grant_type=refresh_token&refresh_token=<当前令牌>`。保密客户端继续使用 Basic 认证；公共客户端传 `client_id`。成功响应返回新的 Access Token 与 Refresh Token，旧 Refresh Token 立即失效；30 天最长期限不因轮换延长。SSO 退出登录会撤销用户的 OAuth Refresh Token，已签发 JWT 最多继续有效 30 分钟。
+Access Token 到期时使用同一客户端调用 `POST /oauth/token`，参数为 `grant_type=refresh_token&refresh_token=<当前令牌>`。保密客户端继续使用 Basic 认证；公共客户端传 `client_id`。刷新未传 `scope` 时，读取应用当前全部 `allowed_scopes`；显式传入时使用当前配置允许的子集，不受首次授权权限上限限制。新令牌的 `aud` 同样使用应用当前全部 audiences。因此管理员新增 scope 或 audience 后，已有登录刷新即可获得；移除的权限从新令牌中删除。`allowed_scopes` 为空时，响应和 JWT 不包含业务 scope。成功响应返回新的 Access Token 与 Refresh Token，旧 Refresh Token 立即失效；30 天最长期限不因轮换延长。SSO 退出登录会撤销用户的 OAuth Refresh Token，已签发 JWT 最多继续有效 30 分钟。
 
 ### 4.5 获取用户信息
 
@@ -338,3 +338,46 @@ if __name__ == "__main__":
 - `redirect_uri` 必须与管理端登记的地址完全一致。服务端回调生产环境应使用 HTTPS；原生公共客户端可登记精确的自定义 Scheme 回调。
 - 退出登录携带的 `redirect` 只校验域名是否与已登记的 `homepage_url` 一致，不要求路径与 `homepage_url` 相同。
 - 如需联动登出，可登记 `logout_uri`，由 SSO 登出流程通知接入系统清除本地会话。
+
+
+## 5. 接入 App 确认电脑扫码登录
+
+扫码方向是电脑登录 SSO，App 提供当前用户的身份确认。只允许获准应用使用 OAuth Access Token 确认；SSO 自身会话令牌、Cookie、Client Secret 均不能代替扫码 OAuth 令牌。
+
+管理员在应用配置中保留已有权限，增加 `qr:login`，并在 audiences 中增加 `sso-api`。该权限允许用户通过应用确认浏览器 SSO 登录，并继续进入其他接入系统，应只授予可信应用。客户端普通授权和刷新请求均可省略 scope；无需首次扫码增量授权。旧令牌缺少权限时刷新一次即可获得当前配置权限。
+
+二维码是以下 JSON 文本的图像：
+
+```json
+{"type":"lite-sso.qr-login","version":1,"issuer":"https://sso.example.com","code":"12345678-1234-4234-8234-123456789abc"}
+```
+
+App 必须识别版本，精确匹配配置的 issuer，并将请求发往自己配置的 SSO 服务；不能按二维码中的任意 URL 发送令牌。二维码不包含 Access Token、登录 ticket、浏览器凭证或 redirect。
+
+所有接口位于 `/api/auth/qr`，沿用 `{code, message, data}` 响应。二维码固定生成后 5 分钟过期；扫描、确认、轮询均不续期。所有响应设置 `Cache-Control: no-store`。
+
+| 接口 | 请求 | 响应 data / 行为 |
+| --- | --- | --- |
+| `GET /generate` | 可选 `redirect`，仅本站相对路径 | `code`、`qr_payload`、`browser_token`、`expires_at`（UTC RFC3339） |
+| `GET /poll` | query `code`；原设备 Cookie 与 `X-QR-Browser-Token` | `status`、`expires_at`；confirmed 时附 `login_ticket` |
+| `POST /scan` | OAuth Bearer；JSON `{code}` | 绑定用户和应用，返回 `status`、`user_id`、`account_name`、`target_name`、`ip`、`user_agent`、`created_at`、`expires_at` |
+| `POST /confirm` | OAuth Bearer；JSON `{code}` | `{confirmed: true, cancelled: false}`，同一用户和应用可安全重试 |
+| `POST /reject` | OAuth Bearer；JSON `{code}` | `{confirmed: false, cancelled: true}` |
+| `POST /complete` | 原设备 Cookie、浏览器凭证 header；JSON `{code, login_ticket}` | 一次性创建浏览器会话，返回现有登录结果并写入登录 Cookie |
+| `POST /cancel` | 原设备 Cookie、浏览器凭证 header；JSON `{code}` | `{cancelled: true}`，刷新二维码或离开登录页时调用 |
+
+浏览器凭证只留在发起页面内存中，不放入二维码、URL、日志或手机响应。状态为 `pending → scanned → confirmed → consumed`，取消或拒绝进入 `cancelled`。同一个用户与扫描应用可重复扫描、确认；其他用户或应用不能接管。App 显示账号、目标系统、电脑请求信息，并要求用户明确确认。网络超时后可重试同一操作，浏览器完成只能消费一次；完成失败则重新生成二维码。
+
+| HTTP / data.code | App 或浏览器行为 |
+| --- | --- |
+| `401 / UNAUTHORIZED` | App 刷新 OAuth 令牌并重试一次，仍失败则引导登录 |
+| `403 / QR_TOKEN_PERMISSION_MISSING` | 应用当前配置允许，但令牌缺少 scope / audience；刷新并重试一次 |
+| `403 / QR_CLIENT_FORBIDDEN` | 应用不存在或当前配置未获扫码权限；提示联系管理员，不循环刷新 |
+| `403 / USER_INACTIVE` | 账号不存在或停用，停止操作 |
+| `403 / QR_CODE_INVALID_USER` | 二维码已被其他用户或应用扫描 |
+| `403 / QR_BROWSER_INVALID` | 原浏览器凭证或设备不匹配 |
+| `409 / QR_CODE_INVALID_STATUS` | 状态不允许或 ticket 无效，重新生成 |
+| `410 / QR_CODE_EXPIRED` | 要求电脑刷新、App 重新扫描 |
+| `500 / QR_SERVICE_UNAVAILABLE` | 服务或存储故障，保留与过期不同的提示 |
+
+扫描、确认、拒绝均验证令牌以及数据库当前应用权限和账号状态；浏览器完成前也重新检查确认应用和用户，因此撤销扫码权限立即阻止未完成请求。已发往其他业务 API 的旧 JWT 仍按其自身有效期与验证策略处理。

@@ -21,7 +21,7 @@ export const periodOptions = [
 
 export const auditActions = {
   'auth.login.password': '密码登录', 'auth.login.email': '邮箱验证码登录', 'auth.login.qr': '扫码登录',
-  'auth.email.send': '发送登录验证码', 'auth.qr.scan': '扫描登录二维码', 'auth.qr.confirm': '确认扫码登录', 'auth.logout': '退出登录',
+  'auth.email.send': '发送登录验证码', 'auth.qr.scan': '扫描登录二维码', 'auth.qr.confirm': '确认扫码登录', 'auth.qr.reject': '拒绝扫码登录', 'auth.qr.cancel': '取消登录二维码', 'auth.logout': '退出登录',
   'auth.third_party.start': '发起第三方登录', 'auth.login.third_party': '第三方登录', 'oauth.authorize': '应用授权',
   'user.register': '注册账号', 'user.password.reset': '重置密码', 'user.profile.update': '修改账号资料',
   'user.password.update': '修改密码', 'user.avatar.update': '修改头像', 'user.email.add': '添加邮箱',
@@ -58,10 +58,10 @@ const reasons = {
   INVALID_PROVIDER: '不支持的第三方平台', PROVIDER_AUTH_FAILED: '第三方身份验证失败', THIRD_PARTY_ALREADY_BOUND: '已绑定此第三方登录方式',
   THIRD_PARTY_BOUND_TO_ANOTHER: '第三方账号已绑定其他账号', THIRD_PARTY_NOT_BOUND: '尚未绑定该平台', THIRD_PARTY_BINDING_NOT_FOUND: '绑定预览不存在或已过期',
   OAUTH_CLIENT_EXISTS: '应用已存在', OAUTH_CLIENT_NOT_FOUND: '应用不存在', INVALID_OAUTH_CLIENT: '应用信息无效', LOGO_STORAGE_UNAVAILABLE: '应用 Logo 存储暂不可用',
-  QR_CODE_EXPIRED: '登录二维码已过期', QR_CODE_INVALID_STATUS: '登录二维码状态无效', QR_CODE_INVALID_USER: '扫码账号不匹配', QR_CODE_INVALID_TICKET: '扫码登录凭据无效'
+  QR_CLIENT_FORBIDDEN: '应用未获准扫码登录', QR_TOKEN_PERMISSION_MISSING: '令牌缺少扫码权限', QR_BROWSER_INVALID: '浏览器登录凭证不匹配', QR_CODE_EXPIRED: '登录二维码已过期', QR_CODE_INVALID_STATUS: '登录二维码状态无效', QR_CODE_INVALID_USER: '扫码账号不匹配', QR_CODE_INVALID_TICKET: '扫码登录凭据无效'
 }
-const authMethods = { password: '密码', email_otp: '邮箱验证码', qr_code: '扫码', github: 'GitHub', feishu: '飞书', passkey: 'Passkey' }
-const providers = { github: 'GitHub', feishu: '飞书' }
+const authMethods = { password: '密码', email_otp: '邮箱验证码', qr_code: '扫码', github: 'GitHub', feishu: '飞书', qq: 'QQ', passkey: 'Passkey' }
+const providers = { github: 'GitHub', feishu: '飞书', qq: 'QQ' }
 const targets = { feature: '功能', user: '账号', email: '邮箱', device: '登录设备', provider: '第三方平台', passkey: 'Passkey', oauth_client: '应用' }
 const fields = { audience: '开放范围', percentage: '灰度百分比', stage: '发布阶段', user_ids: '指定用户', username: '用户名', avatar: '头像', password: '密码', email: '邮箱', verified: '邮箱验证状态', is_primary: '主邮箱', name: '名称', provider: '第三方绑定', passkey: 'Passkey', session: '会话', logo: 'Logo', client_secret: '应用密钥', redirect_uri: '回调地址', logout_uri: '退出地址', homepage_url: '主页地址', is_active: '启用状态', description: '描述' }
 const steps = { user_created: '账号已创建', session_created: '登录会话已创建', password_updated: '密码已更新', sessions_revoked: '会话已撤销', email_created: '邮箱已添加', verification_sent: '验证邮件已发送', email_verified: '邮箱已验证', binding_prepared: '绑定预览已准备', binding_created: '第三方绑定已完成', authorization_code_issued: '应用授权码已签发' }

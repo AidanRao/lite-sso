@@ -1,4 +1,4 @@
-package oauth
+package thirdparty
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	gxoauth2 "golang.org/x/oauth2"
+	oauth2 "golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
 
 	"sso-server/conf"
@@ -29,7 +29,7 @@ func (p *githubOAuthProvider) AuthCodeURL(state string) string {
 	return p.oauthConfig().AuthCodeURL(state)
 }
 
-func (p *githubOAuthProvider) FetchProfile(ctx context.Context, code string) (*thirdPartyProfile, error) {
+func (p *githubOAuthProvider) FetchProfile(ctx context.Context, code string) (*Profile, error) {
 	token, err := p.oauthConfig().Exchange(ctx, code)
 	if err != nil {
 		return nil, err
@@ -43,8 +43,8 @@ func (p *githubOAuthProvider) FetchProfile(ctx context.Context, code string) (*t
 	return user.toProfile(), nil
 }
 
-func (p *githubOAuthProvider) oauthConfig() *gxoauth2.Config {
-	return &gxoauth2.Config{
+func (p *githubOAuthProvider) oauthConfig() *oauth2.Config {
+	return &oauth2.Config{
 		ClientID:     p.cfg.ClientID,
 		ClientSecret: p.cfg.ClientSecret,
 		RedirectURL:  p.cfg.RedirectURI,
@@ -132,7 +132,7 @@ type githubUserResponse struct {
 	Name      string  `json:"name"`
 }
 
-func (r *githubUserResponse) toProfile() *thirdPartyProfile {
+func (r *githubUserResponse) toProfile() *Profile {
 	email := ""
 	if r.Email != nil {
 		email = *r.Email
@@ -143,8 +143,8 @@ func (r *githubUserResponse) toProfile() *thirdPartyProfile {
 		username = r.Login
 	}
 
-	return &thirdPartyProfile{
-		Provider:    githubProvider,
+	return &Profile{
+		Provider:    GitHub,
 		ProviderUID: fmt.Sprintf("%d", r.ID),
 		Email:       email,
 		Username:    username,

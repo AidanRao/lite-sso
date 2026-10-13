@@ -10,13 +10,14 @@ import (
 
 	"github.com/google/uuid"
 
+	"sso-server/manager/thirdparty"
 	"sso-server/model"
 	"sso-server/util/mask"
 )
 
 const maxEventBytes = 4096
 
-func snapshot(event model.AuditLog) (model.AuditLog, bool) {
+func snapshot(event model.AuditLog, registry *thirdparty.Registry) (model.AuditLog, bool) {
 	if _, err := uuid.Parse(event.ID); err != nil {
 		return model.AuditLog{}, false
 	}
@@ -59,8 +60,12 @@ func snapshot(event model.AuditLog) (model.AuditLog, bool) {
 	}
 	details.ChangedFields = allowedValues(details.ChangedFields, "audience", "percentage", "stage", "user_ids", "username", "avatar", "password", "email", "verified", "is_primary", "name", "provider", "passkey", "session", "logo", "client_secret", "redirect_uri", "logout_uri", "homepage_url", "is_active", "description")
 	details.CompletedSteps = allowedValues(details.CompletedSteps, "user_created", "session_created", "password_updated", "sessions_revoked", "email_created", "verification_sent", "email_verified", "binding_prepared", "binding_created", "authorization_code_issued")
-	details.AuthMethod = allowedValue(details.AuthMethod, "password", "email_otp", "qr_code", "github", "feishu", "passkey")
-	details.Provider = allowedValue(details.Provider, "github", "feishu")
+	if !registry.IsRegistered(details.AuthMethod) {
+		details.AuthMethod = allowedValue(details.AuthMethod, "password", "email_otp", "qr_code", "passkey")
+	}
+	if !registry.IsRegistered(details.Provider) {
+		details.Provider = ""
+	}
 	if details.EmailMasked != "" {
 		details.EmailMasked = cleanText(mask.Email(details.EmailMasked), 128)
 	}

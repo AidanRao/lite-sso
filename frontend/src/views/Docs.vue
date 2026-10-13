@@ -4,7 +4,7 @@
       <router-link class="brand" to="/login">
         <span class="brand-mark">L</span>
         <span>
-          <strong>Lite SSO</strong>
+          <strong>SSO</strong>
           <small>项目文档</small>
         </span>
       </router-link>

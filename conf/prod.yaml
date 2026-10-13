@@ -51,3 +51,7 @@ oss:
   bucket: "aidan-space"
   avatar_prefix: "sso/user-assets"
   public_base_url: "https://aidan-space.oss-cn-beijing.aliyuncs.com"
+
+oauth:
+  qq:
+    redirect_uri: "https://sso.aidanrao.top/api/auth/third/qq/callback"

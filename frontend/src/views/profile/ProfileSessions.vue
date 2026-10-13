@@ -138,7 +138,8 @@ const authMethodLabel = (method) => ({
   EMAIL_OTP: '邮箱验证码',
   QR: '扫码登录',
   GITHUB: 'GitHub 登录',
-  FEISHU: '飞书登录'
+  FEISHU: '飞书登录',
+  QQ: 'QQ 登录'
 })[method] || '其他登录方式'
 
 const formatDate = (value) => {

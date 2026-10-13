@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
@@ -125,6 +126,7 @@ type AdminConfig struct {
 type ThirdPartyOAuthConfig struct {
 	GitHub GitHubOAuthConfig `mapstructure:"github"`
 	Feishu FeishuOAuthConfig `mapstructure:"feishu"`
+	QQ     QQOAuthConfig     `mapstructure:"qq"`
 }
 
 type GitHubOAuthConfig struct {
@@ -147,6 +149,17 @@ type FeishuOAuthConfig struct {
 // IsConfigured reports whether Feishu OAuth has the credentials required for use.
 func (c FeishuOAuthConfig) IsConfigured() bool {
 	return strings.TrimSpace(c.ClientID) != "" && strings.TrimSpace(c.ClientSecret) != ""
+}
+
+type QQOAuthConfig struct {
+	ClientID     string `mapstructure:"client_id"`
+	ClientSecret string `mapstructure:"client_secret"`
+	RedirectURI  string `mapstructure:"redirect_uri"`
+}
+
+// IsConfigured reports whether QQ OAuth has the credentials and callback required for use.
+func (c QQOAuthConfig) IsConfigured() bool {
+	return strings.TrimSpace(c.ClientID) != "" && strings.TrimSpace(c.ClientSecret) != "" && strings.TrimSpace(c.RedirectURI) != ""
 }
 
 type ServerConfig struct {
@@ -319,12 +332,6 @@ func bindEnvs(v *viper.Viper) {
 		"message_center.sender_key",
 		"dev.fixed_email_otp",
 		"dev.skip_send_message",
-		"oauth.github.client_id",
-		"oauth.github.client_secret",
-		"oauth.github.redirect_uri",
-		"oauth.feishu.client_id",
-		"oauth.feishu.client_secret",
-		"oauth.feishu.redirect_uri",
 		"admin.user_ids",
 		"server.trust_proxy_headers",
 		"server.cookie_secure",
@@ -346,6 +353,15 @@ func bindEnvs(v *viper.Viper) {
 	for _, key := range envKeys {
 		if err := v.BindEnv(key); err != nil {
 			panic(err)
+		}
+	}
+	providerConfig := reflect.TypeFor[ThirdPartyOAuthConfig]()
+	for index := range providerConfig.NumField() {
+		provider := providerConfig.Field(index).Tag.Get("mapstructure")
+		for _, field := range []string{"client_id", "client_secret", "redirect_uri"} {
+			if err := v.BindEnv("oauth." + provider + "." + field); err != nil {
+				panic(err)
+			}
 		}
 	}
 	if err := v.BindEnv("server.port", "PORT", "SERVER_PORT"); err != nil {

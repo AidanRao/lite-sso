@@ -83,7 +83,7 @@
 
         <p class="binding-summary">
           <ShieldCheck :size="18" />
-          {{ currentStep === 1 ? `授权完成后，可使用 ${providerName} 登录当前 Lite SSO 账号` : `确认后，可使用 ${providerName} 登录当前 Lite SSO 账号` }}
+          {{ currentStep === 1 ? `授权完成后，可使用 ${providerName} 登录当前统一身份认证账号` : `确认后，可使用 ${providerName} 登录当前统一身份认证账号` }}
         </p>
 
         <aside class="notice">
@@ -138,7 +138,8 @@ const preview = ref(null)
 
 const providerNames = {
   github: 'GitHub',
-  feishu: '飞书'
+  feishu: '飞书',
+  qq: 'QQ'
 }
 const selectedProvider = computed(() => {
   const provider = preview.value?.provider || requestedProvider.value

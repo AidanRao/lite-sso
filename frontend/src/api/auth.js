@@ -144,12 +144,25 @@ export const authAPI = {
     return api.get('/auth/qr/generate', { params: { redirect } })
   },
 
-  checkQRCode: (code) => {
-    return api.get('/auth/qr/poll', { params: { code } })
+  checkQRCode: (code, browserToken) => {
+    return api.get('/auth/qr/poll', { params: { code }, headers: { 'X-QR-Browser-Token': browserToken } })
   },
 
-  completeQRCode: (data) => {
-    return api.post('/auth/qr/complete', data)
+  completeQRCode: (data, browserToken) => {
+    return api.post('/auth/qr/complete', data, { headers: { 'X-QR-Browser-Token': browserToken } })
+  },
+
+  cancelQRCode: async (code, browserToken) => {
+    const response = await fetch('/api/auth/qr/cancel', {
+      method: 'POST', credentials: 'same-origin', keepalive: true,
+      headers: { 'Content-Type': 'application/json', 'X-QR-Browser-Token': browserToken },
+      body: JSON.stringify({ code })
+    })
+    if (!response.ok) {
+      const error = new Error('取消旧二维码失败，请重试')
+      error.status = response.status
+      throw error
+    }
   }
 }
 

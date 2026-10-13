@@ -122,7 +122,7 @@ const verificationState = reactive({ type: '', message: '' })
 const atLimit = computed(() => emails.value.length >= maxAddresses.value)
 const verifiedEmails = computed(() => emails.value.filter(item => item.verified))
 
-const providerName = (provider) => ({ github: 'GitHub', feishu: '飞书' }[provider] || provider)
+const providerName = (provider) => ({ github: 'GitHub', feishu: '飞书', qq: 'QQ' }[provider] || provider)
 
 const syncPrimarySelection = () => {
   const current = emails.value.find(item => item.is_primary)
