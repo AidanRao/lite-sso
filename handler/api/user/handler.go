@@ -8,12 +8,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	apiauth "sso-server/handler/api/auth"
 
 	"sso-server/common"
 	"sso-server/common/ecode"
 	"sso-server/conf"
 	"sso-server/dal/kv"
+	"sso-server/handler"
+	apiauth "sso-server/handler/api/auth"
 	"sso-server/handler/audit"
 	"sso-server/handler/oauth2"
 	manageross "sso-server/manager/oss"
@@ -21,9 +22,11 @@ import (
 	serviceauth "sso-server/service/auth"
 	"sso-server/service/feature"
 	serviceuser "sso-server/service/user"
+	"sso-server/util/ipgeo"
 )
 
 type UserDeps struct {
+	LocationResolver ipgeo.Resolver
 	Config           *conf.Config
 	DB               *gorm.DB
 	KV               kv.Store
@@ -49,7 +52,7 @@ func NewUserHandler(deps UserDeps) *UserHandler {
 		permissions:       feature.NewService(deps.DB),
 		config:            deps.Config,
 		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2, deps.ImageStore, deps.ProviderRegistry),
-		auth:              serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
+		auth:              serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2, deps.LocationResolver),
 		emails:            serviceuser.NewEmailService(serviceuser.EmailDeps{Config: deps.Config, DB: deps.DB, MessageSender: deps.MessageSender}),
 		trustProxyHeaders: trustProxyHeaders,
 		cookieSecure:      deps.Config != nil && deps.Config.Server.CookieSecure,
@@ -112,11 +115,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	audit.Actor(c, user.ID, "")
 	audit.Completed(c, "user_created")
-	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, "", serviceauth.LoginMetadata{
-		DeviceID:  deviceID,
-		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
-		UserAgent: c.Request.UserAgent(),
-	}, serviceauth.AuthMethodPassword)
+	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, "", handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders), serviceauth.AuthMethodPassword)
 	if err != nil {
 		audit.Error(c, err)
 		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "注册失败", Data: nil})

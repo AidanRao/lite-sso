@@ -65,6 +65,12 @@ func Test_QRHandlers_OAuthPermissionsBrowserIsolationAndContinuation(t *testing.
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 		req.Header.Set("X-QR-Browser-Token", browser)
+		if method == "GET" && strings.HasPrefix(path, "/api/auth/qr/generate") {
+			req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+			req.RemoteAddr = "203.0.113.10:8080"
+		} else {
+			req.Header.Set("User-Agent", "Scanner/1.0")
+		}
 		for _, cookie := range cookies {
 			req.AddCookie(cookie)
 		}
@@ -121,6 +127,12 @@ func Test_QRHandlers_OAuthPermissionsBrowserIsolationAndContinuation(t *testing.
 	preview := decode(call("POST", "/api/auth/qr/scan", body, token, "", nil))
 	require.Equal(t, "Target", preview["target_name"])
 	require.NotContains(t, preview, "login_ticket")
+	require.NotContains(t, preview, "user_agent")
+	require.NotContains(t, preview, "ip")
+	environment := preview["environment"].(map[string]interface{})
+	require.Equal(t, "Chrome · macOS", environment["display_name"])
+	require.Equal(t, "203.0.113.10", environment["ip"])
+	require.Equal(t, "desktop", environment["device_type"])
 	decode(call("POST", "/api/auth/qr/confirm", body, token, "", nil))
 	ticket := decode(call("GET", "/api/auth/qr/poll?code="+code, "", "", browser, cookies))["login_ticket"].(string)
 	completeBody := `{"code":"` + code + `","login_ticket":"` + ticket + `"}`

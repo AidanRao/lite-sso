@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -20,6 +19,8 @@ import (
 	"sso-server/dal/db"
 	"sso-server/dto"
 	"sso-server/model"
+	"sso-server/util/requestmeta"
+	"sso-server/util/useragent"
 )
 
 const (
@@ -155,8 +156,9 @@ func (s *AuthService) CompleteLoginWithContext(ctx context.Context, userID strin
 		DeviceID:         metadata.DeviceID,
 		AuthMethod:       string(method),
 		RefreshTokenHash: refreshHash(refreshToken),
-		IP:               metadata.IP,
-		UserAgent:        metadata.UserAgent,
+		IP:               requestmeta.NormalizeIP(metadata.IP),
+		Location:         s.loginLocation(metadata.IP),
+		UserAgent:        useragent.Normalize(metadata.UserAgent),
 		CreatedAt:        now,
 		LastSeenAt:       now,
 		ExpiresAt:        now.Add(s.refreshTokenTTL()),
@@ -282,8 +284,4 @@ func (s *AuthService) sessionForAccessToken(ctx context.Context, token string) (
 		return nil, common.ErrSessionRevoked
 	}
 	return session, nil
-}
-
-func requestMetadata(request *http.Request, deviceID string) LoginMetadata {
-	return LoginMetadata{DeviceID: deviceID, IP: requestIP(request), UserAgent: request.UserAgent()}
 }

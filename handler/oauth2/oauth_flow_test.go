@@ -133,7 +133,7 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 		KV:     kvStore,
 		OAuth2: o,
 	})
-	authService := serviceauth.NewAuthService(cfg, db, kvStore, nil, o)
+	authService := serviceauth.NewAuthService(cfg, db, kvStore, nil, o, nil)
 	_, pair, err := authService.CompleteLoginWithContext(context.Background(), userID, "", serviceauth.LoginMetadata{
 		DeviceID:  "dev-1",
 		IP:        "192.0.2.1",

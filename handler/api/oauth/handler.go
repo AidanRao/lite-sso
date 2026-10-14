@@ -14,15 +14,18 @@ import (
 	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
+	"sso-server/handler"
 	apiauth "sso-server/handler/api/auth"
 	"sso-server/handler/audit"
 	"sso-server/handler/oauth2"
 	"sso-server/manager/thirdparty"
 	serviceauth "sso-server/service/auth"
 	"sso-server/service/oauth"
+	"sso-server/util/ipgeo"
 )
 
 type OAuthDeps struct {
+	LocationResolver ipgeo.Resolver
 	Config           *conf.Config
 	DB               *gorm.DB
 	KV               kv.Store
@@ -44,7 +47,7 @@ func NewOAuthHandler(deps OAuthDeps) *OAuthHandler {
 	trustProxyHeaders := deps.Config != nil && deps.Config.Server.TrustProxyHeaders
 	return &OAuthHandler{
 		oauthService:      oauth.NewOAuthService(deps.Config, deps.DB, deps.KV, userRepo, deps.ProviderRegistry),
-		authService:       serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2),
+		authService:       serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2, deps.LocationResolver),
 		oauth2:            deps.OAuth2,
 		db:                deps.DB,
 		trustProxyHeaders: trustProxyHeaders,
@@ -287,11 +290,7 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 		c.Redirect(http.StatusTemporaryRedirect, "/oauth/callback?error="+url.QueryEscape("不支持的第三方平台"))
 		return
 	}
-	_, pair, err := h.authService.CompleteLoginWithContext(c.Request.Context(), result.User.ID, result.Redirect, serviceauth.LoginMetadata{
-		DeviceID:  deviceID,
-		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
-		UserAgent: c.Request.UserAgent(),
-	}, serviceauth.AuthMethod(authMethod))
+	_, pair, err := h.authService.CompleteLoginWithContext(c.Request.Context(), result.User.ID, result.Redirect, handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders), serviceauth.AuthMethod(authMethod))
 	if err != nil {
 		audit.Error(c, err)
 		log.Printf("ThirdPartyCallback: complete login failed, provider=%s, user_id=%s, err=%v", provider, result.User.ID, err)

@@ -20,7 +20,13 @@ func GetEnvironmentName() string {
 	return env
 }
 
+// GeoIPConfig selects the directory containing the offline IP databases.
+type GeoIPConfig struct {
+	DataDir string `mapstructure:"data_dir"`
+}
+
 type Config struct {
+	GeoIP         GeoIPConfig           `mapstructure:"geoip"`
 	Audit         AuditConfig           `mapstructure:"audit"`
 	Server        ServerConfig          `mapstructure:"server"`
 	Database      DatabaseConfig        `mapstructure:"database"`
@@ -299,6 +305,7 @@ func Load() (*Config, error) {
 
 func bindEnvs(v *viper.Viper) {
 	envKeys := []string{
+		"geoip.data_dir",
 		"audit.queue_capacity", "audit.batch_size", "audit.flush_interval", "audit.write_timeout",
 		"database.host",
 		"database.port",
@@ -391,6 +398,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("tokens.reauth.grant_ttl", "5m")
 	v.SetDefault("email.max_addresses", 3)
 	defaults := map[string]any{
+		"geoip.data_dir":                    "data/ip2region",
 		"server.port":                       "8080",
 		"server.trust_proxy_headers":        false,
 		"auth.otp_expire":                   "5m",

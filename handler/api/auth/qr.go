@@ -8,6 +8,7 @@ import (
 
 	"sso-server/common"
 	"sso-server/common/ecode"
+	"sso-server/handler"
 	"sso-server/handler/audit"
 	"sso-server/service/auth"
 )
@@ -15,7 +16,7 @@ import (
 // GenerateQRCode creates the payload and separate browser credentials.
 func (h *AuthHandler) GenerateQRCode(c *gin.Context) {
 	deviceID, isNewDevice := auth.EnsureDeviceID(c.Request)
-	challenge, err := h.auth.GenerateQRCode(c.Request.Context(), c.Query("redirect"), h.qrMetadata(c, deviceID))
+	challenge, err := h.auth.GenerateQRCode(c.Request.Context(), c.Query("redirect"), handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders))
 	if err != nil {
 		writeQRError(c, err)
 		return
@@ -102,7 +103,7 @@ func (h *AuthHandler) CompleteQRCode(c *gin.Context) {
 		return
 	}
 	audit.Client(c, qrData.ClientID)
-	result, pair, err := h.auth.CompleteQRCodeLogin(c.Request.Context(), code, ticket, c.GetHeader("X-QR-Browser-Token"), h.qrMetadata(c, deviceID))
+	result, pair, err := h.auth.CompleteQRCodeLogin(c.Request.Context(), code, ticket, c.GetHeader("X-QR-Browser-Token"), handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders))
 	if err != nil {
 		writeQRError(c, err)
 		return
@@ -114,10 +115,6 @@ func (h *AuthHandler) CompleteQRCode(c *gin.Context) {
 	audit.Success(c)
 	qrNoCache(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
-}
-
-func (h *AuthHandler) qrMetadata(c *gin.Context, deviceID string) auth.LoginMetadata {
-	return auth.LoginMetadata{DeviceID: deviceID, IP: auth.RequestIP(c.Request, h.trustProxyHeaders), UserAgent: c.Request.UserAgent()}
 }
 
 func (h *AuthHandler) qrActor(c *gin.Context) (auth.QRActor, bool) {

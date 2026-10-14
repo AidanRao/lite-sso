@@ -105,7 +105,7 @@ func TestService_EmailChallengeIsSessionBoundSingleUseAndIssuesGrant(t *testing.
 		Tokens: conf.TokenConfig{Reauth: conf.ReauthTokenConfig{GrantTTL: 5 * time.Minute}},
 		Dev:    conf.DevConfig{SkipSendMessage: true, FixedEmailOTP: "123456"},
 	}
-	authService := serviceauth.NewAuthService(config, database, store, nil, nil)
+	authService := serviceauth.NewAuthService(config, database, store, nil, nil, nil)
 	service := NewService(Deps{Config: config, DB: database, Store: store, Auth: authService})
 	require.NoError(t, store.Set(t.Context(), kv.KeyCaptcha("captcha-1"), "4321", time.Minute))
 
@@ -133,7 +133,7 @@ func TestService_BeginEmailRequiresValidCaptcha(t *testing.T) {
 	require.NoError(t, database.Create(&model.User{ID: "user-1", Email: &email, IsActive: true}).Error)
 	store := kv.NewMemoryStore()
 	config := &conf.Config{Auth: conf.AuthConfig{OTPSecret: "test-secret", OTPExpire: time.Minute, OTPMaxAttempts: 5}, Dev: conf.DevConfig{SkipSendMessage: true, FixedEmailOTP: "123456"}}
-	authService := serviceauth.NewAuthService(config, database, store, nil, nil)
+	authService := serviceauth.NewAuthService(config, database, store, nil, nil, nil)
 	service := NewService(Deps{Config: config, DB: database, Store: store, Auth: authService})
 
 	_, err := service.BeginEmail(t.Context(), "user-1", "session-1", "device-1", "missing", "4321", serviceauth.OTPRequestContext{DeviceID: "device-1", IP: "192.0.2.1"})

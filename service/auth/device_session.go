@@ -8,6 +8,7 @@ import (
 	"sso-server/common"
 	"sso-server/dal/db"
 	"sso-server/dto"
+	"sso-server/util/requestmeta"
 )
 
 const deviceRevokeReason = "user_device_revoked"
@@ -48,14 +49,13 @@ func (s *AuthService) ListLoginDevices(ctx context.Context, userID string, curre
 
 		deviceIndexes[deviceID] = len(devices)
 		devices = append(devices, dto.LoginDeviceResponse{
-			DeviceID:   deviceID,
-			UserAgent:  session.UserAgent,
-			IP:         session.IP,
-			AuthMethod: session.AuthMethod,
-			CreatedAt:  session.CreatedAt,
-			LastSeenAt: session.LastSeenAt,
-			ExpiresAt:  session.ExpiresAt,
-			Current:    session.ID == currentSessionID,
+			DeviceID:    deviceID,
+			Environment: dto.ToEnvironmentResponse(requestmeta.ParseEnvironment(session.IP, session.UserAgent, session.Location)),
+			AuthMethod:  session.AuthMethod,
+			CreatedAt:   session.CreatedAt,
+			LastSeenAt:  session.LastSeenAt,
+			ExpiresAt:   session.ExpiresAt,
+			Current:     session.ID == currentSessionID,
 		})
 	}
 

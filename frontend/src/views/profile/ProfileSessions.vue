@@ -9,22 +9,21 @@
         <span>{{ errorMessage }}</span>
         <button class="button" type="button" @click="loadDevices">重新加载</button>
       </div>
-      <div v-else-if="deviceCards.length" class="sessions-list">
-        <article v-for="device in deviceCards" :key="device.device_id" class="session-row">
+      <div v-else-if="devices.length" class="sessions-list">
+        <article v-for="device in devices" :key="device.device_id" class="session-row">
           <div class="device-icon" aria-hidden="true">
-            <Smartphone v-if="device.mobile" :size="21" />
+            <Smartphone v-if="['mobile', 'tablet'].includes(device.environment?.device_type)" :size="21" />
             <Monitor v-else :size="21" />
           </div>
           <div class="device-content">
             <div class="device-title">
-              <strong>{{ device.name }}</strong>
+              <strong>{{ device.environment?.display_name || '未知设备' }}</strong>
               <span v-if="device.current" class="current-badge">当前设备</span>
             </div>
-            <span class="device-agent" :title="device.user_agent || '未知 User-Agent'">
-              {{ device.user_agent || '未知 User-Agent' }}
-            </span>
+            <span class="device-agent">{{ environmentDetails(device.environment) }}</span>
             <dl class="device-meta">
-              <div><dt>IP</dt><dd>{{ device.ip || '-' }}</dd></div>
+              <div><dt>IP</dt><dd>{{ device.environment?.ip || '-' }}</dd></div>
+              <div><dt>登录地点</dt><dd>{{ device.environment?.location || '未知' }}</dd></div>
               <div><dt>登录方式</dt><dd>{{ authMethodLabel(device.auth_method) }}</dd></div>
               <div><dt>登录时间</dt><dd>{{ formatDate(device.created_at) }}</dd></div>
               <div><dt>最近活动</dt><dd>{{ formatDate(device.last_seen_at) }}</dd></div>
@@ -47,7 +46,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Monitor, Smartphone } from 'lucide-vue-next'
@@ -61,30 +60,11 @@ const loading = ref(true)
 const errorMessage = ref('')
 const revokingDevice = ref('')
 
-const describeUserAgent = (userAgent = '') => {
-  let browser = ''
-  if (/Edg\//.test(userAgent)) browser = 'Edge'
-  else if (/Firefox\/|FxiOS\//.test(userAgent)) browser = 'Firefox'
-  else if (/Chrome\/|CriOS\//.test(userAgent)) browser = 'Chrome'
-  else if (/Safari\//.test(userAgent)) browser = 'Safari'
-
-  let system = ''
-  if (/Android/.test(userAgent)) system = 'Android'
-  else if (/iPhone|iPad|iPod/.test(userAgent)) system = 'iOS'
-  else if (/Windows/.test(userAgent)) system = 'Windows'
-  else if (/Macintosh|Mac OS X/.test(userAgent)) system = 'macOS'
-  else if (/Linux/.test(userAgent)) system = 'Linux'
-
-  return {
-    name: [browser, system].filter(Boolean).join(' · ') || '未知设备',
-    mobile: /Mobile|Android|iPhone|iPad|iPod/.test(userAgent)
-  }
+const environmentDetails = (environment = {}) => {
+  const browser = [environment.browser, environment.browser_version].filter(Boolean).join(' ')
+  const system = [environment.os, environment.os_version].filter(Boolean).join(' ')
+  return [browser, system, environment.device_name].filter(Boolean).join(' · ') || '环境信息未知'
 }
-
-const deviceCards = computed(() => devices.value.map((device) => ({
-  ...device,
-  ...describeUserAgent(device.user_agent)
-})))
 
 const loadDevices = async () => {
   loading.value = true
@@ -108,7 +88,7 @@ const revokeDevice = async (device) => {
   if (device.current || revokingDevice.value) return
   try {
     await ElMessageBox.confirm(
-      `踢出后，${device.name} 上的所有登录将立即失效，确定继续吗？`,
+      `踢出后，${device.environment?.display_name || '未知设备'} 上的所有登录将立即失效，确定继续吗？`,
       '踢出登录设备',
       { confirmButtonText: '踢出设备', cancelButtonText: '取消', type: 'warning' }
     )

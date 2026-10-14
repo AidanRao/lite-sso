@@ -13,7 +13,9 @@ design.md
 server
 *.db
 *.db-journal
-data/
+data/*
+!data/ip2region/
+!data/ip2region/**
 frontend/dist/
 frontend/node_modules/
 web/

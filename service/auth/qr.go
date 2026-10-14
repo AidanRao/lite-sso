@@ -20,6 +20,9 @@ import (
 	"sso-server/common"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
+	"sso-server/dto"
+	"sso-server/util/requestmeta"
+	"sso-server/util/useragent"
 )
 
 const (
@@ -63,6 +66,7 @@ type QRCodeData struct {
 	Redirect      string       `json:"redirect"`
 	TargetName    string       `json:"target_name"`
 	IP            string       `json:"ip"`
+	Location      string       `json:"location"`
 	UserAgent     string       `json:"user_agent"`
 	CreatedAt     time.Time    `json:"created_at"`
 	ExpiresAt     time.Time    `json:"expires_at"`
@@ -78,14 +82,13 @@ type QRCodeChallenge struct {
 
 // QRCodePreview contains the information shown before the user approves login.
 type QRCodePreview struct {
-	Status      QRCodeStatus `json:"status"`
-	UserID      string       `json:"user_id"`
-	AccountName string       `json:"account_name"`
-	TargetName  string       `json:"target_name"`
-	IP          string       `json:"ip"`
-	UserAgent   string       `json:"user_agent"`
-	CreatedAt   time.Time    `json:"created_at"`
-	ExpiresAt   time.Time    `json:"expires_at"`
+	Status      QRCodeStatus            `json:"status"`
+	UserID      string                  `json:"user_id"`
+	AccountName string                  `json:"account_name"`
+	TargetName  string                  `json:"target_name"`
+	Environment dto.EnvironmentResponse `json:"environment"`
+	CreatedAt   time.Time               `json:"created_at"`
+	ExpiresAt   time.Time               `json:"expires_at"`
 }
 
 // GenerateQRCode creates a fixed-lifetime request bound to the requesting browser.
@@ -109,8 +112,8 @@ func (s *AuthService) GenerateQRCode(ctx context.Context, redirect string, metad
 	}
 	now := time.Now().UTC()
 	data := QRCodeData{Code: uuid.NewString(), Status: QRCodeStatusPending, DeviceID: metadata.DeviceID,
-		BrowserDigest: qrDigest(secret), Redirect: redirect, TargetName: target, IP: metadata.IP,
-		UserAgent: metadata.UserAgent, CreatedAt: now, ExpiresAt: now.Add(qrCodeExpire)}
+		BrowserDigest: qrDigest(secret), Redirect: redirect, TargetName: target, IP: requestmeta.NormalizeIP(metadata.IP), Location: s.loginLocation(metadata.IP),
+		UserAgent: useragent.Normalize(metadata.UserAgent), CreatedAt: now, ExpiresAt: now.Add(qrCodeExpire)}
 	payload, err := json.Marshal(struct {
 		Type    string `json:"type"`
 		Version int    `json:"version"`
@@ -190,7 +193,7 @@ func (s *AuthService) ScanQRCode(ctx context.Context, code string, actor QRActor
 		name = *user.Email
 	}
 	return &QRCodePreview{Status: data.Status, UserID: user.ID, AccountName: name, TargetName: data.TargetName,
-		IP: data.IP, UserAgent: data.UserAgent, CreatedAt: data.CreatedAt, ExpiresAt: data.ExpiresAt}, nil
+		Environment: dto.ToEnvironmentResponse(requestmeta.ParseEnvironment(data.IP, data.UserAgent, data.Location)), CreatedAt: data.CreatedAt, ExpiresAt: data.ExpiresAt}, nil
 }
 
 // ConfirmQRCode issues one ticket and supports retries by the original scanner.

@@ -9,8 +9,10 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"sso-server/common/ecode"
+	"sso-server/handler"
 	"sso-server/handler/audit"
 	serviceauth "sso-server/service/auth"
+	"sso-server/util/requestmeta"
 )
 
 // LoginWithEmailOTP handles challenge-based email login.
@@ -32,23 +34,19 @@ func (h *AuthHandler) LoginWithEmailOTP(c *gin.Context) {
 	}
 	user, err := h.auth.LoginWithEmailOTP(c.Request.Context(), req.ChallengeID, req.OTP, serviceauth.EmailOTPLoginContext{
 		DeviceID: deviceID,
-		IP:       serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
+		IP:       requestmeta.IP(c.Request, h.trustProxyHeaders),
 	})
 	if err != nil {
 		audit.Error(c, err)
-		log.Printf("auth email login failed: stage=challenge_verify challenge_id_hash=%s ip=%s error=%v", hashIdentifier(req.ChallengeID), serviceauth.RequestIP(c.Request, h.trustProxyHeaders), err)
+		log.Printf("auth email login failed: stage=challenge_verify challenge_id_hash=%s ip=%s error=%v", hashIdentifier(req.ChallengeID), requestmeta.IP(c.Request, h.trustProxyHeaders), err)
 		writeAuthError(c, err)
 		return
 	}
 	audit.Actor(c, user.ID, "")
-	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, req.Redirect, serviceauth.LoginMetadata{
-		DeviceID:  deviceID,
-		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
-		UserAgent: c.Request.UserAgent(),
-	}, serviceauth.AuthMethodEmailOTP)
+	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, req.Redirect, handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders), serviceauth.AuthMethodEmailOTP)
 	if err != nil {
 		audit.Error(c, err)
-		log.Printf("auth email login failed: stage=session_create user_id=%s ip=%s error=%v", user.ID, serviceauth.RequestIP(c.Request, h.trustProxyHeaders), err)
+		log.Printf("auth email login failed: stage=session_create user_id=%s ip=%s error=%v", user.ID, requestmeta.IP(c.Request, h.trustProxyHeaders), err)
 		writeAuthError(c, err)
 		return
 	}

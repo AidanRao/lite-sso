@@ -39,7 +39,7 @@ func Test_OAuthScopes_DefaultSubsetAndLiveRefresh(t *testing.T) {
 	}}
 	o, err := NewWithStores(cfg, database, nil)
 	require.NoError(t, err)
-	_, pair, err := auth.NewAuthService(cfg, database, kv.NewMemoryStore(), nil, nil).CompleteLoginWithContext(context.Background(), "u1", "", auth.LoginMetadata{DeviceID: "dev-test"}, auth.AuthMethodPassword)
+	_, pair, err := auth.NewAuthService(cfg, database, kv.NewMemoryStore(), nil, nil, nil).CompleteLoginWithContext(context.Background(), "u1", "", auth.LoginMetadata{DeviceID: "dev-test"}, auth.AuthMethodPassword)
 	require.NoError(t, err)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

@@ -38,7 +38,7 @@ func TestAuthLogout_PersistentSessionCookieRevokesSessionAndClearsLoginCookies(t
 		t.Fatalf("create user: %v", err)
 	}
 	cfg := &conf.Config{Tokens: conf.TokenConfig{Session: conf.SessionTokenConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour}}, Auth: conf.AuthConfig{JWTSecret: "logout-test-jwt-secret"}}
-	authService := serviceauth.NewAuthService(cfg, database, nil, nil, nil)
+	authService := serviceauth.NewAuthService(cfg, database, nil, nil, nil, nil)
 	_, pair, err := authService.CompleteLoginWithContext(context.Background(), "u1", "", serviceauth.LoginMetadata{
 		DeviceID:  "dev-logout",
 		IP:        "192.0.2.1",

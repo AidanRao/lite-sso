@@ -9,6 +9,7 @@ import (
 	apiauth "sso-server/handler/api/auth"
 	"sso-server/handler/audit"
 	serviceauth "sso-server/service/auth"
+	"sso-server/util/requestmeta"
 )
 
 // SendEmail sends a verification code to the current account email.
@@ -27,7 +28,7 @@ func (h *Handler) SendEmail(c *gin.Context) {
 	}
 	result, err := h.reauth.BeginEmail(c.Request.Context(), c.GetString("user_id"), c.GetString("session_id"), deviceID, req.CaptchaID, req.Captcha, serviceauth.OTPRequestContext{
 		DeviceID: deviceID,
-		IP:       serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
+		IP:       requestmeta.IP(c.Request, h.trustProxyHeaders),
 	})
 	if err != nil {
 		writeError(c, err)
@@ -57,7 +58,7 @@ func (h *Handler) VerifyEmail(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "设备标识已失效，请重新获取验证码", Data: gin.H{"code": "DEVICE_REQUIRED"}})
 		return
 	}
-	result, err := h.reauth.FinishEmail(c.Request.Context(), c.GetString("user_id"), c.GetString("session_id"), deviceID, serviceauth.RequestIP(c.Request, h.trustProxyHeaders), req.ChallengeID, req.Code)
+	result, err := h.reauth.FinishEmail(c.Request.Context(), c.GetString("user_id"), c.GetString("session_id"), deviceID, requestmeta.IP(c.Request, h.trustProxyHeaders), req.ChallengeID, req.Code)
 	if err != nil {
 		writeError(c, err)
 		return

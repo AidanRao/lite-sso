@@ -14,6 +14,7 @@ import (
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
 	"sso-server/model"
+	"sso-server/util/ipgeo"
 )
 
 const verifyCodeEmailTemplateKey = "sso-verify-code-email"
@@ -25,13 +26,14 @@ type MessageSender interface {
 
 // AuthService coordinates authentication flows and their shared security controls.
 type AuthService struct {
-	cfg           *conf.Config
-	db            *gorm.DB
-	kv            kv.Store
-	security      kv.SecurityStore
-	messageSender MessageSender
-	oauth2        OAuthTokenIssuer
-	guard         *loginGuard
+	cfg              *conf.Config
+	db               *gorm.DB
+	kv               kv.Store
+	security         kv.SecurityStore
+	messageSender    MessageSender
+	oauth2           OAuthTokenIssuer
+	guard            *loginGuard
+	locationResolver ipgeo.Resolver
 }
 
 // OAuthTokenIssuer is retained for the external OAuth2 protocol boundary.
@@ -46,17 +48,18 @@ type PasswordResetResult struct {
 	SessionsRevoked bool
 }
 
-func NewAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, messageSender MessageSender, oauth2Impl OAuthTokenIssuer) *AuthService {
+func NewAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, messageSender MessageSender, oauth2Impl OAuthTokenIssuer, locationResolver ipgeo.Resolver) *AuthService {
 	if kvStore == nil {
 		kvStore = kv.NewMemoryStore()
 	}
 	service := &AuthService{
-		cfg:           cfg,
-		db:            database,
-		kv:            kvStore,
-		security:      kv.NewSecurityStore(kvStore),
-		messageSender: messageSender,
-		oauth2:        oauth2Impl,
+		cfg:              cfg,
+		db:               database,
+		kv:               kvStore,
+		security:         kv.NewSecurityStore(kvStore),
+		messageSender:    messageSender,
+		oauth2:           oauth2Impl,
+		locationResolver: locationResolver,
 	}
 	service.guard = newLoginGuard(service.security, service)
 	return service
@@ -267,4 +270,12 @@ func (s *AuthService) ResetPasswordWithEmailChallenge(ctx context.Context, email
 	err = s.InvalidateAllSessions(ctx, user.ID, "password_reset")
 	result.SessionsRevoked = err == nil
 	return result, err
+}
+
+// loginLocation resolves display-only metadata without affecting authentication.
+func (s *AuthService) loginLocation(ip string) string {
+	if s.locationResolver == nil {
+		return ""
+	}
+	return s.locationResolver.Lookup(ip)
 }
