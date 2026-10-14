@@ -33,6 +33,9 @@ Thumbs.db
 .claude
 /docs
 data
+!/data/
+/data/*
+!/data/ip2region/
 
 .trae
 

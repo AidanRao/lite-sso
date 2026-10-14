@@ -41,7 +41,7 @@ func qrTestService(t *testing.T, store kv.Store) *AuthService {
 	return NewAuthService(&conf.Config{Auth: conf.AuthConfig{JWTSecret: "qr-test-secret"}, Tokens: conf.TokenConfig{
 		OAuth:   conf.OAuthTokenConfig{Issuer: "https://sso.test"},
 		Session: conf.SessionTokenConfig{AccessTokenTTL: time.Minute, RefreshTokenTTL: time.Hour},
-	}}, database, store, nil, nil)
+	}}, database, store, nil, nil, nil)
 }
 
 func Test_QRCode_StateMachineBothBackends(t *testing.T) {
@@ -56,7 +56,7 @@ func Test_QRCode_StateMachineBothBackends(t *testing.T) {
 			}
 			s := qrTestService(t, store)
 			ctx := context.Background()
-			metadata := LoginMetadata{DeviceID: "dev-browser", IP: "192.0.2.1", UserAgent: "Test Browser"}
+			metadata := LoginMetadata{DeviceID: "dev-browser", IP: "192.0.2.1", UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.2849.68"}
 			redirect := "/oauth/authorize?client_id=scanner&state=original&code_challenge=original&code_challenge_method=S256"
 			challenge, err := s.GenerateQRCode(ctx, redirect, metadata)
 			require.NoError(t, err)
@@ -72,7 +72,12 @@ func Test_QRCode_StateMachineBothBackends(t *testing.T) {
 			preview, err := s.ScanQRCode(ctx, challenge.Code, actor)
 			require.NoError(t, err)
 			require.Equal(t, "scanner", preview.TargetName)
-			require.Equal(t, metadata.IP, preview.IP)
+			require.Equal(t, metadata.IP, preview.Environment.IP)
+			require.Equal(t, "Edge · Windows", preview.Environment.DisplayName)
+			rawPreview, err := json.Marshal(preview)
+			require.NoError(t, err)
+			require.NotContains(t, string(rawPreview), "user_agent")
+			require.NotContains(t, string(rawPreview), "Mozilla/")
 			require.Equal(t, challenge.ExpiresAt, preview.ExpiresAt)
 			_, err = s.ScanQRCode(ctx, challenge.Code, actor)
 			require.NoError(t, err)

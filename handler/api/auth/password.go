@@ -9,8 +9,10 @@ import (
 
 	"sso-server/common"
 	"sso-server/common/ecode"
+	"sso-server/handler"
 	"sso-server/handler/audit"
 	serviceauth "sso-server/service/auth"
+	"sso-server/util/requestmeta"
 )
 
 // LoginWithPassword handles password-based login.
@@ -40,7 +42,7 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 	}
 	loginContext := serviceauth.PasswordLoginContext{
 		DeviceID:     deviceID,
-		IP:           serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
+		IP:           requestmeta.IP(c.Request, h.trustProxyHeaders),
 		CaptchaValid: captchaValid,
 	}
 	user, err := h.auth.LoginWithPasswordContext(c.Request.Context(), req.Email, req.Password, loginContext)
@@ -54,11 +56,7 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 	}
 
 	audit.Actor(c, user.ID, "")
-	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, req.Redirect, serviceauth.LoginMetadata{
-		DeviceID:  deviceID,
-		IP:        serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
-		UserAgent: c.Request.UserAgent(),
-	}, serviceauth.AuthMethodPassword)
+	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, req.Redirect, handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders), serviceauth.AuthMethodPassword)
 	if err != nil {
 		writeAuthError(c, err)
 		return

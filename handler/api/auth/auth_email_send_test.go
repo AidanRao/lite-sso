@@ -99,7 +99,7 @@ func TestAuthEmailSend_ConfiguredFixedOTP_VerifiesChallenge(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	deviceCookie := w.Result().Cookies()[0].Value
-	service := serviceauth.NewAuthService(cfg, nil, store, nil, nil)
+	service := serviceauth.NewAuthService(cfg, nil, store, nil, nil, nil)
 	email, err := service.VerifyChallengeForPurpose(context.Background(), response.Data.ChallengeID, "654321", deviceCookie, serviceauth.ChallengePurposeLogin)
 	if err != nil || email != "u1@example.com" {
 		t.Fatalf("expected challenge verification, email=%q err=%v", email, err)
@@ -231,7 +231,7 @@ func TestAuthEmailLogin_ConsumesChallengeAndCreatesSession(t *testing.T) {
 	store := kv.NewMemoryStore()
 	cfg := &conf.Config{Dev: conf.DevConfig{FixedEmailOTP: "123456", SkipSendMessage: true}}
 	_ = store.Set(context.Background(), kv.KeyCaptcha("send"), "1234", time.Minute)
-	service := serviceauth.NewAuthService(cfg, database, store, nil, nil)
+	service := serviceauth.NewAuthService(cfg, database, store, nil, nil, nil)
 	challenge, err := service.SendEmailOTP(context.Background(), email, "send", "1234", serviceauth.OTPRequestContext{DeviceID: "dev_test", IP: "192.0.2.1"}, serviceauth.ChallengePurposeLogin)
 	if err != nil {
 		t.Fatalf("create challenge: %v", err)

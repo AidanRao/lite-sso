@@ -29,6 +29,7 @@ import (
 	"sso-server/handler/oauth2"
 	"sso-server/model"
 	"sso-server/service/auth"
+	"sso-server/util/requestmeta"
 )
 
 type capture struct{ records []model.AuditLog }
@@ -44,7 +45,7 @@ func router(cfg *conf.Config) (*gin.Engine, *capture) {
 	r := gin.New()
 	r.Use(audit.Middleware(sink, cfg, func(request *http.Request) (string, string) {
 		device, _ := auth.DeviceIDFromRequest(request)
-		return auth.RequestIP(request, cfg.Server.TrustProxyHeaders), device
+		return requestmeta.IP(request, cfg.Server.TrustProxyHeaders), device
 	}))
 	r.Use(gin.CustomRecoveryWithWriter(io.Discard, func(c *gin.Context, _ any) { audit.Failure(c, "PANIC"); c.AbortWithStatus(500) }))
 	return r, sink
@@ -90,6 +91,7 @@ func Test_Middleware_AllRegisteredOperationsCaptureEarlyRejection(t *testing.T) 
 			require.Equal(t, "denied", record.Outcome)
 			require.Nil(t, record.UserID)
 			require.Equal(t, rule.Route, record.Route)
+			require.Equal(t, "Mac", record.DeviceLabel)
 			encoded, err := json.Marshal(record)
 			require.NoError(t, err)
 			for _, secret := range []string{"private-binding-token", "private-code", "private-state", "private-password", "private-token", "forged-user"} {

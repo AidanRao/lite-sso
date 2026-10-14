@@ -3,8 +3,8 @@ module sso-server
 go 1.26
 
 require (
-	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/alexedwards/argon2id v1.0.0
+	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.6.0
 	github.com/gin-gonic/gin v1.9.1
 	github.com/go-oauth2/oauth2/v4 v4.5.4
@@ -14,6 +14,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/larksuite/oapi-sdk-go/v3 v3.9.2
+	github.com/lionsoul2014/ip2region/binding/golang v0.0.0-20260901011515-c1a1fc7d5941
+	github.com/mileusna/useragent v1.3.5
 	github.com/mojocn/base64Captcha v1.3.8
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/redis/go-redis/v9 v9.0.5

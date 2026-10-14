@@ -1,3 +1,6 @@
+geoip:
+  data_dir: "data/ip2region" # GEOIP_DATA_DIR
+
 server:
   port: "8080"
   trust_proxy_headers: false

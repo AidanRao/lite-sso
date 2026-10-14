@@ -18,9 +18,12 @@ import (
 	manageross "sso-server/manager/oss"
 	"sso-server/manager/thirdparty"
 	"sso-server/service/auth"
+	"sso-server/util/ipgeo"
+	"sso-server/util/requestmeta"
 )
 
 type Server struct {
+	locationResolver    *ipgeo.Locator
 	auditRecorder       *manageraudit.Recorder
 	cfg                 *conf.Config
 	engine              *gin.Engine
@@ -79,14 +82,20 @@ func New(cfg *conf.Config) (*Server, error) {
 	}
 	engine.Use(audit.Middleware(recorder, cfg, func(r *http.Request) (string, string) {
 		deviceID, _ := auth.DeviceIDFromRequest(r)
-		return auth.RequestIP(r, cfg.Server.TrustProxyHeaders), deviceID
+		return requestmeta.IP(r, cfg.Server.TrustProxyHeaders), deviceID
 	}, providerRegistry))
 	engine.Use(gin.CustomRecoveryWithWriter(io.Discard, func(c *gin.Context, _ any) {
 		audit.Failure(c, "PANIC")
 		log.Printf("http panic recovered: method=%s route=%s", c.Request.Method, c.FullPath())
 		c.AbortWithStatus(http.StatusInternalServerError)
 	}))
+	locationResolver, err := ipgeo.New(cfg.GeoIP.DataDir)
+	if err != nil {
+		_ = recorder.Shutdown(context.Background())
+		return nil, fmt.Errorf("initialize IP geolocation: %w", err)
+	}
 	srv := &Server{
+		locationResolver:    locationResolver,
 		auditRecorder:       recorder,
 		cfg:                 cfg,
 		engine:              engine,
@@ -95,6 +104,7 @@ func New(cfg *conf.Config) (*Server, error) {
 		providerRegistry:    providerRegistry,
 	}
 	if err := srv.registerRoutes(); err != nil {
+		_ = srv.Shutdown(context.Background())
 		return nil, fmt.Errorf("initialize OAuth: %w", err)
 	}
 	return srv, nil
@@ -116,8 +126,11 @@ func (s *Server) Start(ctx context.Context) error {
 	return Serve(ctx, &http.Server{Handler: s.engine}, listener)
 }
 
-// Shutdown stops audit workers after HTTP handlers have finished.
+// Shutdown releases shared resources after HTTP handlers have finished.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.locationResolver != nil {
+		s.locationResolver.Close()
+	}
 	if s.auditRecorder == nil {
 		return nil
 	}

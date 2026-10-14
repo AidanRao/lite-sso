@@ -1,6 +1,8 @@
 package model
 
-import "time"
+import (
+	"time"
+)
 
 // UserSession stores the server-side state for one authenticated device.
 type UserSession struct {
@@ -10,6 +12,7 @@ type UserSession struct {
 	AuthMethod       string     `gorm:"type:varchar(32);not null"`
 	RefreshTokenHash string     `gorm:"type:char(64);not null"`
 	IP               string     `gorm:"type:varchar(64);not null"`
+	Location         string     `gorm:"type:varchar(256);not null;default:''"`
 	UserAgent        string     `gorm:"type:varchar(512);not null"`
 	CreatedAt        time.Time  `gorm:"not null"`
 	LastSeenAt       time.Time  `gorm:"not null"`

@@ -3,7 +3,6 @@ package auth
 import (
 	"crypto/rand"
 	"fmt"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -64,50 +63,4 @@ func WriteDeviceCookie(w http.ResponseWriter, deviceID string, secure bool) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(DeviceTTL.Seconds()),
 	})
-}
-
-func requestIP(request *http.Request) string {
-	return requestIPWithProxyHeaders(request, false)
-}
-
-func requestIPWithProxyHeaders(request *http.Request, trustProxyHeaders bool) string {
-	if request == nil {
-		return ""
-	}
-	if trustProxyHeaders {
-		for _, header := range []string{"X-Vercel-Forwarded-For", "X-Forwarded-For"} {
-			if ip := firstValidForwardedIP(request.Header.Get(header)); ip != "" {
-				return ip
-			}
-		}
-	}
-	host := request.RemoteAddr
-	if strings.Contains(host, ":") {
-		if parsedHost, _, err := net.SplitHostPort(host); err == nil {
-			if parsedIP := net.ParseIP(parsedHost); parsedIP != nil {
-				return parsedIP.String()
-			}
-			return strings.TrimSpace(parsedHost)
-		}
-	}
-	host = strings.TrimSpace(host)
-	if parsedIP := net.ParseIP(host); parsedIP != nil {
-		return parsedIP.String()
-	}
-	return host
-}
-
-func firstValidForwardedIP(value string) string {
-	for _, candidate := range strings.Split(value, ",") {
-		parsedIP := net.ParseIP(strings.TrimSpace(candidate))
-		if parsedIP != nil {
-			return parsedIP.String()
-		}
-	}
-	return ""
-}
-
-// RequestIP returns the request source address, optionally trusting proxy headers.
-func RequestIP(request *http.Request, trustProxyHeaders bool) string {
-	return requestIPWithProxyHeaders(request, trustProxyHeaders)
 }

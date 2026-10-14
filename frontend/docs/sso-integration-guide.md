@@ -360,13 +360,39 @@ App 必须识别版本，精确匹配配置的 issuer，并将请求发往自己
 | --- | --- | --- |
 | `GET /generate` | 可选 `redirect`，仅本站相对路径 | `code`、`qr_payload`、`browser_token`、`expires_at`（UTC RFC3339） |
 | `GET /poll` | query `code`；原设备 Cookie 与 `X-QR-Browser-Token` | `status`、`expires_at`；confirmed 时附 `login_ticket` |
-| `POST /scan` | OAuth Bearer；JSON `{code}` | 绑定用户和应用，返回 `status`、`user_id`、`account_name`、`target_name`、`ip`、`user_agent`、`created_at`、`expires_at` |
+| `POST /scan` | OAuth Bearer；JSON `{code}` | 绑定用户和应用，返回 `status`、`user_id`、`account_name`、`target_name`、`environment`、`created_at`、`expires_at` |
 | `POST /confirm` | OAuth Bearer；JSON `{code}` | `{confirmed: true, cancelled: false}`，同一用户和应用可安全重试 |
 | `POST /reject` | OAuth Bearer；JSON `{code}` | `{confirmed: false, cancelled: true}` |
 | `POST /complete` | 原设备 Cookie、浏览器凭证 header；JSON `{code, login_ticket}` | 一次性创建浏览器会话，返回现有登录结果并写入登录 Cookie |
 | `POST /cancel` | 原设备 Cookie、浏览器凭证 header；JSON `{code}` | `{cancelled: true}`，刷新二维码或离开登录页时调用 |
 
 浏览器凭证只留在发起页面内存中，不放入二维码、URL、日志或手机响应。状态为 `pending → scanned → confirmed → consumed`，取消或拒绝进入 `cancelled`。同一个用户与扫描应用可重复扫描、确认；其他用户或应用不能接管。App 显示账号、目标系统、电脑请求信息，并要求用户明确确认。网络超时后可重试同一操作，浏览器完成只能消费一次；完成失败则重新生成二维码。
+
+### 登录环境信息
+
+`GET /api/user/devices` 的每个设备与 `POST /api/auth/qr/scan` 的预览统一通过 `environment` 返回服务端解析的展示字段：
+
+```json
+{
+  "environment": {
+    "browser": "Chrome",
+    "browser_version": "130.0.0.0",
+    "os": "macOS",
+    "os_version": "10.15.7",
+    "device_type": "desktop",
+    "device_name": "",
+    "display_name": "Chrome · macOS",
+    "ip": "203.0.113.10",
+    "location": "中国 · 北京"
+  }
+}
+```
+
+这两个响应不再包含顶层 `ip` 或原始 `user_agent`。Web 和 App 直接展示 `environment.display_name`、`environment.ip`，无需各自解析 UA；服务端与客户端应一起发布此接口变更。`device_type` 为 `desktop`、`mobile`、`tablet`、`bot` 或 `unknown`；未识别的字段为空字符串，缺少可识别信息时 `display_name` 为“未知设备”。版本仅表示 UA 报告的版本，可能被浏览器缩减，不代表核验后的真实系统版本或设备型号。
+
+扫码预览描述生成二维码时发起登录的浏览器请求；完成登录的 session 保存浏览器完成请求时的信息。session 列表展示登录时保存的环境；浏览器和系统由保存的 UA 解析，地点读取创建 session 时保存的快照。地点字段需要执行 `00013_add_session_location.sql` 迁移，已有记录保留空地点，不回填。`device_id` 表示浏览器 Cookie 环境，环境信息仅用于展示，不参与认证授权。
+
+通用入口为 `util/requestmeta.Extract`、`util/useragent.Parse`，Web 层通过 `handler.LoginMetadataFromRequest` 组合设备 ID，Service 层接收 `LoginMetadata`。`util/requestmeta.ParseEnvironment` 解析环境信息，`dto.ToEnvironmentResponse` 只映射响应字段。`util/ipgeo` 使用 ip2region 离线解析 IP 地点，服务启动时共享一个支持 IPv4、IPv6 并发查询的实例；国家、省份、城市合并为 `environment.location`，过滤占位值和重复名称。扫码预览保存生成二维码时的地点，session 保存完成登录时的地点；地点仅用于展示，不影响认证。无效 IP、内网 IP 或查不到地点时返回空字符串，Web 和 App 展示“未知”。服务端保留最多 512 字节、已清除控制字符的 UA 用于诊断。IP 沿用 `server.trust_proxy_headers`：关闭时取连接地址，开启时优先读取 `X-Vercel-Forwarded-For`、其次 `X-Forwarded-For` 的第一个合法 IP；部署入口必须覆盖客户端伪造的转发头。无效 IP 返回空字符串。
 
 | HTTP / data.code | App 或浏览器行为 |
 | --- | --- |
@@ -381,3 +407,7 @@ App 必须识别版本，精确匹配配置的 issuer，并将请求发往自己
 | `500 / QR_SERVICE_UNAVAILABLE` | 服务或存储故障，保留与过期不同的提示 |
 
 扫描、确认、拒绝均验证令牌以及数据库当前应用权限和账号状态；浏览器完成前也重新检查确认应用和用户，因此撤销扫码权限立即阻止未完成请求。已发往其他业务 API 的旧 JWT 仍按其自身有效期与验证策略处理。
+
+### ip2region 数据部署
+
+默认从 `data/ip2region` 读取 `ip2region_v4.xdb` 与 `ip2region_v6.xdb`，可通过 `geoip.data_dir` / `GEOIP_DATA_DIR` 指定目录。两个容器镜像均携带数据文件，缺失或格式错误会阻止服务启动。数据来源、固定版本和替换步骤见仓库 `data/ip2region/README.md`。登录地点属于公网 IP 推测结果，VPN、代理和运营商出口会影响定位；更新数据库只影响之后生成的地点快照。

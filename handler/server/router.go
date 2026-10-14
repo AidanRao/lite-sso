@@ -45,11 +45,12 @@ func (s *Server) registerRoutes() error {
 	kvStore := kv.Store(kv.NewNamespacedStore(baseKVStore, conf.GetEnvironmentName()))
 
 	authHandler := auth.NewAuthHandler(auth.AuthDeps{
-		Config:        s.cfg,
-		DB:            db.DB,
-		KV:            kvStore,
-		MessageSender: s.messageCenterClient,
-		OAuth2:        o,
+		LocationResolver: s.locationResolver,
+		Config:           s.cfg,
+		DB:               db.DB,
+		KV:               kvStore,
+		MessageSender:    s.messageCenterClient,
+		OAuth2:           o,
 	})
 	reauthService := reauth.NewService(reauth.Deps{Config: s.cfg, DB: db.DB, Store: kvStore, Auth: authHandler.Service()})
 	passkeyService := servicepasskey.NewService(s.cfg, db.DB, kvStore, authHandler.Service(), reauthService)
@@ -64,6 +65,7 @@ func (s *Server) registerRoutes() error {
 	})
 
 	userHandler := user.NewUserHandler(user.UserDeps{
+		LocationResolver: s.locationResolver,
 		Config:           s.cfg,
 		DB:               db.DB,
 		KV:               kvStore,
@@ -74,6 +76,7 @@ func (s *Server) registerRoutes() error {
 	})
 
 	oauthHandler := oauth.NewOAuthHandler(oauth.OAuthDeps{
+		LocationResolver: s.locationResolver,
 		Config:           s.cfg,
 		DB:               db.DB,
 		KV:               kvStore,

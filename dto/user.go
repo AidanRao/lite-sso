@@ -1,6 +1,8 @@
 package dto
 
-import "time"
+import (
+	"time"
+)
 
 const (
 	LoginMethodEmailOTP   LoginMethodType = "email_otp"
@@ -63,12 +65,11 @@ type ThirdPartyProviderResponse struct {
 
 // LoginDeviceResponse describes one active browser device.
 type LoginDeviceResponse struct {
-	DeviceID   string    `json:"device_id"`
-	UserAgent  string    `json:"user_agent"`
-	IP         string    `json:"ip"`
-	AuthMethod string    `json:"auth_method"`
-	CreatedAt  time.Time `json:"created_at"`
-	LastSeenAt time.Time `json:"last_seen_at"`
-	ExpiresAt  time.Time `json:"expires_at"`
-	Current    bool      `json:"current"`
+	DeviceID    string              `json:"device_id"`
+	Environment EnvironmentResponse `json:"environment"`
+	AuthMethod  string              `json:"auth_method"`
+	CreatedAt   time.Time           `json:"created_at"`
+	LastSeenAt  time.Time           `json:"last_seen_at"`
+	ExpiresAt   time.Time           `json:"expires_at"`
+	Current     bool                `json:"current"`
 }

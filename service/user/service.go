@@ -49,17 +49,17 @@ func NewUserService(cfg *conf.Config, db *gorm.DB, kvStore kv.Store, oauth2Impl 
 }
 
 func (s *UserService) RegisterWithEmailChallenge(ctx context.Context, email string, password string, username *string, challengeID string, code string, deviceID string) (*model.User, error) {
-	authService := serviceauth.NewAuthService(s.cfg, s.db, s.kv, nil, s.oauth2)
+	authService := serviceauth.NewAuthService(s.cfg, s.db, s.kv, nil, s.oauth2, nil)
 	return authService.RegisterWithEmailChallenge(ctx, email, password, username, challengeID, code, deviceID)
 }
 
 func (s *UserService) CreateSession(ctx context.Context, userID string) (string, error) {
-	authService := serviceauth.NewAuthService(s.cfg, s.db, s.kv, nil, s.oauth2)
+	authService := serviceauth.NewAuthService(s.cfg, s.db, s.kv, nil, s.oauth2, nil)
 	return authService.CreateSession(ctx, userID)
 }
 
 func (s *UserService) ResetPasswordWithEmailChallenge(ctx context.Context, email string, password string, challengeID string, code string, deviceID string) (*serviceauth.PasswordResetResult, error) {
-	authService := serviceauth.NewAuthService(s.cfg, s.db, s.kv, nil, s.oauth2)
+	authService := serviceauth.NewAuthService(s.cfg, s.db, s.kv, nil, s.oauth2, nil)
 	return authService.ResetPasswordWithEmailChallenge(ctx, email, password, challengeID, code, deviceID)
 }
 

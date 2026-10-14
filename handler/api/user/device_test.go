@@ -2,6 +2,7 @@ package user_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -16,11 +17,16 @@ import (
 	"sso-server/common"
 	"sso-server/conf"
 	"sso-server/dal/kv"
+	"sso-server/dto"
 	apiuser "sso-server/handler/api/user"
 	serverhandler "sso-server/handler/server"
 	"sso-server/model"
 	serviceauth "sso-server/service/auth"
 )
+
+type deviceLocationResolver struct{}
+
+func (deviceLocationResolver) Lookup(string) string { return "中国 · 北京" }
 
 func TestLoginDevices_ListRevokeAndInvalidateTargetTokens(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -37,11 +43,11 @@ func TestLoginDevices_ListRevokeAndInvalidateTargetTokens(t *testing.T) {
 	}
 
 	cfg := &conf.Config{Tokens: conf.TokenConfig{Session: conf.SessionTokenConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour}}, Auth: conf.AuthConfig{JWTSecret: "device-test-jwt-secret"}}
-	authService := serviceauth.NewAuthService(cfg, database, kv.NewMemoryStore(), nil, nil)
+	authService := serviceauth.NewAuthService(cfg, database, kv.NewMemoryStore(), nil, nil, deviceLocationResolver{})
 	currentResult, _, err := authService.CompleteLoginWithContext(context.Background(), "u1", "", serviceauth.LoginMetadata{
 		DeviceID:  "dev-current",
 		IP:        "203.0.113.1",
-		UserAgent: "current browser",
+		UserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
 	}, serviceauth.AuthMethodPassword)
 	if err != nil {
 		t.Fatalf("create current session: %v", err)
@@ -68,6 +74,23 @@ func TestLoginDevices_ListRevokeAndInvalidateTargetTokens(t *testing.T) {
 	}
 	if body := listResponse.Body.String(); !stringsContainAll(body, `"device_id":"dev-current"`, `"current":true`, `"device_id":"dev-target"`) {
 		t.Fatalf("unexpected device list: %s", body)
+	}
+	var payload struct {
+		Data struct {
+			Devices []dto.LoginDeviceResponse `json:"devices"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(listResponse.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Data.Devices) != 2 || payload.Data.Devices[0].Environment.DisplayName != "Chrome · macOS" || payload.Data.Devices[0].Environment.IP != "203.0.113.1" {
+		t.Fatalf("unexpected structured environment: %#v", payload)
+	}
+	if payload.Data.Devices[0].Environment.Location != "中国 · 北京" {
+		t.Fatalf("expected stored location for this session, got %#v", payload)
+	}
+	if strings.Contains(listResponse.Body.String(), "user_agent") || strings.Contains(listResponse.Body.String(), "Mozilla/") {
+		t.Fatalf("raw User-Agent exposed: %s", listResponse.Body.String())
 	}
 
 	revokeResponse := performBearerRequest(router, http.MethodDelete, "/api/user/devices/dev-target", currentResult.AccessToken)

@@ -16,6 +16,7 @@ import (
 	"sso-server/handler/audit"
 	serviceauth "sso-server/service/auth"
 	servicepasskey "sso-server/service/passkey"
+	"sso-server/util/requestmeta"
 )
 
 // Deps contains Passkey handler dependencies.
@@ -66,7 +67,7 @@ func (h *Handler) SendRegistrationEmail(c *gin.Context) {
 	}
 	result, err := h.service.SendRegistrationEmail(c.Request.Context(), c.GetString("user_id"), req.CaptchaID, req.Captcha, serviceauth.OTPRequestContext{
 		DeviceID: deviceID,
-		IP:       serviceauth.RequestIP(c.Request, h.trustProxyHeaders),
+		IP:       requestmeta.IP(c.Request, h.trustProxyHeaders),
 	})
 	if err != nil {
 		writeError(c, err)

@@ -18,14 +18,17 @@ import (
 	"sso-server/handler/oauth2"
 	"sso-server/service/auth"
 	"sso-server/util/captcha"
+	"sso-server/util/ipgeo"
+	"sso-server/util/requestmeta"
 )
 
 type AuthDeps struct {
-	Config        *conf.Config
-	DB            *gorm.DB
-	KV            kv.Store
-	MessageSender auth.MessageSender
-	OAuth2        *oauth2.OAuth2
+	LocationResolver ipgeo.Resolver
+	Config           *conf.Config
+	DB               *gorm.DB
+	KV               kv.Store
+	MessageSender    auth.MessageSender
+	OAuth2           *oauth2.OAuth2
 }
 
 type AuthHandler struct {
@@ -49,7 +52,7 @@ func NewAuthHandler(deps AuthDeps) *AuthHandler {
 	trustProxyHeaders := cfg != nil && cfg.Server.TrustProxyHeaders
 	return &AuthHandler{
 		captcha:           captcha.NewService(captchaStore),
-		auth:              auth.NewAuthService(cfg, deps.DB, kvStore, deps.MessageSender, deps.OAuth2),
+		auth:              auth.NewAuthService(cfg, deps.DB, kvStore, deps.MessageSender, deps.OAuth2, deps.LocationResolver),
 		db:                deps.DB,
 		kv:                kvStore,
 		trustProxyHeaders: trustProxyHeaders,
@@ -100,7 +103,7 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 	}
 	challenge, err := h.auth.SendEmailOTP(c.Request.Context(), req.Email, req.CaptchaID, req.Captcha, auth.OTPRequestContext{
 		DeviceID: deviceID,
-		IP:       auth.RequestIP(c.Request, h.trustProxyHeaders),
+		IP:       requestmeta.IP(c.Request, h.trustProxyHeaders),
 	}, purpose)
 	if err != nil {
 		audit.Error(c, err)
@@ -110,7 +113,7 @@ func (h *AuthHandler) SendEmailOTP(c *gin.Context) {
 		case errors.Is(err, common.ErrRateLimited):
 			writeRateLimited(c, err, "请求过于频繁")
 		default:
-			log.Printf("auth email OTP send failed: stage=send_otp purpose=%s ip=%s error=%v", purpose, auth.RequestIP(c.Request, h.trustProxyHeaders), err)
+			log.Printf("auth email OTP send failed: stage=send_otp purpose=%s ip=%s error=%v", purpose, requestmeta.IP(c.Request, h.trustProxyHeaders), err)
 			c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "发送失败", Data: nil})
 		}
 		return

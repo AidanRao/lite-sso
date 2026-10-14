@@ -150,7 +150,7 @@ func TestUserChangePassword_UpdatesPasswordAndKeepsCurrentSession(t *testing.T) 
 func seedChallenge(t *testing.T, cfg *conf.Config, database *gorm.DB, store kv.Store, email string, purpose serviceauth.ChallengePurpose, deviceID string) string {
 	t.Helper()
 	_ = store.Set(context.Background(), kv.KeyCaptcha("seed"), "1234", time.Minute)
-	service := serviceauth.NewAuthService(cfg, database, store, nil, nil)
+	service := serviceauth.NewAuthService(cfg, database, store, nil, nil, nil)
 	result, err := service.SendEmailOTP(context.Background(), email, "seed", "1234", serviceauth.OTPRequestContext{DeviceID: deviceID, IP: "192.0.2.1"}, purpose)
 	if err != nil {
 		t.Fatalf("seed challenge: %v", err)

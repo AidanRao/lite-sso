@@ -30,6 +30,7 @@ COPY --from=builder /sso-server /app/
 COPY --from=builder /sso-migrate /app/
 COPY --from=builder /app/conf /app/conf
 COPY --from=builder /app/migrations /app/migrations
+COPY --from=builder /app/data/ip2region /app/data/ip2region
 COPY --from=frontend-builder /app/frontend/dist /app/web
 COPY docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh

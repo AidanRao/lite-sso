@@ -30,12 +30,13 @@ func TestListLoginDevices_GroupsAndFiltersActiveSessions(t *testing.T) {
 		newDeviceSession("ses-revoked", "u1", "dev-revoked", now, now.Add(time.Hour)),
 	}
 	sessions[1].AuthMethod = "GITHUB"
+	sessions[1].UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.2849.68"
 	sessions[5].RevokedAt = &revokedAt
 	if err := database.Create(&sessions).Error; err != nil {
 		t.Fatalf("seed sessions: %v", err)
 	}
 
-	service := NewAuthService(&conf.Config{}, database, nil, nil, nil)
+	service := NewAuthService(&conf.Config{}, database, nil, nil, nil, nil)
 	devices, err := service.ListLoginDevices(context.Background(), "u1", "ses-current")
 	if err != nil {
 		t.Fatalf("list devices: %v", err)
@@ -48,6 +49,9 @@ func TestListLoginDevices_GroupsAndFiltersActiveSessions(t *testing.T) {
 	}
 	if devices[0].AuthMethod != "GITHUB" {
 		t.Fatalf("expected latest session metadata, got %#v", devices[0])
+	}
+	if devices[0].Environment.DisplayName != "Edge · Windows" || devices[0].Environment.IP != sessions[1].IP {
+		t.Fatalf("expected parsed latest stored environment, got %#v", devices[0].Environment)
 	}
 	if devices[1].DeviceID != "dev-other" || devices[1].Current {
 		t.Fatalf("expected other device second, got %#v", devices)
@@ -71,7 +75,7 @@ func TestRevokeLoginDevice_RevokesOnlyOtherActiveDeviceSessions(t *testing.T) {
 		t.Fatalf("seed sessions: %v", err)
 	}
 
-	service := NewAuthService(&conf.Config{}, database, nil, nil, nil)
+	service := NewAuthService(&conf.Config{}, database, nil, nil, nil, nil)
 	if err := service.RevokeLoginDevice(context.Background(), "u1", "ses-current", "dev-target"); err != nil {
 		t.Fatalf("revoke target device: %v", err)
 	}
