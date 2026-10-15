@@ -16,7 +16,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"gorm.io/gorm"
 	"sso-server/common"
+	"sso-server/dal/db"
 	"sso-server/dal/kv"
 )
 
@@ -34,6 +36,8 @@ const (
 )
 
 type loginChallenge struct {
+	AccountID      string           `json:"account_id,omitempty"`
+	CreatedAtMicro int64            `json:"created_at_us,omitempty,string"`
 	Email          string           `json:"email"`
 	DeviceID       string           `json:"device_id"`
 	CodeMAC        string           `json:"code_mac"`
@@ -79,13 +83,24 @@ func (s *AuthService) createChallengeWithCode(ctx context.Context, email string,
 	now := time.Now()
 	expiresIn := s.authOTPExpire()
 	challenge := loginChallenge{
-		Email:     normalizeEmail(email),
-		DeviceID:  deviceID,
-		CodeMAC:   otpMAC(s.authSecret(), challengeID, code),
-		Purpose:   purpose,
-		Status:    "ACTIVE",
-		CreatedAt: now.Unix(),
-		ExpiresAt: now.Add(expiresIn).Unix(),
+		Email:          normalizeEmail(email),
+		DeviceID:       deviceID,
+		CodeMAC:        otpMAC(s.authSecret(), challengeID, code),
+		Purpose:        purpose,
+		Status:         "ACTIVE",
+		CreatedAt:      now.Unix(),
+		CreatedAtMicro: now.UnixMicro(),
+		ExpiresAt:      now.Add(expiresIn).Unix(),
+	}
+	if s.db != nil && purpose != ChallengePurposeRegister {
+		user, err := db.NewUserRepository(s.db).FindByEmail(ctx, challenge.Email)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		challenge.AccountID = "missing"
+		if user != nil {
+			challenge.AccountID = user.ID
+		}
 	}
 	data, err := json.Marshal(challenge)
 	if err != nil {
@@ -143,6 +158,9 @@ func (s *AuthService) parseChallengeResult(ctx context.Context, key string, resu
 	}
 	var challenge loginChallenge
 	if err := json.Unmarshal([]byte(data), &challenge); err != nil {
+		return "", common.ErrChallengeInvalid
+	}
+	if err := s.validateChallengeAccount(ctx, &challenge); err != nil {
 		return "", err
 	}
 	return challenge.Email, nil
@@ -155,7 +173,7 @@ func (s *AuthService) verifyChallengeFallback(ctx context.Context, key string, c
 	}
 	var challenge loginChallenge
 	if err := json.Unmarshal([]byte(data), &challenge); err != nil {
-		return "", err
+		return "", common.ErrChallengeInvalid
 	}
 	if challenge.DeviceID != deviceID || challenge.Purpose != purpose || challenge.Status != "ACTIVE" {
 		return "", common.ErrChallengeInvalid
@@ -182,6 +200,9 @@ func (s *AuthService) verifyChallengeFallback(ctx context.Context, key string, c
 	if err := s.security.Set(ctx, key, string(updated), time.Until(time.Unix(challenge.ExpiresAt, 0))); err != nil {
 		return "", err
 	}
+	if err := s.validateChallengeAccount(ctx, &challenge); err != nil {
+		return "", err
+	}
 	return challenge.Email, nil
 }
 
@@ -201,4 +222,18 @@ func (s *AuthService) authOTPMaxAttempts() int {
 		return s.cfg.Auth.OTPMaxAttempts
 	}
 	return 5
+}
+
+func (s *AuthService) validateChallengeAccount(ctx context.Context, challenge *loginChallenge) error {
+	if s.db == nil || challenge.Purpose == ChallengePurposeRegister {
+		return nil
+	}
+	user, err := db.NewUserRepository(s.db).FindByEmail(ctx, challenge.Email)
+	if err != nil || user.ID != challenge.AccountID {
+		return common.ErrChallengeInvalid
+	}
+	if err := db.CheckUserRevocation(ctx, s.db, user.ID, challenge.CreatedAtMicro); err != nil {
+		return common.ErrChallengeInvalid
+	}
+	return nil
 }

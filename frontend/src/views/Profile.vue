@@ -64,6 +64,7 @@ const loadProfile = async () => {
     const result = await userAPI.getProfile()
     if (version !== requestVersion) return
     const data = result?.data || {}
+    if (data.user?.status === 'pending_deletion') { router.replace('/account/deletion'); return }
     user.value = data.user || null
   } catch (error) {
     if (version !== requestVersion) return

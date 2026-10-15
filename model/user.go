@@ -15,7 +15,7 @@ type User struct {
 	PasswordHash    *string `gorm:"type:varchar(255)"`
 	AvatarURL       *string `gorm:"type:varchar(255)"`
 	AvatarObjectKey *string `gorm:"type:varchar(512)"`
-	IsActive        bool    `gorm:"default:true"`
+	Status          string  `gorm:"type:varchar(24);not null;default:active"`
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

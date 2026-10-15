@@ -34,11 +34,11 @@ func TestLoginDevices_ListRevokeAndInvalidateTargetTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
 	email := "user@example.com"
-	if err := database.Create(&model.User{ID: "u1", Email: &email, IsActive: true}).Error; err != nil {
+	if err := database.Create(&model.User{ID: "u1", Email: &email, Status: model.UserStatusActive}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -182,7 +183,7 @@ func (s *AuthService) LoginWithEmailOTP(ctx context.Context, challengeID string,
 	if err != nil {
 		return nil, common.ErrInvalidCredentials
 	}
-	if !user.IsActive {
+	if user.Status == model.UserStatusDisabled {
 		return nil, common.ErrUserInactive
 	}
 	return user, nil
@@ -222,7 +223,7 @@ func (s *AuthService) registerUser(ctx context.Context, email string, password s
 		return nil, err
 	}
 	userEmail := normalizeEmail(email)
-	user := &model.User{ID: "u_" + strings.ReplaceAll(uuid.NewString(), "-", ""), Email: &userEmail, PasswordHash: &hash, IsActive: true}
+	user := &model.User{ID: "u_" + strings.ReplaceAll(uuid.NewString(), "-", ""), Email: &userEmail, PasswordHash: &hash, Status: model.UserStatusActive}
 	if username != nil && strings.TrimSpace(*username) != "" {
 		value := strings.TrimSpace(*username)
 		if exists, err := userRepo.ExistsUsername(ctx, value); err != nil {
@@ -262,12 +263,18 @@ func (s *AuthService) ResetPasswordWithEmailChallenge(ctx context.Context, email
 	if err != nil {
 		return result, err
 	}
-	user.PasswordHash = &hash
-	if err := db.NewUserRepository(s.db).Update(ctx, user); err != nil {
-		return result, err
-	}
-	result.PasswordUpdated = true
-	err = s.InvalidateAllSessions(ctx, user.ID, "password_reset")
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		user, err := db.LockActiveUser(ctx, tx, result.UserID)
+		if err != nil {
+			return err
+		}
+		user.PasswordHash = &hash
+		if err := db.NewUserRepository(tx).Update(ctx, user); err != nil {
+			return err
+		}
+		return db.NewUserSessionRepository(tx).RevokeAll(ctx, user.ID, "password_reset", time.Now())
+	})
+	result.PasswordUpdated = err == nil
 	result.SessionsRevoked = err == nil
 	return result, err
 }

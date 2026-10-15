@@ -35,6 +35,7 @@ type RefreshStore interface {
 	Load(context.Context, string) (RefreshGrant, error)
 	Rotate(context.Context, string, string, RefreshGrant) error
 	RevokeUser(context.Context, string) error
+	RevokeUserBefore(context.Context, string, time.Time) error
 }
 
 // NewRefreshToken creates a random opaque refresh token.
@@ -89,11 +90,26 @@ if redis.call('PTTL', KEYS[3]) < tonumber(ARGV[3]) then redis.call('PEXPIRE', KE
 return 1`
 
 const revokeUserRefreshScript = `
+local cutoffRaw = ARGV[1]
+local previous = redis.call('GET', KEYS[2])
+if previous and tonumber(previous) > tonumber(cutoffRaw) then cutoffRaw = previous end
+local cutoff = tonumber(cutoffRaw)
 local keys = redis.call('SMEMBERS', KEYS[1])
-for _, key in ipairs(keys) do redis.call('DEL', key) end
-redis.call('DEL', KEYS[1])
-redis.call('SET', KEYS[2], ARGV[1], 'PX', ARGV[2])
-return #keys`
+local removed = 0
+for _, key in ipairs(keys) do
+ local raw = redis.call('GET', key)
+ if not raw then redis.call('SREM', KEYS[1], key)
+ else
+  local grant = cjson.decode(raw)
+  if tonumber(grant.authorized_at or 0) <= cutoff then
+   redis.call('DEL', key)
+   redis.call('SREM', KEYS[1], key)
+   removed = removed + 1
+  end
+ end
+end
+redis.call('SET', KEYS[2], cutoffRaw, 'PX', ARGV[2])
+return removed`
 
 func (s *RedisRefreshStore) Issue(ctx context.Context, token string, grant RefreshGrant) error {
 	payload, err := json.Marshal(grant)
@@ -159,7 +175,12 @@ func (s *RedisRefreshStore) Rotate(ctx context.Context, oldToken, newToken strin
 }
 
 func (s *RedisRefreshStore) RevokeUser(ctx context.Context, userID string) error {
-	return s.client.Eval(ctx, revokeUserRefreshScript, []string{s.userKey(userID), s.revokedKey(userID)}, time.Now().UnixMicro(), int64((30*24*time.Hour)/time.Millisecond)).Err()
+	return s.RevokeUserBefore(ctx, userID, time.Now())
+}
+
+// RevokeUserBefore removes only grants issued on or before a durable cutoff.
+func (s *RedisRefreshStore) RevokeUserBefore(ctx context.Context, userID string, cutoff time.Time) error {
+	return s.client.Eval(ctx, revokeUserRefreshScript, []string{s.userKey(userID), s.revokedKey(userID)}, cutoff.UnixMicro(), int64((30*24*time.Hour)/time.Millisecond)).Err()
 }
 
 // MemoryRefreshStore is an isolated refresh store for tests.
@@ -207,13 +228,19 @@ func (s *MemoryRefreshStore) Rotate(ctx context.Context, oldToken, newToken stri
 }
 
 func (s *MemoryRefreshStore) RevokeUser(ctx context.Context, userID string) error {
+	return s.RevokeUserBefore(ctx, userID, time.Now())
+}
+
+// RevokeUserBefore preserves grants authorized after the supplied cutoff.
+func (s *MemoryRefreshStore) RevokeUserBefore(ctx context.Context, userID string, cutoff time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	timestamp := max(cutoff.UnixMicro(), s.revoked[userID])
 	for token, grant := range s.grants {
-		if grant.UserID == userID {
+		if grant.UserID == userID && grant.AuthorizedAt <= timestamp {
 			delete(s.grants, token)
 		}
 	}
-	s.revoked[userID] = time.Now().UnixMicro()
+	s.revoked[userID] = timestamp
 	return nil
 }

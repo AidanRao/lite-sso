@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"sso-server/common"
 	"sso-server/model"
 )
 
@@ -28,6 +29,19 @@ func NewWebAuthnRepository(database *gorm.DB) *WebAuthnRepository {
 
 // GetOrCreateUser returns the stable WebAuthn user handle for a relying party.
 func (r *WebAuthnRepository) GetOrCreateUser(ctx context.Context, rpID string, userID string) (*model.WebAuthnUser, error) {
+	var result *model.WebAuthnUser
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := LockActiveUser(ctx, tx, userID); err != nil {
+			return err
+		}
+		var err error
+		result, err = NewWebAuthnRepository(tx).getOrCreateUser(ctx, rpID, userID)
+		return err
+	})
+	return result, err
+}
+
+func (r *WebAuthnRepository) getOrCreateUser(ctx context.Context, rpID, userID string) (*model.WebAuthnUser, error) {
 	var record model.WebAuthnUser
 	err := r.db.WithContext(ctx).First(&record, "rp_id = ? AND user_id = ?", rpID, userID).Error
 	if err == nil {
@@ -79,12 +93,21 @@ func (r *WebAuthnRepository) HasCredentials(ctx context.Context, rpID string, us
 }
 
 // CreateCredential persists a newly verified Passkey.
-func (r *WebAuthnRepository) CreateCredential(ctx context.Context, rpID string, userID string, name string, extensionsJSON string, credential *webauthn.Credential) (*model.WebAuthnCredential, error) {
+func (r *WebAuthnRepository) CreateCredential(ctx context.Context, rpID string, userID string, sessionID string, name string, extensionsJSON string, credential *webauthn.Credential) (*model.WebAuthnCredential, error) {
 	record, err := credentialToRecord(rpID, userID, name, extensionsJSON, credential)
 	if err != nil {
 		return nil, err
 	}
-	if err := r.db.WithContext(ctx).Create(record).Error; err != nil {
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := LockActiveUser(ctx, tx, userID); err != nil {
+			return err
+		}
+		session, err := NewUserSessionRepository(tx).FindActive(ctx, sessionID, time.Now())
+		if err != nil || session.UserID != userID || session.Purpose == model.SessionPurposeAccountDeletion {
+			return common.ErrSessionRevoked
+		}
+		return tx.Create(record).Error
+	}); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -92,6 +115,15 @@ func (r *WebAuthnRepository) CreateCredential(ctx context.Context, rpID string, 
 
 // UpdateCredentialName changes only user-facing credential metadata.
 func (r *WebAuthnRepository) UpdateCredentialName(ctx context.Context, rpID string, userID string, id string, name string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := LockActiveUser(ctx, tx, userID); err != nil {
+			return err
+		}
+		return NewWebAuthnRepository(tx).updateCredentialName(ctx, rpID, userID, id, name)
+	})
+}
+
+func (r *WebAuthnRepository) updateCredentialName(ctx context.Context, rpID string, userID string, id string, name string) error {
 	result := r.db.WithContext(ctx).Model(&model.WebAuthnCredential{}).
 		Where("id = ? AND rp_id = ? AND user_id = ?", id, rpID, userID).
 		Update("name", name)
@@ -106,6 +138,15 @@ func (r *WebAuthnRepository) UpdateCredentialName(ctx context.Context, rpID stri
 
 // DeleteCredential deletes one credential owned by the user.
 func (r *WebAuthnRepository) DeleteCredential(ctx context.Context, rpID string, userID string, id string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := LockActiveUser(ctx, tx, userID); err != nil {
+			return err
+		}
+		return NewWebAuthnRepository(tx).deleteCredential(ctx, rpID, userID, id)
+	})
+}
+
+func (r *WebAuthnRepository) deleteCredential(ctx context.Context, rpID string, userID string, id string) error {
 	result := r.db.WithContext(ctx).Where("id = ? AND rp_id = ? AND user_id = ?", id, rpID, userID).Delete(&model.WebAuthnCredential{})
 	if result.Error != nil {
 		return result.Error
@@ -120,6 +161,9 @@ func (r *WebAuthnRepository) DeleteCredential(ctx context.Context, rpID string, 
 func (r *WebAuthnRepository) ValidateAndUpdateCredential(ctx context.Context, rpID string, userID string, validate func([]webauthn.Credential) (*webauthn.Credential, error)) (*model.WebAuthnCredential, error) {
 	var updated *model.WebAuthnCredential
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := LockUser(ctx, tx, userID); err != nil {
+			return err
+		}
 		var records []model.WebAuthnCredential
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("rp_id = ? AND user_id = ?", rpID, userID).Find(&records).Error; err != nil {
 			return err

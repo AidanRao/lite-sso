@@ -137,7 +137,7 @@ func Test_OAuthService_HandleThirdPartyLogin_QQBuildsAuthURL(t *testing.T) {
 func Test_OAuthService_ThirdPartyBind_PreviewsBeforeConfirmation(t *testing.T) {
 	ctx := context.Background()
 	gormDB := newOAuthTestDB(t)
-	if err := gormDB.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {
+	if err := gormDB.Create(&model.User{ID: "u1", Status: model.UserStatusActive}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 
@@ -219,7 +219,7 @@ func Test_OAuthService_ThirdPartyBind_RejectsPreviewOwnedByAnotherUser(t *testin
 	ctx := context.Background()
 	gormDB := newOAuthTestDB(t)
 	for _, userID := range []string{"u1", "u2"} {
-		if err := gormDB.Create(&model.User{ID: userID, IsActive: true}).Error; err != nil {
+		if err := gormDB.Create(&model.User{ID: userID, Status: model.UserStatusActive}).Error; err != nil {
 			t.Fatalf("create user %s: %v", userID, err)
 		}
 	}
@@ -248,10 +248,10 @@ func Test_OAuthService_ThirdPartyBind_RejectsPreviewOwnedByAnotherUser(t *testin
 func TestOAuthService_ThirdPartyBind_RejectsAccountBoundToAnotherUser(t *testing.T) {
 	ctx := context.Background()
 	gormDB := newOAuthTestDB(t)
-	if err := gormDB.Create(&model.User{ID: "u1", IsActive: true}).Error; err != nil {
+	if err := gormDB.Create(&model.User{ID: "u1", Status: model.UserStatusActive}).Error; err != nil {
 		t.Fatalf("create user u1: %v", err)
 	}
-	if err := gormDB.Create(&model.User{ID: "u2", IsActive: true}).Error; err != nil {
+	if err := gormDB.Create(&model.User{ID: "u2", Status: model.UserStatusActive}).Error; err != nil {
 		t.Fatalf("create user u2: %v", err)
 	}
 	if err := gormDB.Create(&model.UserThirdParty{
@@ -307,7 +307,7 @@ func Test_FindOrCreateUser_AllowsNewProviderAccountWithoutEmail(t *testing.T) {
 func Test_FindOrCreateUser_DoesNotResyncEmailForEstablishedBinding(t *testing.T) {
 	gormDB := newOAuthTestDB(t)
 	primary := "primary@example.com"
-	if err := gormDB.Create(&model.User{ID: "u1", Email: &primary, IsActive: true}).Error; err != nil {
+	if err := gormDB.Create(&model.User{ID: "u1", Email: &primary, Status: model.UserStatusActive}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	if err := gormDB.Create(&model.UserThirdParty{UserID: "u1", Provider: thirdparty.GitHub, ProviderUID: "gh-1"}).Error; err != nil {
@@ -335,7 +335,7 @@ func newOAuthTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := gormDB.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserEmailSource{}, &model.UserOAuthClient{}); err != nil {
+	if err := gormDB.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserEmailSource{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return gormDB

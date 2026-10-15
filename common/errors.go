@@ -4,6 +4,9 @@ import "errors"
 
 // User related errors
 var (
+	ErrAccountPendingDeletion   = errors.New("account pending deletion")
+	ErrAccountDeletionDue       = errors.New("account deletion cooling period ended")
+	ErrUserStatusInvalid        = errors.New("invalid user status")
 	ErrUserNotFound             = errors.New("user not found")
 	ErrEmailExists              = errors.New("email already exists")
 	ErrUsernameExists           = errors.New("username already exists")

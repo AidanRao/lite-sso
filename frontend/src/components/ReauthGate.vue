@@ -29,6 +29,10 @@
             </button>
           </template>
 
+          <template v-else-if="reauthState.descriptor?.status === 'pending_deletion'">
+            <p>冷静期内无法新增 Passkey，请使用下方邮箱验证码确认身份。</p>
+          </template>
+
           <template v-else-if="activeMethod === 'setup'">
             <PasskeyEnrollmentForm @registered="handlePasskeyRegistered" @submitting="enrollmentSubmitting = $event" />
           </template>

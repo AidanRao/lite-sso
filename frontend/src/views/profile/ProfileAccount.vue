@@ -1,31 +1,5 @@
 <template>
   <div class="settings-view">
-    <ProfileSettingsSection
-      title-id="account-avatar-title"
-      title="头像"
-      description="支持 JPEG、PNG 或 WebP，文件大小不超过 2MB。"
-    >
-      <div class="avatar-row">
-        <div class="avatar-preview" aria-hidden="true">
-          <img v-if="user?.avatar_url" :src="user.avatar_url" alt="" />
-          <span v-else>{{ avatarInitial }}</span>
-        </div>
-        <div>
-          <button class="button" type="button" :disabled="avatarUploading" @click="avatarInput?.click()">
-            {{ avatarUploading ? '上传中…' : '更换头像' }}
-          </button>
-          <input
-            ref="avatarInput"
-            class="file-input"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            :disabled="avatarUploading"
-            @change="uploadAvatar"
-          />
-        </div>
-      </div>
-    </ProfileSettingsSection>
-
     <ProfileSettingsSection title-id="account-information-title" title="账号信息">
       <div class="settings-list">
         <div class="settings-row">
@@ -56,6 +30,40 @@
       </div>
     </ProfileSettingsSection>
 
+    <ProfileSettingsSection
+      title-id="account-avatar-title"
+      title="头像"
+      description="支持 JPEG、PNG 或 WebP，文件大小不超过 2MB。"
+    >
+      <div class="avatar-row">
+        <div class="avatar-preview" aria-hidden="true">
+          <img v-if="user?.avatar_url" :src="user.avatar_url" alt="" />
+          <span v-else>{{ avatarInitial }}</span>
+        </div>
+        <div>
+          <button class="button" type="button" :disabled="avatarUploading" @click="avatarInput?.click()">
+            {{ avatarUploading ? '上传中…' : '更换头像' }}
+          </button>
+          <input
+            ref="avatarInput"
+            class="file-input"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            :disabled="avatarUploading"
+            @change="uploadAvatar"
+          />
+        </div>
+      </div>
+    </ProfileSettingsSection>
+
+    <ProfileSettingsSection title-id="account-deletion-title" title="注销账号">
+      <div class="deletion-row">
+        <p>注销完成后，账号资料和登录凭证将被删除，邮箱、用户名和第三方身份将被释放。</p>
+        <button class="button danger" type="button" @click="deletionDialogOpen = true">注销账号</button>
+      </div>
+    </ProfileSettingsSection>
+    <AccountDeletionDialog v-if="deletionDialogOpen && user" :user="user" @close="deletionDialogOpen = false" @submitted="onDeletionSubmitted" />
+
     <div v-if="usernameDialogOpen" class="dialog-mask" @click.self="closeUsernameDialog">
       <form class="dialog" @submit.prevent="saveUsername">
         <header>
@@ -82,7 +90,9 @@ import { computed, inject, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Check, Copy, X } from 'lucide-vue-next'
-import { userAPI } from '../../api/auth'
+import { userAPI, clearAccessToken } from '../../api/auth'
+import AccountDeletionDialog from '../../components/profile/AccountDeletionDialog.vue'
+import { rememberDeletion } from '../../utils/accountDeletion'
 import ProfileSettingsSection from '../../components/profile/ProfileSettingsSection.vue'
 import { PROFILE_CONTEXT_KEY } from './profileContext'
 
@@ -92,6 +102,13 @@ if (!profile) throw new Error('ProfileAccount must be rendered inside Profile')
 const route = useRoute()
 const router = useRouter()
 const { user, setUser } = profile
+const deletionDialogOpen = ref(false)
+const onDeletionSubmitted = (data) => {
+ rememberDeletion(data)
+ clearAccessToken()
+ deletionDialogOpen.value = false
+ router.replace('/account/deletion')
+}
 const usernameDraft = ref('')
 const usernameSaving = ref(false)
 const usernameDialogOpen = ref(false)
@@ -184,6 +201,9 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
 </script>
 
 <style scoped>
+:deep(#account-deletion-title) { color: var(--profile-danger); }
+.deletion-row p { margin: 0 0 14px; font-size: 14px; line-height: 1.6; color: var(--profile-text-strong); }
+.button.danger { color: var(--profile-danger); }
 .settings-view {
   display: grid;
   gap: 30px;

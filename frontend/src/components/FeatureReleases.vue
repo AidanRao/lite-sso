@@ -9,10 +9,7 @@
         <fieldset :disabled="saving">
           <legend>{{ item.name }}</legend>
           <label>开放范围
-            <select v-model="item.audience">
-              <option value="off">关闭</option><option value="selected">指定用户</option>
-              <option value="percentage">百分比灰度</option><option value="all">全量开放</option>
-            </select>
+            <SelectMenu v-model="item.audience" label="开放范围" :options="audienceOptions" :disabled="saving" />
           </label>
           <label v-if="item.audience === 'percentage'">灰度百分比
             <input v-model.number="item.percentage" type="number" min="0" max="100" step="1" required />
@@ -44,6 +41,11 @@
 import { computed, onMounted, ref } from 'vue'
 import { adminAPI } from '../api/auth'
 import { permissions } from '../utils/permissions'
+import SelectMenu from './SelectMenu.vue'
+const audienceOptions = [
+  { value: 'off', label: '关闭' }, { value: 'selected', label: '指定用户' },
+  { value: 'percentage', label: '百分比灰度' }, { value: 'all', label: '全量开放' }
+]
 const features = ref([])
 const users = ref([])
 const search = ref('')
@@ -89,7 +91,7 @@ form { margin-top: 24px; }
 fieldset { border: 1px solid #d0d7de; border-radius: 6px; padding: 20px; display: grid; gap: 20px; min-width: 0; }
 legend { font-weight: 600; }
 label { display: grid; gap: 8px; font-size: 14px; }
-input:not([type=checkbox]), select { padding: 8px; border: 1px solid #d0d7de; border-radius: 6px; background: white; color: inherit; width: 100%; box-sizing: border-box; }
+input:not([type=checkbox]) { padding: 8px; border: 1px solid #d0d7de; border-radius: 6px; background: white; color: inherit; width: 100%; box-sizing: border-box; }
 button { padding: 7px 14px; border: 1px solid #d0d7de; border-radius: 6px; background: #f6f8fa; color: inherit; cursor: pointer; justify-self: start; }
 button:disabled { opacity: .6; cursor: default; }
 .user-list { max-height: 280px; overflow-y: auto; border: 1px solid #d0d7de; border-radius: 6px; padding: 8px; margin-top: 10px; }

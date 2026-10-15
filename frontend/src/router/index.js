@@ -6,6 +6,7 @@ import OAuthCallback from '../views/OAuthCallback.vue'
 import Profile from '../views/Profile.vue'
 
 const routes = [
+ { path: '/account/deletion', name: 'AccountDeletion', meta: { title: '账号注销' }, component: () => import('../views/AccountDeletion.vue') },
   {
     path: '/',
     redirect: '/profile'

@@ -94,6 +94,11 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, session
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		locked, err := db.LockActiveUser(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		user = locked
 		session, err := db.NewUserSessionRepository(tx).FindActive(ctx, sessionID, time.Now())
 		if err != nil || session.UserID != userID {
 			return common.ErrSessionRevoked
@@ -150,7 +155,7 @@ func (s *AuthService) LoginWithPasswordContext(ctx context.Context, email string
 	if err := s.guard.clearPasswordAccountFailure(ctx, email); err != nil {
 		return nil, err
 	}
-	if !user.IsActive {
+	if user.Status == model.UserStatusDisabled {
 		return nil, common.ErrUserInactive
 	}
 	return user, nil

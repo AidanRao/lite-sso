@@ -80,6 +80,9 @@ func (s *EmailService) Add(ctx context.Context, userID string, email string) (*d
 		return nil, err
 	}
 
+	if err := db.PurgeExpiredIdentities(ctx, s.db, "id IN (?)", s.db.Model(&model.UserEmail{}).Select("user_id").Where("email = ?", normalized)); err != nil {
+		return nil, err
+	}
 	record := model.UserEmail{}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockUser(ctx, tx, userID); err != nil {
@@ -139,6 +142,9 @@ func (s *EmailService) Confirm(ctx context.Context, userID string, token string)
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return nil, common.ErrEmailVerificationInvalid
+	}
+	if err := db.PurgeExpiredIdentities(ctx, s.db, "id IN (?)", s.db.Model(&model.UserEmail{}).Select("user_id").Where("email IN (?)", s.db.Model(&model.UserEmail{}).Select("email").Where("user_id = ? AND verification_token_hash = ?", userID, digestToken(token)))); err != nil {
+		return nil, err
 	}
 	tokenHash := digestToken(token)
 	var verified model.UserEmail
@@ -264,6 +270,9 @@ func (s *EmailService) ImportTrusted(ctx context.Context, userID string, email s
 	if err != nil {
 		return false, nil
 	}
+	if err := db.PurgeExpiredIdentities(ctx, s.db, "id IN (?)", s.db.Model(&model.UserEmail{}).Select("user_id").Where("email = ?", normalized)); err != nil {
+		return false, err
+	}
 	imported := false
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockUser(ctx, tx, userID); err != nil {
@@ -329,6 +338,9 @@ func (s *EmailService) sendVerification(ctx context.Context, userID string, emai
 	var record model.UserEmail
 	var token string
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockUser(ctx, tx, userID); err != nil {
+			return err
+		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&record, "id = ? AND user_id = ?", emailID, userID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return common.ErrEmailNotFound
@@ -382,14 +394,11 @@ func (s *EmailService) maxAddresses() int {
 }
 
 func lockUser(ctx context.Context, tx *gorm.DB, userID string) error {
-	var user model.User
-	if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&user, "id = ?", userID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return common.ErrUserNotFound
-		}
-		return err
+	_, err := db.LockActiveUser(ctx, tx, userID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return common.ErrUserNotFound
 	}
-	return nil
+	return err
 }
 
 func validateEmail(value string) (string, error) {

@@ -20,6 +20,7 @@ export const periodOptions = [
 ]
 
 export const auditActions = {
+  'user.account.deletion.request': '申请注销账号', 'user.account.deletion.cancel': '撤销账号注销', 'user.account.deletion.complete': '完成账号注销',
   'auth.login.password': '密码登录', 'auth.login.email': '邮箱验证码登录', 'auth.login.qr': '扫码登录',
   'auth.email.send': '发送登录验证码', 'auth.qr.scan': '扫描登录二维码', 'auth.qr.confirm': '确认扫码登录', 'auth.qr.reject': '拒绝扫码登录', 'auth.qr.cancel': '取消登录二维码', 'auth.logout': '退出登录',
   'auth.third_party.start': '发起第三方登录', 'auth.login.third_party': '第三方登录', 'oauth.authorize': '应用授权',
@@ -41,6 +42,7 @@ const reasons = {
   OK: '操作成功', UNCLASSIFIED_REDIRECT: '跳转结果未确认', OPERATION_FAILED: '操作未完成', REQUEST_ABORTED: '请求中断', PANIC: '服务处理异常',
   UNAUTHORIZED: '尚未登录或会话已失效', AUTHENTICATION_REQUIRED: '需要登录', ADMIN_REQUIRED: '需要管理员权限',
   AUTHORIZATION_INCOMPLETE: '第三方授权已取消或未完成', DEVICE_MISMATCH: '登录设备发生变化',
+  ACCOUNT_PENDING_DELETION: '账号处于注销冷静期', ACCOUNT_DELETION_DUE: '注销冷静期已结束',
   USER_NOT_FOUND: '账号不存在', USER_INACTIVE: '账号已停用', EMAIL_EXISTS: '邮箱已被使用', USERNAME_EXISTS: '用户名已被使用',
   AVATAR_STORAGE_UNAVAILABLE: '头像存储暂不可用', EMAIL_ALREADY_ADDED: '邮箱已添加', EMAIL_INVALID: '邮箱格式无效',
   EMAIL_LIMIT_REACHED: '邮箱数量已达上限', EMAIL_NOT_FOUND: '邮箱不存在', EMAIL_NOT_VERIFIED: '邮箱尚未验证',
@@ -63,7 +65,7 @@ const reasons = {
 const authMethods = { password: '密码', email_otp: '邮箱验证码', qr_code: '扫码', github: 'GitHub', feishu: '飞书', qq: 'QQ', passkey: 'Passkey' }
 const providers = { github: 'GitHub', feishu: '飞书', qq: 'QQ' }
 const targets = { feature: '功能', user: '账号', email: '邮箱', device: '登录设备', provider: '第三方平台', passkey: 'Passkey', oauth_client: '应用' }
-const fields = { audience: '开放范围', percentage: '灰度百分比', stage: '发布阶段', user_ids: '指定用户', username: '用户名', avatar: '头像', password: '密码', email: '邮箱', verified: '邮箱验证状态', is_primary: '主邮箱', name: '名称', provider: '第三方绑定', passkey: 'Passkey', session: '会话', logo: 'Logo', client_secret: '应用密钥', redirect_uri: '回调地址', logout_uri: '退出地址', homepage_url: '主页地址', is_active: '启用状态', description: '描述' }
+const fields = { audience: '开放范围', percentage: '灰度百分比', stage: '发布阶段', user_ids: '指定用户', username: '用户名', avatar: '头像', password: '密码', email: '邮箱', verified: '邮箱验证状态', is_primary: '主邮箱', name: '名称', provider: '第三方绑定', passkey: 'Passkey', session: '会话', logo: 'Logo', client_secret: '应用密钥', redirect_uri: '回调地址', logout_uri: '退出地址', homepage_url: '主页地址', status: '账号状态', is_active: '启用状态', description: '描述' }
 const steps = { user_created: '账号已创建', session_created: '登录会话已创建', password_updated: '密码已更新', sessions_revoked: '会话已撤销', email_created: '邮箱已添加', verification_sent: '验证邮件已发送', email_verified: '邮箱已验证', binding_prepared: '绑定预览已准备', binding_created: '第三方绑定已完成', authorization_code_issued: '应用授权码已签发' }
 const dayMS = 24 * 60 * 60 * 1000
 const known = (map, key) => Object.hasOwn(map, key) ? map[key] : ''

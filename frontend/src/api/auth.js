@@ -53,6 +53,7 @@ api.interceptors.response.use(
         void permissions.deny(error.response.data.data.feature_key).catch(() => {})
       }
     }
+    if (machineCode === 'ACCOUNT_PENDING_DELETION' && window.location.pathname !== '/account/deletion') window.location.replace('/account/deletion')
     const descriptor = error.response?.data?.data?.reauth
     if (
       error.response?.status === 403 &&
@@ -100,6 +101,7 @@ export const refreshAccessToken = async () => {
       if (session !== permissions.sessionVersion()) throw new Error('登录状态已变化')
       const data = response.data?.data || response.data
       setAccessToken(data?.access_token, { preservePermissions: true })
+      if (data?.status === 'pending_deletion' && window.location.pathname !== '/account/deletion') window.location.replace('/account/deletion')
       return accessToken
     }).catch(error => {
       if (session === permissions.sessionVersion()) clearAccessToken()
@@ -199,6 +201,10 @@ export const userAPI = {
   getDevices: () => {
     return api.get('/user/devices')
   },
+
+  getAccountDeletion: () => api.get('/user/account-deletion'),
+  requestAccountDeletion: () => api.post('/user/account-deletion', null, { reauth: true }),
+  cancelAccountDeletion: () => api.delete('/user/account-deletion', { reauth: true }),
 
   getEmails: () => api.get('/user/emails'),
 

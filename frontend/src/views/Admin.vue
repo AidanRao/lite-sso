@@ -142,10 +142,7 @@
         </label>
         <label>
           <span>客户端类型</span>
-          <select v-model="form.client_type" @change="handleClientTypeChange">
-            <option value="confidential">服务端客户端（Client Secret）</option>
-            <option value="public">公共客户端（无后端客户端 / PKCE）</option>
-          </select>
+          <SelectMenu v-model="form.client_type" label="客户端类型" :options="clientTypeOptions" @change="handleClientTypeChange" />
         </label>
         <label>
           <span>API Audience（每行一个，至少一个才能签发令牌）</span>
@@ -290,8 +287,14 @@ import { ElMessage } from 'element-plus'
 import { SlidersHorizontal, ArrowLeft, Copy, Eye, EyeOff, PanelsTopLeft, Pencil, Plus, RefreshCw, Save, Upload, Users, X } from 'lucide-vue-next'
 import { adminAPI } from '../api/auth'
 import FeatureReleases from '../components/FeatureReleases.vue'
+import SelectMenu from '../components/SelectMenu.vue'
 import ApplicationLogo from '../components/ApplicationLogo.vue'
 import { generateClientSecret, maskClientSecret } from '../utils/clientSecret'
+
+const clientTypeOptions = [
+  { value: 'confidential', label: '服务端客户端（Client Secret）' },
+  { value: 'public', label: '公共客户端（无后端客户端 / PKCE）' }
+]
 
 const router = useRouter()
 const activeTab = ref('users')
@@ -1035,7 +1038,6 @@ button:disabled {
 }
 
 .dialog input,
-.dialog select,
 .dialog textarea {
   width: 100%;
   box-sizing: border-box;
@@ -1049,7 +1051,6 @@ button:disabled {
 }
 
 .dialog input:focus,
-.dialog select:focus,
 .dialog textarea:focus {
   border-color: #0f766e;
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);

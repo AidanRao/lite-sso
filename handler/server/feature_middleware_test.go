@@ -37,7 +37,7 @@ func Test_RequireFeature_AdminPoliciesAndProfileAgreement(t *testing.T) {
 	conn, err := database.DB()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
-	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.FeatureConfig{}, &model.FeatureUser{}))
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.FeatureConfig{}, &model.FeatureUser{}))
 	require.NoError(t, database.Create(&model.User{ID: "admin"}).Error)
 	require.NoError(t, database.Create(&model.User{ID: "ordinary"}).Error)
 	cfg := &conf.Config{Admin: conf.AdminConfig{UserIDs: []string{"admin"}}}

@@ -78,10 +78,7 @@
             <h2 id="primary-email-title">Primary email address</h2>
             <p>选择账号通知、二次验证和默认系统邮件使用的邮箱。</p>
           </div>
-          <select v-model="selectedPrimaryID" :disabled="changingPrimary || verifiedEmails.length < 2" @change="changePrimary">
-            <option v-if="verifiedEmails.length === 0" value="">尚未设置主邮箱</option>
-            <option v-for="item in verifiedEmails" :key="item.id" :value="item.id">{{ item.email }}</option>
-          </select>
+          <SelectMenu v-model="selectedPrimaryID" class="primary-selector" label="主邮箱" placeholder="尚未设置主邮箱" :options="primaryEmailOptions" :disabled="changingPrimary || verifiedEmails.length < 2" @change="changePrimary" />
         </section>
       </template>
     </ProfileSettingsSection>
@@ -97,6 +94,7 @@ import { CircleAlert, CircleCheck, Ellipsis, Trash2 } from 'lucide-vue-next'
 import { userAPI } from '../../api/auth'
 import ProfileSettingsSection from '../../components/profile/ProfileSettingsSection.vue'
 import ThirdPartyProviderIcon from '../../components/ThirdPartyProviderIcon.vue'
+import SelectMenu from '../../components/SelectMenu.vue'
 import { getEmailVerificationToken } from '../../utils/emailVerification'
 import { isReauthCancelled } from '../../utils/reauthCoordinator'
 import { PROFILE_CONTEXT_KEY } from './profileContext'
@@ -121,6 +119,7 @@ const verificationState = reactive({ type: '', message: '' })
 
 const atLimit = computed(() => emails.value.length >= maxAddresses.value)
 const verifiedEmails = computed(() => emails.value.filter(item => item.verified))
+const primaryEmailOptions = computed(() => verifiedEmails.value.map(item => ({ value: item.id, label: item.email })))
 
 const providerName = (provider) => ({ github: 'GitHub', feishu: '飞书', qq: 'QQ' }[provider] || provider)
 
@@ -284,11 +283,11 @@ onMounted(async () => {
 .primary-card { display: flex; align-items: center; justify-content: space-between; gap: 28px; padding: 22px 24px; border: 1px solid var(--profile-border); border-radius: 6px; }
 .primary-card h2 { margin: 0; font-size: 16px; }
 .primary-card p { margin: 7px 0 0; color: var(--profile-text-muted); font-size: 13px; line-height: 1.5; }
-.primary-card select { width: min(360px, 42%); min-height: 38px; padding: 7px 34px 7px 12px; border: 1px solid var(--profile-border); border-radius: 6px; background: var(--profile-surface); color: var(--profile-text-strong); font: inherit; }
+.primary-selector { flex: 0 1 auto; max-width: 360px; }
 @media (max-width: 720px) {
   .email-row { min-height: 0; padding: 18px; }
   .primary-card { align-items: stretch; flex-direction: column; }
-  .primary-card select { width: 100%; }
+  .primary-selector { width: 100%; max-width: none; }
 }
 @media (max-width: 520px) {
   .add-controls { flex-direction: column; }

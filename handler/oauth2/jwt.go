@@ -21,11 +21,13 @@ import (
 
 	"sso-server/conf"
 	"sso-server/dal/db"
+	"sso-server/model"
 )
 
 type accessClaims struct {
-	ClientID string `json:"client_id"`
-	Scope    string `json:"scope,omitempty"`
+	IssuedAtMicro int64  `json:"issued_at_us,omitempty"`
+	ClientID      string `json:"client_id"`
+	Scope         string `json:"scope,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -85,7 +87,7 @@ func (s *tokenSigner) sign(userID, clientID string, audiences, scopes []string, 
 	if userID == "" || clientID == "" || len(audiences) == 0 {
 		return "", errors.New("OAuth token requires subject, client and audience")
 	}
-	claims := accessClaims{ClientID: clientID, Scope: strings.Join(scopes, " "), RegisteredClaims: jwt.RegisteredClaims{
+	claims := accessClaims{IssuedAtMicro: now.UnixMicro(), ClientID: clientID, Scope: strings.Join(scopes, " "), RegisteredClaims: jwt.RegisteredClaims{
 		Issuer: s.issuer, Subject: userID, Audience: jwt.ClaimStrings(audiences),
 		IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(s.ttl)),
 	}}
@@ -136,7 +138,7 @@ func (g jwtAccessGenerator) Token(ctx context.Context, data *gooauth2.GenerateBa
 		}
 	}
 	user, err := db.NewUserRepository(g.owner.db).FindByID(ctx, data.UserID)
-	if err != nil || !user.IsActive {
+	if err != nil || user.Status == model.UserStatusDisabled || user.Status == model.UserStatusPendingDeletion {
 		return "", "", oauth2errors.ErrInvalidGrant
 	}
 	extension, ok := data.TokenInfo.(gooauth2.ExtendableTokenInfo)
@@ -144,7 +146,7 @@ func (g jwtAccessGenerator) Token(ctx context.Context, data *gooauth2.GenerateBa
 		return "", "", oauth2errors.ErrInvalidGrant
 	}
 	session, err := db.NewUserSessionRepository(g.owner.db).FindActive(ctx, extension.GetExtension().Get("session_id"), time.Now())
-	if err != nil || session.UserID != data.UserID {
+	if err != nil || db.ValidateUserSession(ctx, g.owner.db, user, session, time.Now()) != nil {
 		return "", "", oauth2errors.ErrInvalidGrant
 	}
 	access, err := g.owner.signer.sign(data.UserID, client.ClientID, client.Audiences, strings.Fields(data.TokenInfo.GetScope()), data.CreateAt)
@@ -154,4 +156,23 @@ func (g jwtAccessGenerator) Token(ctx context.Context, data *gooauth2.GenerateBa
 func (o *OAuth2) HandleJWKS(c *gin.Context) {
 	c.Header("Cache-Control", "public, max-age=300")
 	c.JSON(http.StatusOK, o.signer.jwks())
+}
+
+func (o *OAuth2) validateAccountClaims(ctx context.Context, claims *accessClaims) error {
+	user, err := db.NewUserRepository(o.db).FindByID(ctx, claims.Subject)
+	if err != nil || user.Status == model.UserStatusDisabled || user.Status != model.UserStatusActive {
+		return oauth2errors.ErrInvalidAccessToken
+	}
+	return o.validateClaimsCutoff(ctx, user.ID, claims)
+}
+
+func (o *OAuth2) validateClaimsCutoff(ctx context.Context, userID string, claims *accessClaims) error {
+	issuedAt := claims.IssuedAtMicro
+	if issuedAt == 0 && claims.IssuedAt != nil {
+		issuedAt = claims.IssuedAt.UnixMicro()
+	}
+	if err := db.CheckUserRevocation(ctx, o.db, userID, issuedAt); err != nil {
+		return oauth2errors.ErrInvalidAccessToken
+	}
+	return nil
 }

@@ -24,7 +24,7 @@ func TestLoginWithPassword_RequiresCaptchaAfterRepeatedFailures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	hash, err := serviceauth.HashPassword("password123456")
@@ -32,7 +32,7 @@ func TestLoginWithPassword_RequiresCaptchaAfterRepeatedFailures(t *testing.T) {
 		t.Fatalf("hash: %v", err)
 	}
 	email := "u1@example.com"
-	if err := database.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &hash, IsActive: true}).Error; err != nil {
+	if err := database.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &hash, Status: model.UserStatusActive}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	h := apiauth.NewAuthHandler(apiauth.AuthDeps{Config: &conf.Config{}, DB: database, KV: kv.NewMemoryStore()})

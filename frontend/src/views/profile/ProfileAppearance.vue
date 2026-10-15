@@ -8,11 +8,7 @@
       <div class="theme-control">
         <label for="theme-mode">主题模式</label>
         <div class="theme-mode-row">
-          <select id="theme-mode" :value="profileThemePreference" @change="changeTheme">
-            <option value="light">亮色主题</option>
-            <option value="dark">暗色主题</option>
-            <option value="system">跟随系统</option>
-          </select>
+          <SelectMenu id="theme-mode" class="theme-selector" :model-value="profileThemePreference" label="主题模式" :options="themeOptions" @change="setProfileThemePreference" />
           <p>{{ modeDescription }}</p>
         </div>
       </div>
@@ -60,6 +56,7 @@
 import { computed } from 'vue'
 import { Check, Moon, Sun } from 'lucide-vue-next'
 import ProfileSettingsSection from '../../components/profile/ProfileSettingsSection.vue'
+import SelectMenu from '../../components/SelectMenu.vue'
 import darkPreview from '../../assets/profile-theme/dark.png'
 import lightPreview from '../../assets/profile-theme/light.png'
 import {
@@ -75,10 +72,11 @@ const modeDescriptions = {
 }
 
 const modeDescription = computed(() => modeDescriptions[profileThemePreference.value] || modeDescriptions.system)
-
-const changeTheme = (event) => {
-  setProfileThemePreference(event.target.value)
-}
+const themeOptions = [
+  { value: 'light', label: '亮色主题' },
+  { value: 'dark', label: '暗色主题' },
+  { value: 'system', label: '跟随系统' }
+]
 </script>
 
 <style scoped>
@@ -104,24 +102,9 @@ const changeTheme = (event) => {
   gap: 16px;
 }
 
-.theme-control select {
+.theme-selector {
   width: min(260px, 100%);
   flex: 0 0 min(260px, 100%);
-  min-height: 36px;
-  box-sizing: border-box;
-  border: 1px solid var(--profile-border);
-  border-radius: 6px;
-  background: var(--profile-surface);
-  color: var(--profile-text);
-  font: inherit;
-  font-size: 14px;
-  padding: 6px 34px 6px 10px;
-}
-
-.theme-control select:focus {
-  border-color: var(--profile-accent);
-  box-shadow: 0 0 0 3px var(--profile-focus-ring);
-  outline: none;
 }
 
 .theme-control p {
@@ -229,7 +212,7 @@ const changeTheme = (event) => {
     gap: 8px;
   }
 
-  .theme-control select {
+  .theme-selector {
     width: 100%;
     flex-basis: auto;
   }

@@ -7,6 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"sso-server/common"
 	"sso-server/model"
 )
 
@@ -43,6 +44,9 @@ func (r *UserRepository) FindAll(ctx context.Context) ([]model.User, error) {
 }
 
 func (r *UserRepository) ExistsEmail(ctx context.Context, email string) (bool, error) {
+	if err := PurgeExpiredIdentities(ctx, r.db, "id IN (?)", r.db.Model(&model.UserEmail{}).Select("user_id").Where("email = ?", NormalizeEmail(email))); err != nil {
+		return false, err
+	}
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.UserEmail{}).
 		Where("email = ? AND verified_at IS NOT NULL", NormalizeEmail(email)).
@@ -53,6 +57,9 @@ func (r *UserRepository) ExistsEmail(ctx context.Context, email string) (bool, e
 }
 
 func (r *UserRepository) ExistsUsername(ctx context.Context, username string) (bool, error) {
+	if err := PurgeExpiredIdentities(ctx, r.db, "username = ?", username); err != nil {
+		return false, err
+	}
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("username = ?", username).Count(&count).Error; err != nil {
 		return false, err
@@ -61,6 +68,9 @@ func (r *UserRepository) ExistsUsername(ctx context.Context, username string) (b
 }
 
 func (r *UserRepository) ExistsUsernameExceptID(ctx context.Context, username string, userID string) (bool, error) {
+	if err := PurgeExpiredIdentities(ctx, r.db, "username = ? AND id <> ?", username, userID); err != nil {
+		return false, err
+	}
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("username = ? AND id <> ?", username, userID).Count(&count).Error; err != nil {
 		return false, err
@@ -69,6 +79,12 @@ func (r *UserRepository) ExistsUsernameExceptID(ctx context.Context, username st
 }
 
 func (r *UserRepository) Create(ctx context.Context, user *model.User) error {
+	if user.Status == "" {
+		user.Status = model.UserStatusActive
+	}
+	if err := validateUserStatus(user.Status); err != nil {
+		return err
+	}
 	if user.Email != nil {
 		primaryEmail := NormalizeEmail(*user.Email)
 		user.Email = &primaryEmail
@@ -77,6 +93,9 @@ func (r *UserRepository) Create(ctx context.Context, user *model.User) error {
 }
 
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*model.User, error) {
+	if err := PurgeExpiredIdentities(ctx, r.db, "id IN (?)", r.db.Model(&model.UserEmail{}).Select("user_id").Where("email = ?", NormalizeEmail(email))); err != nil {
+		return nil, err
+	}
 	var user model.User
 	if err := r.db.WithContext(ctx).Model(&model.User{}).
 		Joins("JOIN user_emails ON user_emails.user_id = users.id").
@@ -91,7 +110,22 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*model.
 }
 
 func (r *UserRepository) Update(ctx context.Context, user *model.User) error {
-	return r.db.WithContext(ctx).Save(user).Error
+	if err := validateUserStatus(user.Status); err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := LockActiveUser(ctx, tx, user.ID); err != nil {
+			return err
+		}
+		result := tx.Model(&model.User{}).Where("id = ? AND status = ? AND updated_at = ?", user.ID, model.UserStatusActive, user.UpdatedAt).Updates(map[string]any{"username": user.Username, "password_hash": user.PasswordHash, "avatar_url": user.AvatarURL, "avatar_object_key": user.AvatarObjectKey, "status": user.Status})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return common.ErrUserNotFound
+		}
+		return nil
+	})
 }
 
 func (r *UserRepository) hydratePrimaryEmail(ctx context.Context, user *model.User) error {
@@ -114,4 +148,13 @@ func (r *UserRepository) hydratePrimaryEmail(ctx context.Context, user *model.Us
 // NormalizeEmail returns the canonical representation used by identity lookups.
 func NormalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func validateUserStatus(status string) error {
+	switch status {
+	case model.UserStatusActive, model.UserStatusDisabled, model.UserStatusPendingDeletion:
+		return nil
+	default:
+		return common.ErrUserStatusInvalid
+	}
 }

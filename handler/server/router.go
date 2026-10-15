@@ -17,6 +17,7 @@ import (
 	"sso-server/service/feature"
 	servicepasskey "sso-server/service/passkey"
 	"sso-server/service/reauth"
+	serviceuser "sso-server/service/user"
 )
 
 func (s *Server) registerRoutes() error {
@@ -64,7 +65,9 @@ func (s *Server) registerRoutes() error {
 		Reauth:  reauthService,
 	})
 
+	s.userDeletionService = serviceuser.NewDeletionService(db.DB, o.RefreshStore(), s.imageStore)
 	userHandler := user.NewUserHandler(user.UserDeps{
+		Deletion:         s.userDeletionService,
 		LocationResolver: s.locationResolver,
 		Config:           s.cfg,
 		DB:               db.DB,
@@ -138,6 +141,9 @@ func (s *Server) registerRoutes() error {
 
 			userProtected := userGroup.Group("")
 			userProtected.Use(authRequired)
+			userProtected.GET("/account-deletion", userHandler.GetAccountDeletion)
+			userProtected.POST("/account-deletion", reauthRequired, userHandler.RequestAccountDeletion)
+			userProtected.DELETE("/account-deletion", userHandler.CheckAccountDeletionWindow, reauthRequired, userHandler.CancelAccountDeletion)
 			userProtected.GET("/profile", userHandler.GetProfile)
 			userProtected.GET("/permissions", userHandler.GetPermissions)
 			userProtected.GET("/audit-logs", RequireFeature(feature.NewService(db.DB), feature.AuditLogs), userHandler.ListAuditLogs)

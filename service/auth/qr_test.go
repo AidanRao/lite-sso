@@ -31,9 +31,9 @@ func qrTestService(t *testing.T, store kv.Store) *AuthService {
 	require.NoError(t, err)
 	connection.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = connection.Close() })
-	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserSession{}))
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserSession{}))
 	for _, id := range []string{"u1", "u2"} {
-		require.NoError(t, database.Create(&model.User{ID: id, IsActive: true}).Error)
+		require.NoError(t, database.Create(&model.User{ID: id, Status: model.UserStatusActive}).Error)
 	}
 	for _, id := range []string{"scanner", "other"} {
 		require.NoError(t, database.Create(&model.OAuthClient{ClientID: id, Name: id, Audiences: []string{QRLoginAudience}, AllowedScopes: []string{QRLoginScope}}).Error)
