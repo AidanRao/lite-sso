@@ -11,14 +11,10 @@
           </summary>
           <div class="filter-panel">
             <label>{{ auditCopy.result }}
-              <select v-model="filters.outcome" @change="reload">
-                <option v-for="option in outcomeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-              </select>
+              <SelectMenu v-model="filters.outcome" :label="auditCopy.result" :options="outcomeOptions" @change="reload" />
             </label>
             <label>{{ auditCopy.period }}
-              <select v-model="filters.period" @change="reload">
-                <option v-for="option in periodOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-              </select>
+              <SelectMenu v-model="filters.period" :label="auditCopy.period" :options="periodOptions" @change="reload" />
             </label>
             <template v-if="filters.period === 'custom'">
               <label>{{ auditCopy.from }}<input v-model="filters.startDate" type="date" :min="dateBounds.min" :max="dateBounds.max" @change="reload" /></label>
@@ -103,6 +99,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowRight, Ban, Check, ChevronDown, CircleAlert, Ellipsis, ListFilter, LoaderCircle, RefreshCw, ScrollText, Search } from 'lucide-vue-next'
 import ProfileSettingsSection from '../../components/profile/ProfileSettingsSection.vue'
 import ApplicationLogo from '../../components/ApplicationLogo.vue'
+import SelectMenu from '../../components/SelectMenu.vue'
 import { userAPI } from '../../api/auth'
 import { PROFILE_CONTEXT_KEY } from './profileContext'
 import { auditCopy, auditDateBounds, auditDetailRows, auditFullTime, auditLoadError, auditOutcomeLabel, auditRelativeTime, auditSummaryParts, buildAuditQuery, outcomeOptions, periodOptions } from '../../utils/auditLog'
@@ -209,13 +206,13 @@ reload()
 .search-submit { background: transparent; }
 .filter-panel { position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; display: grid; gap: 14px; width: 256px; box-sizing: border-box; padding: 16px; border: 1px solid var(--profile-border); border-radius: 8px; background: var(--profile-surface); box-shadow: var(--profile-shadow-soft); }
 .filter-panel label { display: grid; gap: 7px; font-size: 13px; font-weight: 600; }
-.filter-panel select, .filter-panel input { width: 100%; box-sizing: border-box; min-width: 0; height: 34px; padding: 4px 8px; border: 1px solid var(--profile-border); border-radius: 6px; background: var(--profile-surface); color: var(--profile-text-strong); font: inherit; font-size: 13px; }
+.filter-panel input { width: 100%; box-sizing: border-box; min-width: 0; height: 34px; padding: 4px 8px; border: 1px solid var(--profile-border); border-radius: 6px; background: var(--profile-surface); color: var(--profile-text-strong); font: inherit; font-size: 13px; }
 .text-button { padding: 0; border: 0; background: transparent; color: var(--profile-accent); text-align: left; font: inherit; font-size: 13px; cursor: pointer; }
 .button { justify-content: center; gap: 7px; min-height: 36px; padding: 5px 12px; border: 1px solid var(--profile-border-muted); border-radius: 6px; background: var(--profile-surface-subtle); color: var(--profile-text-strong); box-shadow: var(--profile-button-shadow); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
 .button:hover:not(:disabled), .more-button:hover { background: var(--profile-surface-hover); }
 .button:disabled { opacity: .6; cursor: default; }
 .refresh-button { flex: none; }
-button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--profile-accent); outline-offset: 2px; }
+button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px solid var(--profile-accent); outline-offset: 2px; }
 .events-panel { overflow: hidden; border: 1px solid var(--profile-border); border-radius: 6px; }
 .events-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 0 20px; background: var(--profile-surface-subtle); }
 .events-heading h3 { margin: 0; font-size: 14px; font-weight: 600; }
