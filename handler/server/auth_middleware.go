@@ -12,6 +12,7 @@ import (
 	"sso-server/conf"
 	"sso-server/dal/kv"
 	"sso-server/handler/audit"
+	"sso-server/model"
 	serviceauth "sso-server/service/auth"
 )
 
@@ -53,12 +54,15 @@ func requireBearerSession(c *gin.Context, authService *serviceauth.AuthService) 
 		writeUnauthorized(c)
 		return
 	}
-	userID, err := authService.ResolveSessionUserID(c.Request.Context(), claims.SessionID)
-	if err != nil || userID != claims.Subject {
+	user, _, err := authService.ResolveSession(c.Request.Context(), claims.SessionID)
+	if err != nil || user.ID != claims.Subject {
 		writeUnauthorized(c)
 		return
 	}
-	setSessionContext(c, userID, claims.SessionID)
+	setSessionContext(c, user.ID, claims.SessionID)
+	if !allowAccountRequest(c, user) {
+		return
+	}
 	c.Next()
 }
 
@@ -83,8 +87,13 @@ func RequireSessionAuthOrRedirect(dependency interface{}) gin.HandlerFunc {
 		if authService, ok := dependency.(*serviceauth.AuthService); ok {
 			sessionID, err := c.Cookie(serviceauth.SessionCookieName)
 			if err == nil && sessionID != "" {
-				if userID, resolveErr := authService.ResolveSessionUserID(c.Request.Context(), sessionID); resolveErr == nil && userID != "" {
-					setSessionContext(c, userID, sessionID)
+				if user, _, resolveErr := authService.ResolveSession(c.Request.Context(), sessionID); resolveErr == nil {
+					if user.Status == model.UserStatusPendingDeletion {
+						c.Redirect(http.StatusFound, "/account/deletion")
+						c.Abort()
+						return
+					}
+					setSessionContext(c, user.ID, sessionID)
 					c.Next()
 					return
 				}
@@ -145,4 +154,25 @@ func redirectToLogin(c *gin.Context) {
 	currentURL := c.Request.URL.String()
 	loginURL := "/login?redirect=" + url.QueryEscape(currentURL)
 	c.Redirect(http.StatusFound, loginURL)
+}
+
+// allowAccountRequest limits deletion sessions independently of frontend navigation.
+func allowAccountRequest(c *gin.Context, user *model.User) bool {
+	if user.Status != model.UserStatusPendingDeletion {
+		return true
+	}
+	path := c.FullPath()
+	allowed := path == "/api/user/account-deletion" || path == "/api/auth/logout" || path == "/api/auth/token/refresh"
+	if c.Request.Method == http.MethodPost {
+		switch path {
+		case "/api/user/reauth/passkey/options", "/api/user/reauth/passkey/verify", "/api/user/reauth/email/send", "/api/user/reauth/email/verify":
+			allowed = true
+		}
+	}
+	if allowed {
+		return true
+	}
+	audit.Denied(c, "ACCOUNT_PENDING_DELETION")
+	c.AbortWithStatusJSON(http.StatusForbidden, ecode.Response[any]{Code: ecode.Forbidden, Message: "账号处于注销冷静期", Data: gin.H{"code": "ACCOUNT_PENDING_DELETION", "redirect_url": "/account/deletion"}})
+	return false
 }

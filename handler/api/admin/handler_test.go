@@ -369,7 +369,7 @@ func newAdminTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return database
@@ -444,7 +444,7 @@ func createAdminTestUser(t *testing.T, database *gorm.DB, id string, email strin
 	user := &model.User{
 		ID:        id,
 		Email:     &email,
-		IsActive:  true,
+		Status: model.UserStatusActive,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}

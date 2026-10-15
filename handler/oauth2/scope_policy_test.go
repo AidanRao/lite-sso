@@ -29,8 +29,8 @@ func Test_OAuthScopes_DefaultSubsetAndLiveRefresh(t *testing.T) {
 	connection, err := database.DB()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = connection.Close() })
-	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserSession{}, &model.UserOAuthClient{}))
-	require.NoError(t, database.Create(&model.User{ID: "u1", IsActive: true}).Error)
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserSession{}, &model.UserOAuthClient{}))
+	require.NoError(t, database.Create(&model.User{ID: "u1", Status: model.UserStatusActive}).Error)
 	client := model.OAuthClient{ClientID: "app", Name: "App", ClientType: model.OAuthClientTypeConfidential, ClientSecret: "secret", RedirectURI: "https://app.test/callback", Audiences: []string{"app-api"}, AllowedScopes: []string{"read", "write"}}
 	require.NoError(t, database.Create(&client).Error)
 	cfg := &conf.Config{Auth: conf.AuthConfig{JWTSecret: "test-secret"}, Tokens: conf.TokenConfig{

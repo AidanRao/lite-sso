@@ -92,6 +92,8 @@ func writeAuthError(c *gin.Context, err error) {
 		c.JSON(http.StatusTooManyRequests, ecode.Response[any]{Code: ecode.TooManyRequests, Message: "需要验证码", Data: gin.H{"code": "CAPTCHA_REQUIRED", "retry_after_seconds": 1}})
 	case errors.Is(err, common.ErrRateLimited):
 		writeRateLimited(c, err, "请求过于频繁")
+	case errors.Is(err, common.ErrAccountDeletionDue):
+		c.JSON(http.StatusConflict, ecode.Response[any]{Code: ecode.Conflict, Message: "账号注销冷静期已结束", Data: gin.H{"code": "ACCOUNT_DELETION_DUE"}})
 	case errors.Is(err, common.ErrUserInactive):
 		c.JSON(http.StatusForbidden, ecode.Response[any]{Code: ecode.Forbidden, Message: "用户已禁用", Data: nil})
 	case errors.Is(err, common.ErrInvalidRedirect):

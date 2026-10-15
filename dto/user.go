@@ -13,6 +13,7 @@ const (
 
 // UserResponse represents user data returned in API responses.
 type UserResponse struct {
+	Status    string  `json:"status"`
 	ID        string  `json:"id"`
 	Email     *string `json:"email"`
 	Username  *string `json:"username"`

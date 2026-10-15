@@ -12,6 +12,8 @@ var safeErrors = []struct {
 	err  error
 	code string
 }{
+	{err: common.ErrAccountPendingDeletion, code: "ACCOUNT_PENDING_DELETION"},
+	{err: common.ErrAccountDeletionDue, code: "ACCOUNT_DELETION_DUE"},
 	{err: common.ErrUserNotFound, code: "USER_NOT_FOUND"},
 	{err: common.ErrEmailExists, code: "EMAIL_EXISTS"},
 	{err: common.ErrUsernameExists, code: "USERNAME_EXISTS"},

@@ -21,6 +21,7 @@ import (
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
 	"sso-server/dto"
+	"sso-server/model"
 	"sso-server/util/requestmeta"
 	"sso-server/util/useragent"
 )
@@ -155,8 +156,11 @@ func (s *AuthService) ValidateQRCodeActor(ctx context.Context, actor QRActor) er
 	if err != nil {
 		return err
 	}
-	if !user.IsActive {
+	if user.Status == model.UserStatusDisabled {
 		return common.ErrUserInactive
+	}
+	if user.Status == model.UserStatusPendingDeletion {
+		return common.ErrAccountPendingDeletion
 	}
 	return nil
 }
@@ -239,6 +243,10 @@ func (s *AuthService) CompleteQRCodeLogin(ctx context.Context, code, ticket, bro
 	data, err = s.transitionQRCode(ctx, code, "complete", QRActor{}, metadata.DeviceID, browserToken, ticket)
 	if err != nil {
 		return nil, nil, err
+	}
+	user, err := db.NewUserRepository(s.db).FindByID(ctx, data.UserID)
+	if err != nil || db.CheckUserRevocation(ctx, s.db, user.ID, data.CreatedAt.UnixMicro()) != nil {
+		return nil, nil, common.ErrQRCodeInvalidStatus
 	}
 	return s.CompleteLoginWithContext(ctx, data.UserID, data.Redirect, metadata, AuthMethodQR)
 }

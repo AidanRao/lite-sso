@@ -55,6 +55,7 @@ type Result struct {
 
 // Descriptor tells the browser which verification methods are available.
 type Descriptor struct {
+	Status    string   `json:"status"`
 	Methods   []string `json:"methods"`
 	MaxAge    int      `json:"max_age"`
 	EmailHint string   `json:"email_hint,omitempty"`
@@ -97,6 +98,9 @@ func NewService(deps Deps) *Service {
 
 // Issue creates an opaque token whose digest is the only value used as a key.
 func (s *Service) Issue(ctx context.Context, userID string, sessionID string, method string, proofID string) (*Result, error) {
+	if err := s.validateSession(ctx, userID, sessionID); err != nil {
+		return nil, err
+	}
 	if method != MethodPasskey && method != MethodEmail {
 		return nil, common.ErrReauthMethodUnavailable
 	}
@@ -144,6 +148,9 @@ func (s *Service) authorizeRecentLogin(ctx context.Context, userID string, sessi
 	if s.database == nil {
 		return nil, common.ErrReauthRequired
 	}
+	if err := s.validateSession(ctx, userID, sessionID); err != nil {
+		return nil, common.ErrReauthRequired
+	}
 	now := time.Now()
 	session, err := db.NewUserSessionRepository(s.database).FindActive(ctx, sessionID, now)
 	if err != nil || session.UserID != userID || strings.TrimSpace(session.AuthMethod) == "" {
@@ -164,6 +171,9 @@ func (s *Service) authorizeRecentLogin(ctx context.Context, userID string, sessi
 }
 
 func (s *Service) authorizeGrant(ctx context.Context, key string, userID string, sessionID string, invalidError error) (*Grant, error) {
+	if err := s.validateSession(ctx, userID, sessionID); err != nil {
+		return nil, invalidError
+	}
 	data, err := s.store.Get(ctx, key)
 	if err != nil {
 		if errors.Is(err, kv.ErrNotFound) {
@@ -191,6 +201,7 @@ func (s *Service) Describe(ctx context.Context, userID string) (*Descriptor, err
 	if err != nil {
 		return nil, err
 	}
+	descriptor.Status = user.Status
 	if s.cfg != nil && strings.TrimSpace(s.cfg.Passkey.RPID) != "" {
 		hasPasskey, err := db.NewWebAuthnRepository(s.database).HasCredentials(ctx, s.cfg.Passkey.RPID, userID)
 		if err != nil {
@@ -275,4 +286,23 @@ func (s *Service) FinishEmail(ctx context.Context, userID string, sessionID stri
 func tokenDigest(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+func (s *Service) validateSession(ctx context.Context, userID, sessionID string) error {
+	if s.database == nil {
+		return nil
+	}
+	user, err := db.NewUserRepository(s.database).FindByID(ctx, userID)
+	if err != nil {
+		return common.ErrReauthRequired
+	}
+	session, err := db.NewUserSessionRepository(s.database).FindByID(ctx, sessionID)
+	if err != nil {
+		return common.ErrReauthRequired
+	}
+	now, err := db.DatabaseTime(ctx, s.database)
+	if err != nil {
+		return err
+	}
+	return db.ValidateUserSession(ctx, s.database, user, session, now)
 }

@@ -51,7 +51,7 @@ func TestService_IssuedGrantIsReusableAndSessionBound(t *testing.T) {
 
 func TestService_RecentLoginAuthorizesSessionWithoutEmail(t *testing.T) {
 	database := newReauthTestDB(t)
-	require.NoError(t, database.Create(&model.User{ID: "user-1", IsActive: true}).Error)
+	require.NoError(t, database.Create(&model.User{ID: "user-1", Status: model.UserStatusActive}).Error)
 	now := time.Now()
 	require.NoError(t, database.Create(&model.UserSession{
 		ID: "session-1", UserID: "user-1", DeviceID: "device-1", AuthMethod: "GITHUB",
@@ -74,7 +74,7 @@ func TestService_DescribeOrdersAvailableMethodsAndMasksEmail(t *testing.T) {
 	email := "owner@example.com"
 	username := "owner"
 	avatarURL := "https://example.com/avatar.png"
-	require.NoError(t, database.Create(&model.User{ID: "user-1", Username: &username, Email: &email, AvatarURL: &avatarURL, IsActive: true}).Error)
+	require.NoError(t, database.Create(&model.User{ID: "user-1", Username: &username, Email: &email, AvatarURL: &avatarURL, Status: model.UserStatusActive}).Error)
 	require.NoError(t, database.Create(&model.WebAuthnCredential{
 		ID: "credential-1", RPID: "example.com", UserID: "user-1", CredentialID: []byte("credential"), PublicKey: []byte("key"),
 		AttestationType: "none", AttestationFormat: "none", TransportsJSON: "[]", Attachment: "platform", ExtensionsJSON: "{}", Name: "Passkey",
@@ -96,7 +96,9 @@ func TestService_DescribeOrdersAvailableMethodsAndMasksEmail(t *testing.T) {
 func TestService_EmailChallengeIsSessionBoundSingleUseAndIssuesGrant(t *testing.T) {
 	database := newReauthTestDB(t)
 	email := "owner@example.com"
-	require.NoError(t, database.Create(&model.User{ID: "user-1", Email: &email, IsActive: true}).Error)
+	require.NoError(t, database.Create(&model.User{ID: "user-1", Email: &email, Status: model.UserStatusActive}).Error)
+	now := time.Now()
+	require.NoError(t, database.Create(&model.UserSession{ID: "session-1", UserID: "user-1", DeviceID: "device-1", AuthMethod: "PASSWORD", CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour)}).Error)
 	verifiedAt := time.Now()
 	require.NoError(t, database.Create(&model.UserEmail{ID: "secondary", UserID: "user-1", Email: "secondary@example.com", VerifiedAt: &verifiedAt}).Error)
 	store := kv.NewMemoryStore()
@@ -130,7 +132,7 @@ func TestService_EmailChallengeIsSessionBoundSingleUseAndIssuesGrant(t *testing.
 func TestService_BeginEmailRequiresValidCaptcha(t *testing.T) {
 	database := newReauthTestDB(t)
 	email := "owner@example.com"
-	require.NoError(t, database.Create(&model.User{ID: "user-1", Email: &email, IsActive: true}).Error)
+	require.NoError(t, database.Create(&model.User{ID: "user-1", Email: &email, Status: model.UserStatusActive}).Error)
 	store := kv.NewMemoryStore()
 	config := &conf.Config{Auth: conf.AuthConfig{OTPSecret: "test-secret", OTPExpire: time.Minute, OTPMaxAttempts: 5}, Dev: conf.DevConfig{SkipSendMessage: true, FixedEmailOTP: "123456"}}
 	authService := serviceauth.NewAuthService(config, database, store, nil, nil, nil)
@@ -144,7 +146,7 @@ func newReauthTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	database, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}, &model.WebAuthnCredential{}))
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.UserSession{}, &model.WebAuthnCredential{}))
 	return database
 }
 

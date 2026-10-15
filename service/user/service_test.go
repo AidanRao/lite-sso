@@ -48,7 +48,7 @@ func Test_UnbindThirdParty_SupportedProvider(t *testing.T) {
 			createUnbindTestUser(t, database, &model.User{
 				ID:       "u1",
 				Email:    &email,
-				IsActive: true,
+				Status: model.UserStatusActive,
 			})
 			binding := createUnbindTestBinding(t, database, provider)
 			var emailRecord model.UserEmail
@@ -104,7 +104,7 @@ func Test_UnbindThirdParty_RejectsLastLoginMethodWithoutEmail(t *testing.T) {
 			createUnbindTestUser(t, database, &model.User{
 				ID:       "u1",
 				Email:    testCase.email,
-				IsActive: true,
+				Status: model.UserStatusActive,
 			})
 			createUnbindTestBinding(t, database, "github")
 
@@ -129,7 +129,7 @@ func Test_UnbindThirdParty_RejectsLastLoginMethodWithoutEmail(t *testing.T) {
 
 func Test_UnbindThirdParty_AllowsProviderOnlyAccountToKeepAnotherProvider(t *testing.T) {
 	database := newUnbindTestDB(t)
-	createUnbindTestUser(t, database, &model.User{ID: "u1", IsActive: true})
+	createUnbindTestUser(t, database, &model.User{ID: "u1", Status: model.UserStatusActive})
 	createUnbindTestBinding(t, database, "github")
 	createUnbindTestBinding(t, database, "feishu")
 
@@ -152,7 +152,7 @@ func Test_UnbindThirdParty_InvalidProvider(t *testing.T) {
 	createUnbindTestUser(t, database, &model.User{
 		ID:       "u1",
 		Email:    &email,
-		IsActive: true,
+		Status: model.UserStatusActive,
 	})
 
 	service := NewUserService(&conf.Config{}, database, nil, nil, nil)
@@ -168,7 +168,7 @@ func Test_UnbindThirdParty_NotBound(t *testing.T) {
 	createUnbindTestUser(t, database, &model.User{
 		ID:       "u1",
 		Email:    &email,
-		IsActive: true,
+		Status: model.UserStatusActive,
 	})
 
 	service := NewUserService(&conf.Config{}, database, nil, nil, nil)
@@ -186,7 +186,7 @@ func Test_UploadAvatar_ReplacesSystemAvatarAndDeletesOldObject(t *testing.T) {
 		ID:              "u1",
 		AvatarURL:       &previousURL,
 		AvatarObjectKey: &previousObjectKey,
-		IsActive:        true,
+		Status: model.UserStatusActive,
 	})
 	store := &fakeAvatarStore{
 		objectKey: "avatars/u1/new.png",
@@ -217,7 +217,7 @@ func Test_UploadAvatar_ReplacesSystemAvatarAndDeletesOldObject(t *testing.T) {
 func Test_UploadAvatar_PreservesExternalAvatarObject(t *testing.T) {
 	database := newUnbindTestDB(t)
 	externalURL := "https://avatars.example.com/u1.png"
-	createUnbindTestUser(t, database, &model.User{ID: "u1", AvatarURL: &externalURL, IsActive: true})
+	createUnbindTestUser(t, database, &model.User{ID: "u1", AvatarURL: &externalURL, Status: model.UserStatusActive})
 	store := &fakeAvatarStore{
 		objectKey: "avatars/u1/new.png",
 		avatarURL: "https://cdn.example.com/avatars/u1/new.png",
@@ -234,7 +234,7 @@ func Test_UploadAvatar_PreservesExternalAvatarObject(t *testing.T) {
 
 func Test_UploadAvatar_CleansNewObjectWhenDatabaseUpdateFails(t *testing.T) {
 	database := newUnbindTestDB(t)
-	createUnbindTestUser(t, database, &model.User{ID: "u1", IsActive: true})
+	createUnbindTestUser(t, database, &model.User{ID: "u1", Status: model.UserStatusActive})
 	if err := database.Exec("CREATE TRIGGER reject_avatar_update BEFORE UPDATE ON users BEGIN SELECT RAISE(FAIL, 'update rejected'); END;").Error; err != nil {
 		t.Fatalf("create update rejection trigger: %v", err)
 	}
@@ -256,7 +256,7 @@ func Test_UploadAvatar_CleansNewObjectWhenDatabaseUpdateFails(t *testing.T) {
 func Test_UploadAvatar_KeepsNewAvatarWhenOldObjectDeletionFails(t *testing.T) {
 	database := newUnbindTestDB(t)
 	previousObjectKey := "avatars/u1/old.png"
-	createUnbindTestUser(t, database, &model.User{ID: "u1", AvatarObjectKey: &previousObjectKey, IsActive: true})
+	createUnbindTestUser(t, database, &model.User{ID: "u1", AvatarObjectKey: &previousObjectKey, Status: model.UserStatusActive})
 	store := &fakeAvatarStore{
 		objectKey: "avatars/u1/new.png",
 		avatarURL: "https://cdn.example.com/avatars/u1/new.png",
@@ -294,7 +294,7 @@ func newUnbindTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserThirdParty{}, &model.UserEmailSource{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.UserThirdParty{}, &model.UserEmailSource{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return database

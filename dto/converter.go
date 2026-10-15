@@ -1,6 +1,8 @@
 package dto
 
-import "sso-server/model"
+import (
+	"sso-server/model"
+)
 
 // ToUserResponse converts a model.User to UserResponse DTO
 func ToUserResponse(user *model.User) *UserResponse {
@@ -8,6 +10,7 @@ func ToUserResponse(user *model.User) *UserResponse {
 		return nil
 	}
 	return &UserResponse{
+		Status:    user.Status,
 		ID:        user.ID,
 		Email:     user.Email,
 		Username:  user.Username,

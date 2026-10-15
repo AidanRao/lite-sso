@@ -32,5 +32,6 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		"access_token": pair.AccessToken,
 		"token_type":   "Bearer",
 		"expires_in":   pair.ExpiresIn,
+		"status":       pair.Status,
 	}))
 }

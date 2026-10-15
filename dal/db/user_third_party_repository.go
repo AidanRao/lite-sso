@@ -17,6 +17,9 @@ func NewUserThirdPartyRepository(db *gorm.DB) *UserThirdPartyRepository {
 }
 
 func (r *UserThirdPartyRepository) FindByProviderUID(ctx context.Context, provider, providerUID string) (*model.UserThirdParty, error) {
+	if err := PurgeExpiredIdentities(ctx, r.db, "id IN (?)", r.db.Model(&model.UserThirdParty{}).Select("user_id").Where("provider = ? AND provider_uid = ?", provider, providerUID)); err != nil {
+		return nil, err
+	}
 	var binding model.UserThirdParty
 	if err := r.db.WithContext(ctx).First(&binding, "provider = ? AND provider_uid = ?", provider, providerUID).Error; err != nil {
 		return nil, err

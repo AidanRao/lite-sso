@@ -41,7 +41,7 @@ func TestOAuth2_Authorize_RequiresSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}, &model.UserSession{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -86,13 +86,13 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}, &model.UserSession{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserThirdParty{}, &model.UserOAuthClient{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
 	userID := "u1"
 	email := "u1@example.com"
-	if err := db.Create(&model.User{ID: userID, Email: &email, IsActive: true}).Error; err != nil {
+	if err := db.Create(&model.User{ID: userID, Email: &email, Status: model.UserStatusActive}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	verifiedAt := time.Now()

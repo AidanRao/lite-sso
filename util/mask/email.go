@@ -15,6 +15,8 @@ func Email(value string) string {
 
 	local := []rune(value[:at])
 	switch length := len(local); {
+	case length > 11:
+		return string(local[:3]) + "***" + string(local[length-3:]) + value[at:]
 	case length > 8:
 		return string(local[:2]) + "***" + string(local[length-2:]) + value[at:]
 	case length >= 6:

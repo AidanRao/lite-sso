@@ -411,3 +411,55 @@ App 必须识别版本，精确匹配配置的 issuer，并将请求发往自己
 ### ip2region 数据部署
 
 默认从 `data/ip2region` 读取 `ip2region_v4.xdb` 与 `ip2region_v6.xdb`，可通过 `geoip.data_dir` / `GEOIP_DATA_DIR` 指定目录。两个容器镜像均携带数据文件，缺失或格式错误会阻止服务启动。数据来源、固定版本和替换步骤见仓库 `data/ip2region/README.md`。登录地点属于公网 IP 推测结果，VPN、代理和运营商出口会影响定位；更新数据库只影响之后生成的地点快照。
+
+## 账号状态与注销
+
+用户信息的 `status` 为 `active`（正常）、`disabled`（禁用）或 `pending_deletion`（待注销），替代原来的 `is_active`。`/api/user/profile`、登录结果的 `user` 和 `/oauth/userinfo` 均不携带注销申请时间或截止时间；SSO 刷新结果只增加 `status`。
+
+前端发现 `pending_deletion` 后进入 `/account/deletion`，主动调用以下接口获取详情：
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/api/user/account-deletion` | 查询状态、申请时间、截止时间及是否仍可撤销 |
+| POST | `/api/user/account-deletion` | 验证身份后申请注销，返回 202 |
+| DELETE | `/api/user/account-deletion` | 截止前验证身份并撤销注销 |
+
+接口使用 SSO Bearer Token。POST 和 DELETE 复用现有 `X-Reauth-Token` 或近期登录验证规则；不能用用户信息弹窗的文字输入代替后端身份验证。弹窗只在前端校验用户名或已验证邮箱（均不存在时使用用户 ID）及准确短语“注销我的账号”，这些文字不发送至注销 API。
+
+申请成功后立即撤销全部 SSO 会话并清除当前浏览器 Cookie。冷静期为服务端计算的完整 24 小时，邮箱、用户名、第三方身份在此期间仍被占用。重新登录只创建绑定本次申请的注销管理会话，允许查看状态、撤销、退出和必要的二次验证；不能管理账号资料、访问管理接口、授权应用或扫码批准其他浏览器。原登录跳转目标会被替换为注销状态页。
+
+GET 和 POST 成功响应的 `data` 示例：
+
+```json
+{
+  "status": "pending_deletion",
+  "deletion_requested_at": "2026-10-15T02:00:00Z",
+  "deletion_scheduled_at": "2026-10-16T02:00:00Z",
+  "can_cancel": true
+}
+```
+
+重复申请不延长截止时间。达到截止时间即不可撤销，DELETE 返回 409 和 `data.code=ACCOUNT_DELETION_DUE`；处于冷静期的账号访问普通受保护接口返回 403 和 `data.code=ACCOUNT_PENDING_DELETION`，不附带注销详情。撤销成功后须重新登录，旧会话、旧 OAuth 刷新授权、旧验证码和未完成的绑定流程不会恢复。
+
+最终注销会删除本系统的账号资料、邮箱及来源、第三方绑定、Passkey、会话、应用关联和功能名单，释放对应唯一身份。重新注册分配新的用户 ID。清理不会删除第三方平台账号、第三方头像地址或接入应用的业务数据。服务自行启动每分钟数据库扫描，并在重启后补做；同身份登录、注册或绑定时也会先处理到期注销，因此服务停机后的清理可能延迟，但不会延长可撤销窗口。
+
+OAuth 授权码兑换、刷新、userinfo 和扫码接口会检查账号状态及持久化撤销记录。Redis 暂时不可用不会让旧刷新授权在撤销注销后恢复；Redis 和自有头像清理使用独立持久化任务重试。接入应用仅离线验签的已签发 JWT 仍可在其原有效期内有效，本次没有增加下游退出通知或业务数据清理协议。
+
+状态值、任务类型及冷静期规则由 Go 代码验证，新增迁移不添加 SQL CHECK 约束。
+
+后端冷静期统一由 `service/user/deletion.go` 的 `DeletionCoolingPeriod` 常量定义，线上保持 `24 * time.Hour`，本地调试可临时缩短。前端说明固定为一天，实际截止时间始终读取服务端响应。
+
+升级时先应用 `00014_add_account_deletion.sql`，再部署新服务；该迁移将 `is_active` 转成 `status`，旧服务与新结构不兼容，应在维护窗口完成切换。既有禁用账号保持 `disabled`。审计日志继续按原有 90 天规则保留。
+
+本地验证：
+
+```bash
+GOCACHE=/private/tmp/lite-sso-go-cache go test ./...
+ACCOUNT_DELETION_TEST_DATABASE_DSN='<isolated PostgreSQL DSN>' go test ./service/user -run DeletionPostgres
+MIGRATION_TEST_DATABASE_DSN='<isolated PostgreSQL DSN>' go test ./cmd/migrate
+cd frontend
+npm test
+npm run build
+```
+
+PostgreSQL 测试在指定数据库内建立并清理独立 schema，不使用生产数据库。未提供相应 DSN 时，这些集成测试会明确跳过。

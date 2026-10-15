@@ -290,7 +290,7 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 		c.Redirect(http.StatusTemporaryRedirect, "/oauth/callback?error="+url.QueryEscape("不支持的第三方平台"))
 		return
 	}
-	_, pair, err := h.authService.CompleteLoginWithContext(c.Request.Context(), result.User.ID, result.Redirect, handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders), serviceauth.AuthMethod(authMethod))
+	loginResult, pair, err := h.authService.CompleteLoginWithContext(c.Request.Context(), result.User.ID, result.Redirect, handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders), serviceauth.AuthMethod(authMethod))
 	if err != nil {
 		audit.Error(c, err)
 		log.Printf("ThirdPartyCallback: complete login failed, provider=%s, user_id=%s, err=%v", provider, result.User.ID, err)
@@ -306,7 +306,7 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 	audit.Completed(c, "session_created")
 	audit.Success(c)
 	apiauth.WriteLoginCookies(c, pair, h.cookieSecure, h.authService.RefreshTokenTTL())
-	c.Redirect(http.StatusTemporaryRedirect, result.Redirect)
+	c.Redirect(http.StatusTemporaryRedirect, loginResult.RedirectURL)
 }
 
 func redirectThirdPartyBindingError(c *gin.Context, provider, message string) {

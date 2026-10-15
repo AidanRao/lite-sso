@@ -61,7 +61,7 @@ func Test_Service_PersistenceValidationAndRollback(t *testing.T) {
 	connection, err := database.DB()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = connection.Close() })
-	require.NoError(t, database.AutoMigrate(&model.User{}, &model.FeatureConfig{}, &model.FeatureUser{}))
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.FeatureConfig{}, &model.FeatureUser{}))
 	require.NoError(t, database.Create(&model.User{ID: "chosen"}).Error)
 	service := NewService(database)
 	ctx := context.Background()

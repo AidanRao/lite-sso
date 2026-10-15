@@ -24,6 +24,7 @@ import (
 	"sso-server/dal/kv"
 	"sso-server/handler/audit"
 	"sso-server/manager/oauth"
+	"sso-server/model"
 )
 
 type OAuth2 struct {
@@ -178,14 +179,28 @@ func (o *OAuth2) HandleAuthorize(c *gin.Context) {
 	c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), authorizationSessionKey{}, c.GetString("session_id")))
 	req.Request = c.Request
 
-	ti, err := o.server.GetAuthorizeToken(ctx, req)
+	var ti gooauth2.TokenInfo
+	err = o.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		user, err := db.LockActiveUser(ctx, tx, userID)
+		if err != nil {
+			return oauth2errors.ErrAccessDenied
+		}
+		now, err := db.DatabaseTime(ctx, tx)
+		if err != nil {
+			return err
+		}
+		session, err := db.NewUserSessionRepository(tx).FindActive(ctx, c.GetString("session_id"), now)
+		if err != nil || db.ValidateUserSession(ctx, tx, user, session, now) != nil {
+			return oauth2errors.ErrAccessDenied
+		}
+		ti, err = o.server.GetAuthorizeToken(ctx, req)
+		if err != nil {
+			return err
+		}
+		return db.NewUserOAuthClientRepository(tx).RecordLogin(ctx, userID, req.ClientID, now)
+	})
 	if err != nil {
 		o.redirectOrWriteAuthorizeError(c, req, err)
-		return
-	}
-
-	if err := db.NewUserOAuthClientRepository(o.db).RecordLogin(ctx, req.UserID, req.ClientID, time.Now()); err != nil {
-		o.writeTokenError(c, oauth2errors.ErrServerError)
 		return
 	}
 
@@ -240,7 +255,7 @@ func (o *OAuth2) HandleToken(c *gin.Context) {
 		return
 	}
 	grant := oauth.RefreshGrant{UserID: info.GetUserID(), ClientID: info.GetClientID(), Audiences: client.Audiences, Scopes: strings.Fields(info.GetScope()), AuthorizedAt: authorizedAt, ExpiresAt: time.Now().Add(o.cfg.Tokens.OAuth.RefreshTokenTTL)}
-	if err := o.refresh.Issue(c.Request.Context(), refreshToken, grant); err != nil {
+	if err := o.withRefreshAccount(c.Request.Context(), grant, func() error { return o.refresh.Issue(c.Request.Context(), refreshToken, grant) }); err != nil {
 		if errors.Is(err, oauth.ErrInvalidRefresh) {
 			o.writeTokenError(c, oauth2errors.ErrInvalidGrant)
 		} else {
@@ -264,6 +279,9 @@ func (o *OAuth2) ValidateToken(r *http.Request) (gooauth2.TokenInfo, error) {
 	if err != nil {
 		return nil, oauth2errors.ErrInvalidAccessToken
 	}
+	if err := o.validateAccountClaims(r.Context(), claims); err != nil {
+		return nil, err
+	}
 	info := models.NewToken()
 	info.SetUserID(claims.Subject)
 	info.SetClientID(claims.ClientID)
@@ -284,7 +302,7 @@ func (o *OAuth2) handleRefresh(c *gin.Context, request *gooauth2.TokenGenerateRe
 		return
 	}
 	user, err := db.NewUserRepository(o.db).FindByID(ctx, grant.UserID)
-	if err != nil || !user.IsActive {
+	if err != nil || user.Status == model.UserStatusDisabled || user.Status == model.UserStatusPendingDeletion || db.CheckUserRevocation(ctx, o.db, user.ID, grant.AuthorizedAt) != nil {
 		o.writeTokenError(c, oauth2errors.ErrInvalidGrant)
 		return
 	}
@@ -315,7 +333,7 @@ func (o *OAuth2) handleRefresh(c *gin.Context, request *gooauth2.TokenGenerateRe
 		return
 	}
 	grant.Audiences, grant.Scopes = audiences, allowedScopes
-	if err := o.refresh.Rotate(ctx, request.Refresh, newRefresh, grant); err != nil {
+	if err := o.withRefreshAccount(ctx, grant, func() error { return o.refresh.Rotate(ctx, request.Refresh, newRefresh, grant) }); err != nil {
 		if errors.Is(err, oauth.ErrInvalidRefresh) {
 			o.writeTokenError(c, oauth2errors.ErrInvalidGrant)
 		} else {
@@ -382,4 +400,18 @@ func clientInfoHandler(clientStore *ClientStore) oauth2server.ClientInfoHandler 
 		}
 		return clientID, clientSecret, nil
 	}
+}
+
+// RefreshStore returns the shared store used by durable account cleanup.
+func (o *OAuth2) RefreshStore() oauth.RefreshStore { return o.refresh }
+
+// withRefreshAccount serializes issuance and rotation with deletion and its durable cutoff.
+func (o *OAuth2) withRefreshAccount(ctx context.Context, grant oauth.RefreshGrant, issue func() error) error {
+	return o.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		user, err := db.LockActiveUser(ctx, tx, grant.UserID)
+		if err != nil || db.CheckUserRevocation(ctx, tx, user.ID, grant.AuthorizedAt) != nil {
+			return oauth.ErrInvalidRefresh
+		}
+		return issue()
+	})
 }

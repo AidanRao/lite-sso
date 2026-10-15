@@ -94,6 +94,7 @@ const normalizeDescriptor = (descriptor) => {
     : []
   return {
     methods: [...new Set(methods)],
+    status: String(descriptor?.status || 'active'),
     max_age: Number(descriptor?.max_age || 0),
     email_hint: String(descriptor?.email_hint || ''),
     username: String(descriptor?.username || ''),

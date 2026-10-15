@@ -163,11 +163,11 @@ func Test_Middleware_RealPasswordEmailQRCodeAndLogoutFlows(t *testing.T) {
 	sqlDB, err := database.DB()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}, &model.OAuthClient{}, &model.UserOAuthClient{}))
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.UserSession{}, &model.OAuthClient{}, &model.UserOAuthClient{}))
 	email := "private@example.com"
 	hash, err := auth.HashPassword("Password12345")
 	require.NoError(t, err)
-	require.NoError(t, database.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &hash, IsActive: true}).Error)
+	require.NoError(t, database.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &hash, Status: model.UserStatusActive}).Error)
 	store := kv.NewMemoryStore()
 	cfg := &conf.Config{
 		Tokens: conf.TokenConfig{Session: conf.SessionTokenConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour}},

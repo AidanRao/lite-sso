@@ -201,7 +201,7 @@ func (s *Service) FinishRegistration(ctx context.Context, userID string, session
 	if err != nil {
 		return nil, err
 	}
-	record, err := s.repo.CreateCredential(ctx, s.cfg.Passkey.RPID, userID, defaultCredentialName(verified, state.DeviceLabel), string(extensions), verified)
+	record, err := s.repo.CreateCredential(ctx, s.cfg.Passkey.RPID, userID, sessionID, defaultCredentialName(verified, state.DeviceLabel), string(extensions), verified)
 	if err != nil {
 		return nil, err
 	}
@@ -422,6 +422,10 @@ func (s *Service) takeCeremony(ctx context.Context, id string, kind ceremonyKind
 		return nil, common.ErrWebAuthnCeremonyInvalid
 	}
 	if state.Kind != kind || state.UserID != userID || state.SessionID != sessionID || state.Origin != origin || !time.Now().Before(state.ExpiresAt) {
+		return nil, common.ErrWebAuthnCeremonyInvalid
+	}
+	user, session, err := s.auth.ResolveSession(ctx, sessionID)
+	if err != nil || user.ID != userID || (kind == ceremonyRegistration && session.Purpose == model.SessionPurposeAccountDeletion) {
 		return nil, common.ErrWebAuthnCeremonyInvalid
 	}
 	return &state, nil

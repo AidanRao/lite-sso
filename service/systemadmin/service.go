@@ -215,7 +215,7 @@ func toAdminUserResponse(user *model.User, cfg *conf.Config) *dto.AdminUserRespo
 		Email:     user.Email,
 		Username:  user.Username,
 		AvatarURL: user.AvatarURL,
-		IsActive:  user.IsActive,
+		Status: user.Status,
 		IsAdmin:   cfg.IsAdminUser(user.ID),
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,

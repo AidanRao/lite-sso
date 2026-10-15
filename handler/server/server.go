@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -18,11 +19,13 @@ import (
 	manageross "sso-server/manager/oss"
 	"sso-server/manager/thirdparty"
 	"sso-server/service/auth"
+	"sso-server/service/user"
 	"sso-server/util/ipgeo"
 	"sso-server/util/requestmeta"
 )
 
 type Server struct {
+	userDeletionService *user.DeletionService
 	locationResolver    *ipgeo.Locator
 	auditRecorder       *manageraudit.Recorder
 	cfg                 *conf.Config
@@ -107,6 +110,7 @@ func New(cfg *conf.Config) (*Server, error) {
 		_ = srv.Shutdown(context.Background())
 		return nil, fmt.Errorf("initialize OAuth: %w", err)
 	}
+	srv.userDeletionService.Start()
 	return srv, nil
 }
 
@@ -128,13 +132,17 @@ func (s *Server) Start(ctx context.Context) error {
 
 // Shutdown releases shared resources after HTTP handlers have finished.
 func (s *Server) Shutdown(ctx context.Context) error {
+	var accountErr error
+	if s.userDeletionService != nil {
+		accountErr = s.userDeletionService.Shutdown(ctx)
+	}
 	if s.locationResolver != nil {
 		s.locationResolver.Close()
 	}
 	if s.auditRecorder == nil {
-		return nil
+		return accountErr
 	}
-	return s.auditRecorder.Shutdown(ctx)
+	return errors.Join(accountErr, s.auditRecorder.Shutdown(ctx))
 }
 
 // ServeHTTP delegates requests to the configured Gin engine.

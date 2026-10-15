@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"sso-server/common"
+	"sso-server/dal/db"
 	"sso-server/service/auth"
 )
 
@@ -19,6 +20,10 @@ func (o *OAuth2) ValidateQRCodeToken(request *http.Request) (auth.QRActor, bool,
 	}
 	claims, err := o.signer.parse(strings.TrimSpace(header[7:]))
 	if err != nil {
+		return auth.QRActor{}, false, common.ErrInvalidCredentials
+	}
+	user, err := db.NewUserRepository(o.db).FindByID(request.Context(), claims.Subject)
+	if err != nil || o.validateClaimsCutoff(request.Context(), user.ID, claims) != nil {
 		return auth.QRActor{}, false, common.ErrInvalidCredentials
 	}
 	permitted := slices.Contains(claims.Audience, auth.QRLoginAudience) && slices.Contains(strings.Fields(claims.Scope), auth.QRLoginScope)

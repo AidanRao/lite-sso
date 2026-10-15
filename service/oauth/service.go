@@ -43,17 +43,19 @@ type OAuthService struct {
 }
 
 type thirdPartyState struct {
-	Provider string `json:"provider"`
-	Redirect string `json:"redirect"`
-	Action   string `json:"action"`
-	UserID   string `json:"user_id,omitempty"`
-	DeviceID string `json:"device_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	Provider  string    `json:"provider"`
+	Redirect  string    `json:"redirect"`
+	Action    string    `json:"action"`
+	UserID    string    `json:"user_id,omitempty"`
+	DeviceID  string    `json:"device_id,omitempty"`
 }
 
 type pendingThirdPartyBinding struct {
-	UserID   string            `json:"user_id"`
-	Profile  thirdPartyProfile `json:"profile"`
-	Redirect string            `json:"redirect"`
+	CreatedAt time.Time         `json:"created_at"`
+	UserID    string            `json:"user_id"`
+	Profile   thirdPartyProfile `json:"profile"`
+	Redirect  string            `json:"redirect"`
 }
 
 type ThirdPartyCallbackResult struct {
@@ -107,7 +109,9 @@ func (s *OAuthService) GetUserInfo(ctx context.Context, userID string) (*dto.Use
 	if err != nil {
 		return nil, common.ErrUserNotFound
 	}
-
+	if user.Status != model.UserStatusActive {
+		return nil, common.ErrAccountPendingDeletion
+	}
 	return dto.ToUserResponse(user), nil
 }
 
@@ -136,10 +140,11 @@ func (s *OAuthService) HandleThirdPartyLoginWithDevice(ctx context.Context, prov
 	}
 
 	stateData, err := json.Marshal(thirdPartyState{
-		Provider: provider,
-		Redirect: redirectURL,
-		Action:   ThirdPartyActionLogin,
-		DeviceID: deviceID,
+		CreatedAt: time.Now(),
+		Provider:  provider,
+		Redirect:  redirectURL,
+		Action:    ThirdPartyActionLogin,
+		DeviceID:  deviceID,
 	})
 	if err != nil {
 		return "", common.ErrProviderAuthFailed
@@ -184,11 +189,12 @@ func (s *OAuthService) HandleThirdPartyBindWithDevice(ctx context.Context, userI
 	}
 
 	stateData, err := json.Marshal(thirdPartyState{
-		Provider: provider,
-		Redirect: redirectURL,
-		Action:   ThirdPartyActionBind,
-		UserID:   userID,
-		DeviceID: deviceID,
+		CreatedAt: time.Now(),
+		Provider:  provider,
+		Redirect:  redirectURL,
+		Action:    ThirdPartyActionBind,
+		UserID:    userID,
+		DeviceID:  deviceID,
 	})
 	if err != nil {
 		return "", common.ErrProviderAuthFailed
@@ -227,6 +233,10 @@ func (s *OAuthService) HandleThirdPartyCallbackWithState(ctx context.Context, pr
 	}
 
 	if stateData.Action == ThirdPartyActionBind {
+		boundUser, boundErr := s.userRepo.FindByID(ctx, stateData.UserID)
+		if boundErr != nil || boundUser.Status == model.UserStatusPendingDeletion || db.CheckUserRevocation(ctx, s.database, boundUser.ID, stateData.CreatedAt.UnixMicro()) != nil {
+			return nil, common.ErrProviderAuthFailed
+		}
 		user, err := s.validateThirdPartyBinding(ctx, stateData.UserID, profile)
 		if err != nil {
 			log.Printf("OAuthService: failed to prepare third party binding, provider=%s, provider_uid=%s, user_id=%s, err=%v", provider, profile.ProviderUID, stateData.UserID, err)
@@ -278,14 +288,27 @@ func (s *OAuthService) GetThirdPartyBindingPreview(ctx context.Context, userID, 
 
 // ConfirmThirdPartyBinding persists a previously previewed third-party binding.
 func (s *OAuthService) ConfirmThirdPartyBinding(ctx context.Context, userID, bindingID string) (*ThirdPartyBindingResult, error) {
-	pending, err := s.loadPendingThirdPartyBinding(ctx, userID, bindingID)
+	var pending *pendingThirdPartyBinding
+	err := s.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := db.LockActiveUser(ctx, tx, userID); err != nil {
+			return err
+		}
+		scoped := *s
+		scoped.database = tx
+		scoped.userRepo = db.NewUserRepository(tx)
+		scoped.userThirdPartyRepo = db.NewUserThirdPartyRepository(tx)
+		var err error
+		pending, err = scoped.loadPendingThirdPartyBinding(ctx, userID, bindingID)
+		if err != nil {
+			return err
+		}
+		_, err = scoped.bindThirdPartyUser(ctx, userID, &pending.Profile)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	if _, err := s.bindThirdPartyUser(ctx, userID, &pending.Profile); err != nil {
-		return nil, err
-	}
 	if err := s.kv.Del(ctx, kv.KeyOAuthPendingBinding(bindingID)); err != nil {
 		log.Printf("OAuthService: failed to delete confirmed third party binding, binding_id=%s, err=%v", bindingID, err)
 	}
@@ -344,9 +367,10 @@ func (s *OAuthService) createPendingThirdPartyBinding(ctx context.Context, userI
 		return "", err
 	}
 	raw, err := json.Marshal(pendingThirdPartyBinding{
-		UserID:   userID,
-		Profile:  *profile,
-		Redirect: redirect,
+		CreatedAt: time.Now(),
+		UserID:    userID,
+		Profile:   *profile,
+		Redirect:  redirect,
 	})
 	if err != nil {
 		return "", err
@@ -367,6 +391,10 @@ func (s *OAuthService) loadPendingThirdPartyBinding(ctx context.Context, userID,
 	}
 	var pending pendingThirdPartyBinding
 	if err := json.Unmarshal([]byte(raw), &pending); err != nil || pending.UserID != userID {
+		return nil, common.ErrThirdPartyBindingNotFound
+	}
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil || user.Status == model.UserStatusPendingDeletion || db.CheckUserRevocation(ctx, s.database, user.ID, pending.CreatedAt.UnixMicro()) != nil {
 		return nil, common.ErrThirdPartyBindingNotFound
 	}
 	return &pending, nil
@@ -394,7 +422,13 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, profile *thirdParty
 		user, err = s.userRepo.FindByEmail(ctx, profile.Email)
 	}
 	if err == nil && user != nil {
+		if user.Status == model.UserStatusDisabled || user.Status == model.UserStatusPendingDeletion {
+			return nil, common.ErrAccountPendingDeletion
+		}
 		err = s.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if _, err := db.LockActiveUser(ctx, tx, user.ID); err != nil {
+				return err
+			}
 			binding := &model.UserThirdParty{UserID: user.ID, Provider: profile.Provider, ProviderUID: profile.ProviderUID}
 			if err := db.NewUserThirdPartyRepository(tx).Create(ctx, binding); err != nil {
 				return err
@@ -418,7 +452,7 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, profile *thirdParty
 		Username:  stringPtr(profile.Username),
 		Email:     stringPtr(profile.Email),
 		AvatarURL: stringPtr(profile.AvatarURL),
-		IsActive:  true,
+		Status:    model.UserStatusActive,
 	}
 
 	err = s.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -449,6 +483,9 @@ func (s *OAuthService) bindThirdPartyUser(ctx context.Context, userID string, pr
 	}
 
 	err = s.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := db.LockActiveUser(ctx, tx, userID); err != nil {
+			return err
+		}
 		binding := &model.UserThirdParty{UserID: userID, Provider: profile.Provider, ProviderUID: profile.ProviderUID}
 		if err := db.NewUserThirdPartyRepository(tx).Create(ctx, binding); err != nil {
 			return err
@@ -477,6 +514,9 @@ func (s *OAuthService) validateThirdPartyBinding(ctx context.Context, userID str
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
 		return nil, common.ErrUserNotFound
+	}
+	if user.Status == model.UserStatusDisabled || user.Status == model.UserStatusPendingDeletion {
+		return nil, common.ErrAccountPendingDeletion
 	}
 
 	binding, err := s.userThirdPartyRepo.FindByProviderUID(ctx, profile.Provider, profile.ProviderUID)

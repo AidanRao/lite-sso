@@ -212,7 +212,7 @@ func assertMigrationVersionsRecordedOnce(t *testing.T, database *sql.DB) {
 		versions[version] = count
 	}
 	require.NoError(t, rows.Err())
-	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1, 11: 1}, versions)
+	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1}, versions)
 }
 
 func assertFinalDatabaseStructure(t *testing.T, database *sql.DB) {
@@ -221,10 +221,10 @@ func assertFinalDatabaseStructure(t *testing.T, database *sql.DB) {
 	var tableCount int
 	err := database.QueryRowContext(
 		context.Background(),
-		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('users', 'oauth_clients', 'user_third_party', 'user_oauth_clients', 'user_session', 'webauthn_users', 'webauthn_credentials', 'user_emails', 'user_email_sources', 'audit_logs')",
+		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('users', 'oauth_clients', 'user_third_party', 'user_oauth_clients', 'user_session', 'webauthn_users', 'webauthn_credentials', 'user_emails', 'user_email_sources', 'audit_logs', 'user_deletions', 'user_cleanup_tasks')",
 	).Scan(&tableCount)
 	require.NoError(t, err)
-	assert.Equal(t, 10, tableCount)
+	assert.Equal(t, 12, tableCount)
 
 	var legacyEmailColumnCount int
 	err = database.QueryRowContext(
@@ -261,4 +261,30 @@ func (d *postgresTestDatabase) open(t *testing.T) *sql.DB {
 	database := stdlib.OpenDB(*d.connectionConfig.Copy())
 	require.NoError(t, database.PingContext(context.Background()))
 	return database
+}
+
+func Test_UserStatusMigration_PreservesSuspensionAndCanRollback(t *testing.T) {
+	testDatabase := newPostgresTestDatabase(t)
+	database := testDatabase.open(t)
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
+	provider, err := migration.NewProvider(database, os.DirFS("../../migrations"), 1, 10)
+	require.NoError(t, err)
+	_, err = provider.UpTo(t.Context(), 13)
+	require.NoError(t, err)
+	_, err = database.ExecContext(t.Context(), "INSERT INTO users (id,is_active) VALUES ('active',true),('disabled',false)")
+	require.NoError(t, err)
+	_, err = provider.Up(t.Context())
+	require.NoError(t, err)
+	var active, disabled string
+	require.NoError(t, database.QueryRowContext(t.Context(), "SELECT status FROM users WHERE id = 'active'").Scan(&active))
+	require.NoError(t, database.QueryRowContext(t.Context(), "SELECT status FROM users WHERE id = 'disabled'").Scan(&disabled))
+	assert.Equal(t, "active", active)
+	assert.Equal(t, "disabled", disabled)
+	_, err = provider.Down(t.Context())
+	require.NoError(t, err)
+	var enabled bool
+	require.NoError(t, database.QueryRowContext(t.Context(), "SELECT is_active FROM users WHERE id = 'disabled'").Scan(&enabled))
+	assert.False(t, enabled)
+	_, err = provider.Up(t.Context())
+	require.NoError(t, err)
 }

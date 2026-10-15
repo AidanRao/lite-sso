@@ -104,7 +104,7 @@ func TestChangePassword_UpdatesPasswordAndRevokesOtherSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := database.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
+	if err := database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
 	oldHash, err := HashPassword("old-password-123")
@@ -112,7 +112,7 @@ func TestChangePassword_UpdatesPasswordAndRevokesOtherSessions(t *testing.T) {
 		t.Fatalf("hash old password: %v", err)
 	}
 	email := "u1@example.com"
-	if err := database.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &oldHash, IsActive: true}).Error; err != nil {
+	if err := database.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &oldHash, Status: model.UserStatusActive}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	now := time.Now()
@@ -164,7 +164,7 @@ func newPasswordLoginTestServiceWithDB(t *testing.T, password string) (*AuthServ
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := gormDB.AutoMigrate(&model.User{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
+	if err := gormDB.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.UserSession{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	hash, err := HashPassword(password)
@@ -172,7 +172,7 @@ func newPasswordLoginTestServiceWithDB(t *testing.T, password string) (*AuthServ
 		t.Fatalf("hash password: %v", err)
 	}
 	email := "u1@example.com"
-	if err := gormDB.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &hash, IsActive: true}).Error; err != nil {
+	if err := gormDB.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &hash, Status: model.UserStatusActive}).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	return NewAuthService(&conf.Config{}, gormDB, kv.NewMemoryStore(), nil, nil, nil), gormDB, email

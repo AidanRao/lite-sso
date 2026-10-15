@@ -44,6 +44,7 @@ type LoginMetadata struct {
 }
 
 type TokenPair struct {
+	Status       string
 	SessionID    string `json:"-"`
 	AccessToken  string
 	RefreshToken string
@@ -132,51 +133,64 @@ func (s *AuthService) CompleteLoginWithContext(ctx context.Context, userID strin
 	if s.db == nil {
 		return nil, nil, errors.New("database is nil")
 	}
-	user, err := db.NewUserRepository(s.db).FindByID(ctx, userID)
-	if err != nil {
-		return nil, nil, common.ErrInvalidCredentials
-	}
-	if !user.IsActive {
-		return nil, nil, common.ErrUserInactive
-	}
-	redirectURL, err := NormalizeLoginRedirect(redirect)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	sessionID := "ses_" + uuid.NewString()
-	refreshToken, err := generateRefreshToken(sessionID)
-	if err != nil {
-		return nil, nil, err
-	}
-	now := time.Now()
-	session := &model.UserSession{
-		ID:               sessionID,
-		UserID:           user.ID,
-		DeviceID:         metadata.DeviceID,
-		AuthMethod:       string(method),
-		RefreshTokenHash: refreshHash(refreshToken),
-		IP:               requestmeta.NormalizeIP(metadata.IP),
-		Location:         s.loginLocation(metadata.IP),
-		UserAgent:        useragent.Normalize(metadata.UserAgent),
-		CreatedAt:        now,
-		LastSeenAt:       now,
-		ExpiresAt:        now.Add(s.refreshTokenTTL()),
-	}
-	if err := db.NewUserSessionRepository(s.db).Create(ctx, session); err != nil {
-		return nil, nil, err
-	}
-	accessToken, expiresIn, err := s.issueAccessToken(user.ID, sessionID)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &LoginResult{
-		User:        dto.ToUserResponse(user),
-		RedirectURL: redirectURL,
-		AccessToken: accessToken,
-		TokenType:   "Bearer",
-		ExpiresIn:   expiresIn,
-	}, &TokenPair{SessionID: sessionID, AccessToken: accessToken, RefreshToken: refreshToken, ExpiresIn: expiresIn}, nil
+	var result *LoginResult
+	var pair *TokenPair
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		user, err := db.LockUser(ctx, tx, userID)
+		if err != nil {
+			return common.ErrInvalidCredentials
+		}
+		now, err := db.DatabaseTime(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if user.Status != model.UserStatusActive && user.Status != model.UserStatusPendingDeletion {
+			return common.ErrUserInactive
+		}
+		var deletionID *string
+		if user.Status == model.UserStatusPendingDeletion {
+			request, err := db.PendingUserDeletion(ctx, tx, user.ID)
+			if err != nil {
+				return err
+			}
+			if request.Due(now) {
+				return common.ErrAccountDeletionDue
+			}
+			deletionID = &request.ID
+		}
+		// Hydrate the verified primary email only after locking the account.
+		user, err = db.NewUserRepository(tx).FindByID(ctx, userID)
+		if err != nil {
+			return err
+		}
+		redirectURL := "/account/deletion"
+		purpose := model.SessionPurposeAccountDeletion
+		if user.Status != model.UserStatusPendingDeletion {
+			purpose = model.SessionPurposeNormal
+			redirectURL, err = NormalizeLoginRedirect(redirect)
+			if err != nil {
+				return err
+			}
+		}
+		sessionID := "ses_" + uuid.NewString()
+		refreshToken, err := generateRefreshToken(sessionID)
+		if err != nil {
+			return err
+		}
+		session := &model.UserSession{ID: sessionID, UserID: user.ID, DeviceID: metadata.DeviceID, AuthMethod: string(method), Purpose: purpose, DeletionID: deletionID,
+			RefreshTokenHash: refreshHash(refreshToken), IP: requestmeta.NormalizeIP(metadata.IP), Location: s.loginLocation(metadata.IP), UserAgent: useragent.Normalize(metadata.UserAgent), CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(s.refreshTokenTTL())}
+		if err := db.NewUserSessionRepository(tx).Create(ctx, session); err != nil {
+			return err
+		}
+		accessToken, expiresIn, err := s.issueAccessToken(user.ID, sessionID)
+		if err != nil {
+			return err
+		}
+		result = &LoginResult{User: dto.ToUserResponse(user), RedirectURL: redirectURL, AccessToken: accessToken, TokenType: "Bearer", ExpiresIn: expiresIn}
+		pair = &TokenPair{Status: user.Status, SessionID: sessionID, AccessToken: accessToken, RefreshToken: refreshToken, ExpiresIn: expiresIn}
+		return nil
+	})
+	return result, pair, err
 }
 
 // CompleteLogin is retained as a small internal adapter for non-HTTP callers.
@@ -200,46 +214,79 @@ func (s *AuthService) RefreshTokens(ctx context.Context, refreshToken string) (*
 	if len(parts) != 2 || !strings.HasPrefix(parts[0], "ses_") {
 		return nil, common.ErrRefreshTokenInvalid
 	}
-	repository := db.NewUserSessionRepository(s.db)
-	session, err := repository.FindByID(ctx, parts[0])
+	original, err := db.NewUserSessionRepository(s.db).FindByID(ctx, parts[0])
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.ErrRefreshTokenInvalid
-		}
-		return nil, err
-	}
-	if session.RevokedAt != nil || time.Now().After(session.ExpiresAt) {
 		return nil, common.ErrRefreshTokenInvalid
 	}
-	if subtle.ConstantTimeCompare([]byte(session.RefreshTokenHash), []byte(refreshHash(refreshToken))) != 1 {
-		_ = repository.Revoke(ctx, session.ID, "refresh_token_reuse", time.Now())
+	var pair *TokenPair
+	reuse := false
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		user, err := db.LockUser(ctx, tx, original.UserID)
+		if err != nil {
+			return common.ErrRefreshTokenInvalid
+		}
+		now, err := db.DatabaseTime(ctx, tx)
+		if err != nil {
+			return err
+		}
+		repository := db.NewUserSessionRepository(tx)
+		session, err := repository.FindByID(ctx, parts[0])
+		if err != nil {
+			return common.ErrRefreshTokenInvalid
+		}
+		if err := db.ValidateUserSession(ctx, tx, user, session, now); err != nil {
+			return common.ErrRefreshTokenInvalid
+		}
+		if subtle.ConstantTimeCompare([]byte(session.RefreshTokenHash), []byte(refreshHash(refreshToken))) != 1 {
+			reuse = true
+			return repository.Revoke(ctx, session.ID, "refresh_token_reuse", now)
+		}
+		newRefresh, err := generateRefreshToken(session.ID)
+		if err != nil {
+			return err
+		}
+		if err := repository.Rotate(ctx, session.ID, session.RefreshTokenHash, refreshHash(newRefresh), now); err != nil {
+			return err
+		}
+		access, expiresIn, err := s.issueAccessToken(session.UserID, session.ID)
+		if err != nil {
+			return err
+		}
+		pair = &TokenPair{Status: user.Status, SessionID: session.ID, AccessToken: access, RefreshToken: newRefresh, ExpiresIn: expiresIn}
+		return nil
+	})
+	if reuse {
 		return nil, common.ErrRefreshTokenInvalid
 	}
-	newRefresh, err := generateRefreshToken(session.ID)
+	return pair, err
+}
+
+// ResolveSession validates the current account and the session's lifecycle purpose.
+func (s *AuthService) ResolveSession(ctx context.Context, sessionID string) (*model.User, *model.UserSession, error) {
+	now, err := db.DatabaseTime(ctx, s.db)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	now := time.Now()
-	if err := repository.Rotate(ctx, session.ID, session.RefreshTokenHash, refreshHash(newRefresh), now); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			_ = repository.Revoke(ctx, session.ID, "refresh_token_reuse", now)
-			return nil, common.ErrRefreshTokenInvalid
-		}
-		return nil, err
-	}
-	access, expiresIn, err := s.issueAccessToken(session.UserID, session.ID)
+	session, err := db.NewUserSessionRepository(s.db).FindActive(ctx, sessionID, now)
 	if err != nil {
-		return nil, err
+		return nil, nil, common.ErrSessionRevoked
 	}
-	return &TokenPair{SessionID: session.ID, AccessToken: access, RefreshToken: newRefresh, ExpiresIn: expiresIn}, nil
+	user, err := db.NewUserRepository(s.db).FindByID(ctx, session.UserID)
+	if err != nil {
+		return nil, nil, common.ErrSessionRevoked
+	}
+	if err := db.ValidateUserSession(ctx, s.db, user, session, now); err != nil {
+		return nil, nil, err
+	}
+	return user, session, nil
 }
 
 func (s *AuthService) ResolveSessionUserID(ctx context.Context, sessionID string) (string, error) {
-	session, err := db.NewUserSessionRepository(s.db).FindActive(ctx, sessionID, time.Now())
+	user, _, err := s.ResolveSession(ctx, sessionID)
 	if err != nil {
-		return "", common.ErrSessionRevoked
+		return "", err
 	}
-	return session.UserID, nil
+	return user.ID, nil
 }
 
 func (s *AuthService) InvalidateSession(ctx context.Context, sessionID string) error {
@@ -279,7 +326,7 @@ func (s *AuthService) sessionForAccessToken(ctx context.Context, token string) (
 	if err != nil {
 		return nil, err
 	}
-	session, err := db.NewUserSessionRepository(s.db).FindActive(ctx, claims.SessionID, time.Now())
+	_, session, err := s.ResolveSession(ctx, claims.SessionID)
 	if err != nil || session.UserID != claims.Subject {
 		return nil, common.ErrSessionRevoked
 	}

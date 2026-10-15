@@ -154,6 +154,9 @@ func (s *UserService) UnbindThirdParty(ctx context.Context, userID string, provi
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := db.LockActiveUser(ctx, tx, userID); err != nil {
+			return err
+		}
 		userRepo := db.NewUserRepository(tx)
 		user, err := userRepo.FindByID(ctx, userID)
 		if err != nil {

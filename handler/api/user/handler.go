@@ -26,6 +26,7 @@ import (
 )
 
 type UserDeps struct {
+	Deletion         *serviceuser.DeletionService
 	LocationResolver ipgeo.Resolver
 	Config           *conf.Config
 	DB               *gorm.DB
@@ -37,6 +38,7 @@ type UserDeps struct {
 }
 
 type UserHandler struct {
+	deletions         *serviceuser.DeletionService
 	user              *serviceuser.UserService
 	auth              *serviceauth.AuthService
 	emails            *serviceuser.EmailService
@@ -48,7 +50,11 @@ type UserHandler struct {
 
 func NewUserHandler(deps UserDeps) *UserHandler {
 	trustProxyHeaders := deps.Config != nil && deps.Config.Server.TrustProxyHeaders
+	if deps.Deletion == nil {
+		deps.Deletion = serviceuser.NewDeletionService(deps.DB, nil, deps.ImageStore)
+	}
 	return &UserHandler{
+		deletions:         deps.Deletion,
 		permissions:       feature.NewService(deps.DB),
 		config:            deps.Config,
 		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2, deps.ImageStore, deps.ProviderRegistry),
