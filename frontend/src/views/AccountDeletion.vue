@@ -116,7 +116,7 @@ onMounted(() => {
   timer = window.setInterval(() => {
     now.value = Date.now()
     if (!restored.value && deadlinePassed.value && now.value >= nextStatusCheck) void load({ silent: true })
-  }, 1000)
+  }, 5000)
 })
 onBeforeUnmount(() => { disposed = true; window.clearInterval(timer) })
 </script>
