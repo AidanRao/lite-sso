@@ -21,8 +21,7 @@ import (
 
 const (
 	// DeletionCoolingPeriod defines the delay before an account is permanently deleted.
-	// DeletionCoolingPeriod = 24 * time.Hour
-	DeletionCoolingPeriod = 1 * time.Minute
+	DeletionCoolingPeriod = 24 * time.Hour
 	scanInterval          = time.Minute
 	batchSize             = 100
 )
