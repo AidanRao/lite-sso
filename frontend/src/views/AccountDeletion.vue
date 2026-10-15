@@ -9,18 +9,18 @@
         <RouterLink class="button primary" to="/login">重新登录</RouterLink>
       </template>
       <template v-else>
-        <p v-if="summary">{{ deadlinePassed ? '冷静期已结束，账号将完成注销，无法再撤销。' : '账号已进入 24 小时注销冷静期。' }}</p>
+        <p v-if="summary">{{ deadlinePassed ? '冷静期已结束，正在确认注销处理状态，无法再撤销。' : '账号已进入 24 小时注销冷静期。' }}</p>
         <dl v-if="summary"><dt>冷静期截止时间（北京时间）</dt><dd>{{ formatDeletionTime(summary.deletion_scheduled_at) }}</dd></dl>
         <template v-if="authenticated">
-          <p>冷静期内只能查看注销状态、撤销注销或退出。重新登录不会自动撤销注销。</p>
+          <p v-if="!deadlinePassed">冷静期内只能查看注销状态、撤销注销或退出。重新登录不会自动撤销注销。</p>
           <div class="actions">
             <button v-if="status?.can_cancel && !deadlinePassed" class="button primary" type="button" :disabled="submitting" @click="cancel">{{ submitting ? '正在处理…' : '撤销注销' }}</button>
             <button class="button" type="button" :disabled="submitting" @click="logout">退出登录</button>
           </div>
         </template>
         <template v-else>
-          <p>{{ summary ? '当前已退出所有设备。冷静期内可重新登录查看状态或撤销注销。' : '请登录查看注销状态或撤销尚在冷静期内的注销申请。' }}</p>
-          <RouterLink class="button primary" :to="{ path: '/login', query: { redirect: '/account/deletion' } }">登录管理注销</RouterLink>
+          <p v-if="!deadlinePassed">{{ summary ? '当前已退出所有设备。冷静期内可重新登录查看状态或撤销注销。' : '请登录查看注销状态或撤销尚在冷静期内的注销申请。' }}</p>
+          <RouterLink class="button primary" :to="deadlinePassed ? '/login' : { path: '/login', query: { redirect: '/account/deletion' } }">{{ deadlinePassed ? '返回登录' : '登录管理注销' }}</RouterLink>
         </template>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <button v-if="loadFailed" class="retry" type="button" @click="load">重新获取状态</button>
@@ -51,8 +51,12 @@ const now = ref(Date.now())
 const deadlinePassed = computed(() => summary.value && now.value >= Date.parse(summary.value.deletion_scheduled_at))
 let disposed = false
 let timer
-const load = async () => {
-  loading.value = true
+let fetching = false
+let nextStatusCheck = 0
+const load = async ({ silent = false } = {}) => {
+  if (fetching || disposed) return
+  fetching = true
+  if (!silent) loading.value = true
   loadFailed.value = false
   error.value = ''
   try {
@@ -66,8 +70,20 @@ const load = async () => {
   } catch (cause) {
     if (disposed) return
     authenticated.value = false
+    if (cause.status === 401 && deadlinePassed.value) {
+      clearAccessToken()
+      forgetDeletion()
+      summary.value = null
+      status.value = null
+      router.replace('/login')
+      return
+    }
     if (cause.status !== 401) { error.value = cause.message || '无法获取注销状态'; loadFailed.value = true }
-  } finally { if (!disposed) loading.value = false }
+  } finally {
+    fetching = false
+    nextStatusCheck = Date.now() + 15000
+    if (!disposed) loading.value = false
+  }
 }
 const cancel = async () => {
   if (submitting.value || !status.value?.can_cancel || deadlinePassed.value) return
@@ -95,7 +111,13 @@ const logout = async () => {
   } catch (cause) { error.value = cause.message || '退出失败，请重试' }
   finally { submitting.value = false }
 }
-onMounted(() => { void load(); timer = window.setInterval(() => { now.value = Date.now() }, 1000) })
+onMounted(() => {
+  void load()
+  timer = window.setInterval(() => {
+    now.value = Date.now()
+    if (!restored.value && deadlinePassed.value && now.value >= nextStatusCheck) void load({ silent: true })
+  }, 1000)
+})
 onBeforeUnmount(() => { disposed = true; window.clearInterval(timer) })
 </script>
 
