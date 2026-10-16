@@ -233,7 +233,7 @@ const updateMobileViewport = () => {
 const redirectUrl = ref(getLoginRedirect(route))
 const targetClient = ref(null)
 const targetClientName = computed(() => targetClient.value?.name || '')
-const targetClientLogo = computed(() => targetClient.value?.logo_url || (targetClient.value ? '' : `${import.meta.env.BASE_URL}assets/sso.png`))
+const targetClientLogo = computed(() => targetClient.value?.logo_url || (targetClient.value ? '' : `${import.meta.env.BASE_URL}assets/sso.svg`))
 
 const tabs = [
   { key: 'password', label: '密码登录' },
@@ -253,6 +253,10 @@ const oauthProviders = [
   {
     id: 'qq',
     name: 'QQ'
+  },
+  {
+    id: 'google',
+    name: 'Google'
   }
 ]
 
@@ -580,9 +584,9 @@ watch(activeTab, (tab) => {
 }
 
 .login-provider-button {
-  width: 60px;
-  height: 60px;
-  flex: 0 0 60px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   border-radius: 50%;
   padding: 0;
 }
@@ -621,7 +625,7 @@ watch(activeTab, (tab) => {
     overflow: hidden;
     overscroll-behavior: none;
     background: #fff;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) calc(env(safe-area-inset-bottom) + 16px) env(safe-area-inset-left);
   }
 
   .login-stack {
@@ -632,7 +636,7 @@ watch(activeTab, (tab) => {
   }
 
   .login-card {
-    padding: 24px;
+    padding: 16px 24px 24px;
     border-radius: 0;
     box-shadow: none;
   }
@@ -658,13 +662,7 @@ watch(activeTab, (tab) => {
 
   .login-divider {
     margin-bottom: 16px;
-    margin-top: 20px;
-  }
-
-  .login-provider-button {
-    width: 54px;
-    height: 54px;
-    flex-basis: 54px;
+    margin-top: 28px;
   }
 
   .login-register-link {
@@ -674,7 +672,7 @@ watch(activeTab, (tab) => {
 
 @media (max-width: 767px) and (max-height: 640px) {
   .login-card {
-    padding: 16px 24px;
+    padding: 8px 24px 16px;
   }
 
   .login-header,
@@ -694,13 +692,7 @@ watch(activeTab, (tab) => {
 
   .login-divider {
     margin-bottom: 12px;
-    margin-top: 12px;
-  }
-
-  .login-provider-button {
-    width: 48px;
-    height: 48px;
-    flex-basis: 48px;
+    margin-top: 20px;
   }
 
   .login-register-link {
@@ -710,7 +702,7 @@ watch(activeTab, (tab) => {
 
 @media (max-width: 767px) and (max-height: 760px) {
   .login-card--expanded {
-    padding-block: 8px;
+    padding-block: 4px 8px;
   }
 
   .login-card--expanded .login-header,
@@ -765,13 +757,7 @@ watch(activeTab, (tab) => {
 
   .login-card--expanded .login-divider {
     margin-bottom: 8px;
-    margin-top: 12px;
-  }
-
-  .login-card--expanded .login-provider-button {
-    width: 44px;
-    height: 44px;
-    flex-basis: 44px;
+    margin-top: 20px;
   }
 
   .login-card--expanded .login-register-link {

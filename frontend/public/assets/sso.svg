@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="192 192 880 880" fill="none">
+  <title>统一身份认证</title>
+  <defs>
+    <linearGradient id="shield" x1="260" y1="720" x2="925" y2="310" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0861ff" />
+      <stop offset=".52" stop-color="#208aff" />
+      <stop offset="1" stop-color="#14c7ef" />
+    </linearGradient>
+    <linearGradient id="shield-fold" x1="370" y1="675" x2="723" y2="1033" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#289cff" />
+      <stop offset="1" stop-color="#125aff" />
+    </linearGradient>
+    <linearGradient id="person" x1="498" y1="749" x2="733" y2="444" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1265ff" />
+      <stop offset="1" stop-color="#2b9aff" />
+    </linearGradient>
+    <linearGradient id="verified" x1="751" y1="686" x2="867" y2="929" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#25d7bf" />
+      <stop offset="1" stop-color="#00b1ae" />
+    </linearGradient>
+  </defs>
+  <path fill="url(#shield)" d="M626 212c-23 0-43 9-67 21-85 43-174 77-261 100-37 10-54 36-55 78-3 79-4 165 7 237 17 117 66 205 147 275 54 47 120 79 193 112 25 11 44 11 68 0 32-14 62-30 90-49 13-9 11-24-3-31-39-19-74-44-112-66-85-48-167-75-215-144-45-63-52-118-51-213l1-50c0-27 8-40 33-50 82-31 159-62 226-102 72 42 143 70 224 101 25 10 32 22 35 49 4 62 2 126-7 175 37 19 67 54 87 97 35-69 50-140 47-231l-2-109c-1-43-18-69-55-79-92-25-178-60-261-103-24-12-46-18-69-18Z" />
+  <path fill="url(#shield-fold)" d="M368 623c-20 47-50 83-66 126-8 21-6 34 3 50 24 47 55 88 92 124 54 47 120 79 193 112 25 11 44 11 68 0 32-14 62-30 90-49 13-9 11-24-3-31-39-19-74-44-112-66-85-48-167-75-215-144-27-38-43-76-50-122Z" />
+  <circle cx="626" cy="519" r="105" fill="url(#person)" />
+  <path fill="url(#person)" d="M626 625c-68 0-105 8-139 36-19 16-33 36-39 59-3 10 1 16 9 24 45 44 98 73 159 101 10 5 16 3 31-5-4-20-4-39 0-59 11-61 57-111 118-130-31-20-77-26-139-26Z" />
+  <circle cx="808" cy="805" r="131" fill="url(#verified)" />
+  <path stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="39" d="m752 812 37 35 80-79" />
+</svg>

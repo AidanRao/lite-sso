@@ -357,7 +357,7 @@ func TestAdminUserDetail_ReturnsProfileOverview(t *testing.T) {
 	if resp.Data.Profile.Applications[0].LogoURL == nil || *resp.Data.Profile.Applications[0].LogoURL != logoURL {
 		t.Fatalf("expected application logo, got %s", w.Body.String())
 	}
-	if len(resp.Data.Profile.ThirdPartyProviders) != 3 || !resp.Data.Profile.ThirdPartyProviders[0].Bound || resp.Data.Profile.ThirdPartyProviders[2].Provider != "qq" {
+	if len(resp.Data.Profile.ThirdPartyProviders) != 4 || !resp.Data.Profile.ThirdPartyProviders[0].Bound || resp.Data.Profile.ThirdPartyProviders[2].Provider != "qq" {
 		t.Fatalf("expected github bound provider, got %s", w.Body.String())
 	}
 }

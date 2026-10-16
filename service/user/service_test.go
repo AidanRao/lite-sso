@@ -41,7 +41,7 @@ func (s *fakeAvatarStore) DeleteImage(_ context.Context, objectKey string) error
 }
 
 func Test_UnbindThirdParty_SupportedProvider(t *testing.T) {
-	for _, provider := range []string{"github", "feishu", "qq"} {
+	for _, provider := range []string{"github", "feishu", "qq", "google"} {
 		t.Run(provider, func(t *testing.T) {
 			database := newUnbindTestDB(t)
 			email := provider + "@example.com"
@@ -156,7 +156,7 @@ func Test_UnbindThirdParty_InvalidProvider(t *testing.T) {
 	})
 
 	service := NewUserService(&conf.Config{}, database, nil, nil, nil)
-	err := service.UnbindThirdParty(context.Background(), "u1", "google")
+	err := service.UnbindThirdParty(context.Background(), "u1", "unknown-provider")
 	if !errors.Is(err, common.ErrInvalidProvider) {
 		t.Fatalf("expected ErrInvalidProvider, got %v", err)
 	}

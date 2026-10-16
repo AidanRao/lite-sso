@@ -185,6 +185,7 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 			GitHub: conf.GitHubOAuthConfig{ClientID: "github-id", ClientSecret: "github-secret"},
 			Feishu: conf.FeishuOAuthConfig{ClientID: "feishu-id"},
 			QQ:     conf.QQOAuthConfig{ClientID: "qq-id", ClientSecret: "qq-secret", RedirectURI: "https://sso.example.com/api/auth/third/qq/callback"},
+			Google: conf.GoogleOAuthConfig{ClientID: "google-id", ClientSecret: "google-secret", RedirectURI: "https://sso.example.com/api/auth/third/google/callback"},
 		}},
 		DB: database,
 		KV: kvStore,
@@ -215,8 +216,8 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(payload.Data.Methods) != 5 {
-		t.Fatalf("expected email, password, qr code, github and qq methods, got %s", response.Body.String())
+	if len(payload.Data.Methods) != 6 {
+		t.Fatalf("expected email, password, qr code, github, qq and google methods, got %s", response.Body.String())
 	}
 	if payload.Data.Methods[0].Type != "email_otp" || !payload.Data.Methods[0].Available || payload.Data.Methods[0].Email != email || payload.Data.Methods[0].VerifiedEmailCount != 2 {
 		t.Fatalf("expected email OTP first, got %s", response.Body.String())
@@ -234,6 +235,10 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 	qq := payload.Data.Methods[4]
 	if qq.Type != "third_party" || qq.Available || qq.Provider != "qq" || qq.Bound == nil || *qq.Bound {
 		t.Fatalf("expected configured unbound qq method, got %s", response.Body.String())
+	}
+	google := payload.Data.Methods[5]
+	if google.Type != "third_party" || google.Available || google.Provider != "google" || google.Bound == nil || *google.Bound {
+		t.Fatalf("expected configured unbound google method, got %s", response.Body.String())
 	}
 }
 

@@ -133,6 +133,19 @@ type ThirdPartyOAuthConfig struct {
 	GitHub GitHubOAuthConfig `mapstructure:"github"`
 	Feishu FeishuOAuthConfig `mapstructure:"feishu"`
 	QQ     QQOAuthConfig     `mapstructure:"qq"`
+	Google GoogleOAuthConfig `mapstructure:"google"`
+}
+
+// GoogleOAuthConfig contains credentials for Google's web authorization code flow.
+type GoogleOAuthConfig struct {
+	ClientID     string `mapstructure:"client_id"`
+	ClientSecret string `mapstructure:"client_secret"`
+	RedirectURI  string `mapstructure:"redirect_uri"`
+}
+
+// IsConfigured reports whether Google OAuth has its credentials and callback.
+func (c GoogleOAuthConfig) IsConfigured() bool {
+	return strings.TrimSpace(c.ClientID) != "" && strings.TrimSpace(c.ClientSecret) != "" && strings.TrimSpace(c.RedirectURI) != ""
 }
 
 type GitHubOAuthConfig struct {

@@ -11,6 +11,7 @@ test('third-party redirects describe distinct business stages rather than HTTP s
   assert.match(auditSummary({ ...event, action: 'auth.login.third_party', details: { auth_method: 'github', completed_steps: ['session_created'] } }), /通过GitHub完成登录/)
   assert.equal(auditSummary({ ...event, action: 'oauth.authorize', client_id: 'demo-app', details: { completed_steps: ['authorization_code_issued'] } }), '已为应用 demo-app 完成账号授权。')
   assert.match(auditSummary({ ...event, action: 'auth.login.third_party', details: { provider: 'qq', auth_method: 'qq', completed_steps: ['session_created'] } }), /通过QQ完成登录/)
+  assert.match(auditSummary({ ...event, action: 'auth.login.third_party', details: { provider: 'google', auth_method: 'google', completed_steps: ['session_created'] } }), /通过Google完成登录/)
   assert.equal(auditSummary({ ...event, action: 'auth.login.third_party', outcome: 'failure', reason_code: 'UNCLASSIFIED_REDIRECT' }), '跳转结果未确认')
   assert.doesNotMatch(auditSummary({ ...event, action: 'auth.login.third_party', outcome: 'failure', reason_code: 'PROVIDER_AUTH_FAILED' }), /完成登录/)
 })

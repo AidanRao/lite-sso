@@ -68,6 +68,10 @@ dev:
   fixed_email_otp: "123456"
 
 oauth:
+  google:
+    client_id: "google-client-id"
+    client_secret: "google-client-secret"
+    redirect_uri: "http://localhost:8080/api/auth/third/google/callback"
   github:
     client_id: "github-client-id"
     client_secret: "github-client-secret"
