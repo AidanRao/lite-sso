@@ -37,8 +37,8 @@ func (p *fakeThirdPartyProvider) FetchProfile(ctx context.Context, code string) 
 func Test_OAuthService_RegistersEverySupportedProvider(t *testing.T) {
 	service := NewOAuthService(&conf.Config{}, nil, kv.NewMemoryStore(), nil)
 	providers := service.registry.Names()
-	if len(providers) != 3 {
-		t.Fatalf("expected three provider implementations, got %d", len(providers))
+	if len(providers) != 4 {
+		t.Fatalf("expected four provider implementations, got %d", len(providers))
 	}
 	for _, provider := range providers {
 		if adapter, ok := service.registry.Get(provider); !ok || adapter == nil {

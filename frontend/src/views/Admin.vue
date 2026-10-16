@@ -585,7 +585,8 @@ const providerName = (provider) => {
   const names = {
     github: 'GitHub',
     feishu: '飞书',
-    qq: 'QQ'
+    qq: 'QQ',
+    google: 'Google'
   }
   return names[provider] || provider
 }

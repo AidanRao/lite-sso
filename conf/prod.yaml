@@ -53,6 +53,8 @@ oss:
   public_base_url: "https://aidan-space.oss-cn-beijing.aliyuncs.com"
 
 oauth:
+  google:
+    redirect_uri: "https://sso.aidanrao.top/api/auth/third/google/callback"
   github:
     redirect_uri: "https://sso.aidanrao.top/api/auth/third/github/callback"
   feishu:

@@ -121,7 +121,7 @@ const atLimit = computed(() => emails.value.length >= maxAddresses.value)
 const verifiedEmails = computed(() => emails.value.filter(item => item.verified))
 const primaryEmailOptions = computed(() => verifiedEmails.value.map(item => ({ value: item.id, label: item.email })))
 
-const providerName = (provider) => ({ github: 'GitHub', feishu: '飞书', qq: 'QQ' }[provider] || provider)
+const providerName = (provider) => ({ github: 'GitHub', feishu: '飞书', qq: 'QQ', google: 'Google' }[provider] || provider)
 
 const syncPrimarySelection = () => {
   const current = emails.value.find(item => item.is_primary)

@@ -12,6 +12,7 @@ const (
 	GitHub = "github"
 	Feishu = "feishu"
 	QQ     = "qq"
+	Google = "google"
 )
 
 // Profile is the verified identity returned by an external provider.
@@ -57,6 +58,7 @@ func NewBuiltins(cfg *conf.Config) *Registry {
 	registry.mustRegister(GitHub, "GITHUB", newGitHubProvider(cfg.OAuth.GitHub))
 	registry.mustRegister(Feishu, "FEISHU", newFeishuProvider(cfg.OAuth.Feishu))
 	registry.mustRegister(QQ, "QQ", newQQProvider(cfg.OAuth.QQ))
+	registry.mustRegister(Google, "GOOGLE", newGoogleProvider(cfg.OAuth.Google))
 	registry.Freeze()
 	return registry
 }

@@ -62,8 +62,8 @@ const reasons = {
   OAUTH_CLIENT_EXISTS: '应用已存在', OAUTH_CLIENT_NOT_FOUND: '应用不存在', INVALID_OAUTH_CLIENT: '应用信息无效', LOGO_STORAGE_UNAVAILABLE: '应用 Logo 存储暂不可用',
   QR_CLIENT_FORBIDDEN: '应用未获准扫码登录', QR_TOKEN_PERMISSION_MISSING: '令牌缺少扫码权限', QR_BROWSER_INVALID: '浏览器登录凭证不匹配', QR_CODE_EXPIRED: '登录二维码已过期', QR_CODE_INVALID_STATUS: '登录二维码状态无效', QR_CODE_INVALID_USER: '扫码账号不匹配', QR_CODE_INVALID_TICKET: '扫码登录凭据无效'
 }
-const authMethods = { password: '密码', email_otp: '邮箱验证码', qr_code: '扫码', github: 'GitHub', feishu: '飞书', qq: 'QQ', passkey: 'Passkey' }
-const providers = { github: 'GitHub', feishu: '飞书', qq: 'QQ' }
+const authMethods = { password: '密码', email_otp: '邮箱验证码', qr_code: '扫码', github: 'GitHub', feishu: '飞书', qq: 'QQ', google: 'Google', passkey: 'Passkey' }
+const providers = { github: 'GitHub', feishu: '飞书', qq: 'QQ', google: 'Google' }
 const targets = { feature: '功能', user: '账号', email: '邮箱', device: '登录设备', provider: '第三方平台', passkey: 'Passkey', oauth_client: '应用' }
 const fields = { audience: '开放范围', percentage: '灰度百分比', stage: '发布阶段', user_ids: '指定用户', username: '用户名', avatar: '头像', password: '密码', email: '邮箱', verified: '邮箱验证状态', is_primary: '主邮箱', name: '名称', provider: '第三方绑定', passkey: 'Passkey', session: '会话', logo: 'Logo', client_secret: '应用密钥', redirect_uri: '回调地址', logout_uri: '退出地址', homepage_url: '主页地址', status: '账号状态', is_active: '启用状态', description: '描述' }
 const steps = { user_created: '账号已创建', session_created: '登录会话已创建', password_updated: '密码已更新', sessions_revoked: '会话已撤销', email_created: '邮箱已添加', verification_sent: '验证邮件已发送', email_verified: '邮箱已验证', binding_prepared: '绑定预览已准备', binding_created: '第三方绑定已完成', authorization_code_issued: '应用授权码已签发' }

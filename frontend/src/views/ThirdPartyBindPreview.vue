@@ -139,7 +139,8 @@ const preview = ref(null)
 const providerNames = {
   github: 'GitHub',
   feishu: '飞书',
-  qq: 'QQ'
+  qq: 'QQ',
+  google: 'Google'
 }
 const selectedProvider = computed(() => {
   const provider = preview.value?.provider || requestedProvider.value
