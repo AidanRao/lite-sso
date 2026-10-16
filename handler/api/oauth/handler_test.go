@@ -82,6 +82,12 @@ func Test_OAuthHandler_GoogleCallback_CreatesBrowserSessionAndRejectsReplay(t *t
 	var session model.UserSession
 	require.NoError(t, database.First(&session, "id = ?", sessionCookie.Value).Error)
 	require.Equal(t, "GOOGLE", session.AuthMethod)
+	var binding model.UserThirdParty
+	require.NoError(t, database.First(&binding, "user_id = ? AND provider = ?", session.UserID, thirdparty.Google).Error)
+	require.NotNil(t, binding.BoundAt)
+	require.NotNil(t, binding.LastUsedAt)
+	require.True(t, session.CreatedAt.Equal(*binding.LastUsedAt))
+	lastUsed := *binding.LastUsedAt
 	authorize := httptest.NewRecorder()
 	request = httptest.NewRequest(http.MethodGet, redirect, nil)
 	request.AddCookie(sessionCookie)
@@ -93,6 +99,8 @@ func Test_OAuthHandler_GoogleCallback_CreatesBrowserSessionAndRejectsReplay(t *t
 	require.Empty(t, replay.Result().Cookies())
 	require.NotEqual(t, redirect, replay.Header().Get("Location"))
 	require.Equal(t, 1, provider.calls)
+	require.NoError(t, database.First(&binding, binding.ID).Error)
+	require.True(t, lastUsed.Equal(*binding.LastUsedAt))
 }
 
 func (p *googleTestProvider) Configured() bool {

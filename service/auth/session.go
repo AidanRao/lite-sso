@@ -38,9 +38,11 @@ const (
 )
 
 type LoginMetadata struct {
-	DeviceID  string
-	IP        string
-	UserAgent string
+	DeviceID           string
+	IP                 string
+	UserAgent          string
+	ThirdPartyProvider string
+	ThirdPartyUID      string
 }
 
 type TokenPair struct {
@@ -185,6 +187,11 @@ func (s *AuthService) CompleteLoginWithContext(ctx context.Context, userID strin
 		accessToken, expiresIn, err := s.issueAccessToken(user.ID, sessionID)
 		if err != nil {
 			return err
+		}
+		if metadata.ThirdPartyProvider != "" && metadata.ThirdPartyUID != "" {
+			if err := db.NewUserThirdPartyRepository(tx).UpdateLastUsed(ctx, user.ID, metadata.ThirdPartyProvider, metadata.ThirdPartyUID, now); err != nil {
+				return err
+			}
 		}
 		result = &LoginResult{User: dto.ToUserResponse(user), RedirectURL: redirectURL, AccessToken: accessToken, TokenType: "Bearer", ExpiresIn: expiresIn}
 		pair = &TokenPair{Status: user.Status, SessionID: sessionID, AccessToken: accessToken, RefreshToken: refreshToken, ExpiresIn: expiresIn}

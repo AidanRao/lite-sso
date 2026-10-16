@@ -138,16 +138,11 @@ func (r *githubUserResponse) toProfile() *Profile {
 		email = *r.Email
 	}
 
-	username := r.Name
-	if username == "" {
-		username = r.Login
-	}
-
 	return &Profile{
 		Provider:    GitHub,
 		ProviderUID: fmt.Sprintf("%d", r.ID),
 		Email:       email,
-		Username:    username,
+		Username:    r.Name,
 		AvatarURL:   r.AvatarURL,
 	}
 }

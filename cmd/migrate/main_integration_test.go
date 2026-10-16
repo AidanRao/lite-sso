@@ -147,6 +147,62 @@ func Test_UserEmailsMigration_AllowsUsersWithoutEmail(t *testing.T) {
 	assert.False(t, restoredEmail.Valid)
 }
 
+func Test_ThirdPartyProfileMigration_UpAndDown(t *testing.T) {
+	testDatabase := newPostgresTestDatabase(t)
+	database := testDatabase.open(t)
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
+	provider, err := migration.NewProvider(database, os.DirFS("../../migrations"), 1, 11)
+	require.NoError(t, err)
+	ctx := context.Background()
+	_, err = provider.UpTo(ctx, 14)
+	require.NoError(t, err)
+	_, err = database.ExecContext(ctx, "INSERT INTO user_third_party (user_id, provider, provider_uid) VALUES ('u1', 'github', 'identity')")
+	require.NoError(t, err)
+	_, err = provider.UpTo(ctx, 15)
+	require.NoError(t, err)
+	var email, username string
+	require.NoError(t, database.QueryRowContext(ctx, "SELECT email, username FROM user_third_party WHERE user_id = 'u1'").Scan(&email, &username))
+	assert.Empty(t, email)
+	assert.Empty(t, username)
+	_, err = database.ExecContext(ctx, "UPDATE user_third_party SET email = 'github@example.com', username = 'github-login' WHERE user_id = 'u1'")
+	require.NoError(t, err)
+	_, err = provider.Down(ctx)
+	require.NoError(t, err)
+	var providerUID string
+	require.NoError(t, database.QueryRowContext(ctx, "SELECT provider_uid FROM user_third_party WHERE user_id = 'u1'").Scan(&providerUID))
+	assert.Equal(t, "identity", providerUID)
+	var profileColumnCount int
+	require.NoError(t, database.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'user_third_party' AND column_name IN ('email', 'username')").Scan(&profileColumnCount))
+	assert.Zero(t, profileColumnCount)
+}
+
+func Test_ThirdPartyTimestampsMigration_UpAndDown(t *testing.T) {
+	testDatabase := newPostgresTestDatabase(t)
+	database := testDatabase.open(t)
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
+	provider, err := migration.NewProvider(database, os.DirFS("../../migrations"), 1, 11)
+	require.NoError(t, err)
+	ctx := context.Background()
+	_, err = provider.UpTo(ctx, 15)
+	require.NoError(t, err)
+	_, err = database.ExecContext(ctx, "INSERT INTO user_third_party (user_id, provider, provider_uid) VALUES ('u1', 'github', 'identity')")
+	require.NoError(t, err)
+	_, err = provider.UpTo(ctx, 16)
+	require.NoError(t, err)
+	var boundAt, lastUsedAt sql.NullTime
+	require.NoError(t, database.QueryRowContext(ctx, "SELECT bound_at, last_used_at FROM user_third_party WHERE user_id = 'u1'").Scan(&boundAt, &lastUsedAt))
+	assert.False(t, boundAt.Valid)
+	assert.False(t, lastUsedAt.Valid)
+	_, err = provider.Down(ctx)
+	require.NoError(t, err)
+	var providerUID string
+	require.NoError(t, database.QueryRowContext(ctx, "SELECT provider_uid FROM user_third_party WHERE user_id = 'u1'").Scan(&providerUID))
+	assert.Equal(t, "identity", providerUID)
+	var columnCount int
+	require.NoError(t, database.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'user_third_party' AND column_name IN ('bound_at', 'last_used_at')").Scan(&columnCount))
+	assert.Zero(t, columnCount)
+}
+
 func Test_MigrationLock_ProductionTimeout(t *testing.T) {
 	assert.Equal(t, uint64(5), migration.LockPeriod)
 	assert.Equal(t, uint64(60), migration.LockFailureThreshold)
@@ -212,7 +268,7 @@ func assertMigrationVersionsRecordedOnce(t *testing.T, database *sql.DB) {
 		versions[version] = count
 	}
 	require.NoError(t, rows.Err())
-	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1}, versions)
+	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 1, 16: 1}, versions)
 }
 
 func assertFinalDatabaseStructure(t *testing.T, database *sql.DB) {

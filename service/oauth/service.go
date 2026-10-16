@@ -64,6 +64,7 @@ type ThirdPartyCallbackResult struct {
 	Action           string
 	DeviceID         string
 	PendingBindingID string
+	ProviderUID      string
 }
 
 // ThirdPartyBindingPreview contains the provider profile awaiting user confirmation.
@@ -264,10 +265,11 @@ func (s *OAuthService) HandleThirdPartyCallbackWithState(ctx context.Context, pr
 	}
 
 	return &ThirdPartyCallbackResult{
-		User:     dto.ToUserResponse(user),
-		Redirect: stateData.Redirect,
-		Action:   ThirdPartyActionLogin,
-		DeviceID: stateData.DeviceID,
+		User:        dto.ToUserResponse(user),
+		Redirect:    stateData.Redirect,
+		Action:      ThirdPartyActionLogin,
+		DeviceID:    stateData.DeviceID,
+		ProviderUID: profile.ProviderUID,
 	}, nil
 }
 
@@ -411,6 +413,11 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, profile *thirdParty
 		if err != nil {
 			return nil, err
 		}
+		if user.Status == model.UserStatusActive {
+			if err := s.userThirdPartyRepo.UpdateProfile(ctx, binding.ID, profile.Email, profile.Username); err != nil {
+				return nil, err
+			}
+		}
 		return user, nil
 	}
 
@@ -429,7 +436,7 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, profile *thirdParty
 			if _, err := db.LockActiveUser(ctx, tx, user.ID); err != nil {
 				return err
 			}
-			binding := &model.UserThirdParty{UserID: user.ID, Provider: profile.Provider, ProviderUID: profile.ProviderUID}
+			binding := newThirdPartyBinding(user.ID, profile)
 			if err := db.NewUserThirdPartyRepository(tx).Create(ctx, binding); err != nil {
 				return err
 			}
@@ -459,7 +466,7 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, profile *thirdParty
 		if err := db.NewUserRepository(tx).Create(ctx, user); err != nil {
 			return err
 		}
-		binding := &model.UserThirdParty{UserID: userID, Provider: profile.Provider, ProviderUID: profile.ProviderUID}
+		binding := newThirdPartyBinding(userID, profile)
 		if err := db.NewUserThirdPartyRepository(tx).Create(ctx, binding); err != nil {
 			return err
 		}
@@ -486,7 +493,7 @@ func (s *OAuthService) bindThirdPartyUser(ctx context.Context, userID string, pr
 		if _, err := db.LockActiveUser(ctx, tx, userID); err != nil {
 			return err
 		}
-		binding := &model.UserThirdParty{UserID: userID, Provider: profile.Provider, ProviderUID: profile.ProviderUID}
+		binding := newThirdPartyBinding(userID, profile)
 		if err := db.NewUserThirdPartyRepository(tx).Create(ctx, binding); err != nil {
 			return err
 		}
@@ -539,6 +546,18 @@ func (s *OAuthService) validateThirdPartyBinding(ctx context.Context, userID str
 	}
 
 	return user, nil
+}
+
+func newThirdPartyBinding(userID string, profile *thirdPartyProfile) *model.UserThirdParty {
+	now := time.Now().UTC()
+	return &model.UserThirdParty{
+		UserID:      userID,
+		Provider:    profile.Provider,
+		ProviderUID: profile.ProviderUID,
+		Email:       profile.Email,
+		Username:    profile.Username,
+		BoundAt:     &now,
+	}
 }
 
 func generateState() (string, error) {

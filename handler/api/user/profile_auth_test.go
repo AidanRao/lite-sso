@@ -172,7 +172,9 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 	if err := database.Create(&model.UserEmail{ID: "ue-secondary", UserID: "u1", Email: "secondary@example.com", VerifiedAt: &verifiedAt}).Error; err != nil {
 		t.Fatalf("create secondary email: %v", err)
 	}
-	if err := database.Create(&model.UserThirdParty{UserID: "u1", Provider: "github", ProviderUID: "gh-1"}).Error; err != nil {
+	boundAt := time.Date(2026, 10, 16, 3, 0, 0, 0, time.UTC)
+	lastUsedAt := boundAt.Add(time.Hour)
+	if err := database.Create(&model.UserThirdParty{UserID: "u1", Provider: "github", ProviderUID: "gh-1", Username: "github-login", Email: "github@example.com", BoundAt: &boundAt, LastUsedAt: &lastUsedAt}).Error; err != nil {
 		t.Fatalf("create binding: %v", err)
 	}
 
@@ -204,12 +206,15 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 	var payload struct {
 		Data struct {
 			Methods []struct {
-				Type               string `json:"type"`
-				Available          bool   `json:"available"`
-				Email              string `json:"email"`
-				VerifiedEmailCount int64  `json:"verified_email_count"`
-				Provider           string `json:"provider"`
-				Bound              *bool  `json:"bound"`
+				Type               string     `json:"type"`
+				Available          bool       `json:"available"`
+				Email              string     `json:"email"`
+				VerifiedEmailCount int64      `json:"verified_email_count"`
+				Provider           string     `json:"provider"`
+				Username           string     `json:"username"`
+				BoundAt            *time.Time `json:"bound_at"`
+				LastUsedAt         *time.Time `json:"last_used_at"`
+				Bound              *bool      `json:"bound"`
 			} `json:"methods"`
 		} `json:"data"`
 	}
@@ -229,16 +234,33 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 		t.Fatalf("expected qr code third, got %s", response.Body.String())
 	}
 	github := payload.Data.Methods[3]
+	if github.BoundAt == nil || !boundAt.Equal(*github.BoundAt) || github.LastUsedAt == nil || !lastUsedAt.Equal(*github.LastUsedAt) {
+		t.Fatalf("expected recorded binding timestamps, got %s", response.Body.String())
+	}
+	if github.Username != "github-login" || github.Email != "github@example.com" {
+		t.Fatalf("expected provider account information, got %s", response.Body.String())
+	}
 	if github.Type != "third_party" || !github.Available || github.Provider != "github" || github.Bound == nil || !*github.Bound {
 		t.Fatalf("expected configured bound github method, got %s", response.Body.String())
 	}
 	qq := payload.Data.Methods[4]
+	if qq.BoundAt != nil || qq.LastUsedAt != nil {
+		t.Fatalf("unbound provider must not expose timestamps: %s", response.Body.String())
+	}
 	if qq.Type != "third_party" || qq.Available || qq.Provider != "qq" || qq.Bound == nil || *qq.Bound {
 		t.Fatalf("expected configured unbound qq method, got %s", response.Body.String())
 	}
 	google := payload.Data.Methods[5]
 	if google.Type != "third_party" || google.Available || google.Provider != "google" || google.Bound == nil || *google.Bound {
 		t.Fatalf("expected configured unbound google method, got %s", response.Body.String())
+	}
+	if err := database.Model(&model.UserThirdParty{}).Where("user_id = ?", "u1").Updates(map[string]any{"bound_at": nil, "last_used_at": nil}).Error; err != nil {
+		t.Fatalf("clear unknown timestamps: %v", err)
+	}
+	unknown := httptest.NewRecorder()
+	router.ServeHTTP(unknown, request.Clone(context.Background()))
+	if unknown.Code != http.StatusOK || strings.Contains(unknown.Body.String(), `"bound_at"`) || strings.Contains(unknown.Body.String(), `"last_used_at"`) {
+		t.Fatalf("unknown timestamps must be omitted: %s", unknown.Body.String())
 	}
 }
 

@@ -102,9 +102,9 @@ func (s *UserService) GetLoginMethods(ctx context.Context, userID string) ([]dto
 		return nil, err
 	}
 
-	boundProviders := make(map[string]bool, len(bindings))
+	boundProviders := make(map[string]model.UserThirdParty, len(bindings))
 	for _, binding := range bindings {
-		boundProviders[binding.Provider] = true
+		boundProviders[binding.Provider] = binding
 	}
 
 	for _, provider := range s.registry.Names() {
@@ -112,13 +112,22 @@ func (s *UserService) GetLoginMethods(ctx context.Context, userID string) ([]dto
 		if !adapter.Configured() {
 			continue
 		}
-		bound := boundProviders[provider]
-		methods = append(methods, dto.LoginMethodResponse{
+		binding, bound := boundProviders[provider]
+		method := dto.LoginMethodResponse{
 			Type:      dto.LoginMethodThirdParty,
 			Available: bound,
 			Provider:  provider,
 			Bound:     &bound,
-		})
+		}
+		if bound {
+			method.Username = binding.Username
+			method.BoundAt = binding.BoundAt
+			method.LastUsedAt = binding.LastUsedAt
+			if binding.Email != "" {
+				method.Email = &binding.Email
+			}
+		}
+		methods = append(methods, method)
 	}
 	return methods, nil
 }
