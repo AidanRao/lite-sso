@@ -46,6 +46,7 @@
                 <time v-if="method.bound && method.last_used_at" class="method-last-used" :datetime="method.last_used_at">上次使用于 {{ formatDate(method.last_used_at) }}</time>
                 <ThirdPartyAccountMenu
                   :provider-name="providerName(method.provider)"
+                  :management-url="method.management_url"
                   :busy="Boolean(unbindingProvider)"
                   :disabled="!canUnbindThirdParty(method.provider)"
                   @unbind="unbindProvider(method)"
@@ -219,7 +220,7 @@ const methodTitle = (method) => ({ email_otp: '邮箱验证码', password: '密�
 const methodDescription = (method) => {
   if (method.type === 'email_otp') return `已设置 ${Number(method.verified_email_count) || 0} 个验证后的邮箱`
   if (method.type === 'password') return method.available ? '已设置，可使用密码登录' : '未设置'
-  if (method.type === 'qr_code') return '可通过当前已登录设备扫码确认新设备登录'
+  if (method.type === 'qr_code') return '可在当前已登录应用内扫码授权登录'
   return (method.provider === 'google' ? method.email : method.username)?.trim()
 }
 
@@ -360,6 +361,7 @@ const unbindProvider = async (method) => {
     delete method.username
     delete method.bound_at
     delete method.last_used_at
+    delete method.management_url
     ElMessage.success(`${name} 已解绑`)
   } catch (error) {
     if (isReauthCancelled(error)) return
@@ -471,11 +473,11 @@ onMounted(() => {
 
 .unbound-summary {
   display: flex;
-  min-height: 60px;
+  min-height: 44px;
   box-sizing: border-box;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 8px 16px;
   color: var(--profile-text-muted);
   font-size: 14px;
   list-style: none;

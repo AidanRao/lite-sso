@@ -214,6 +214,7 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 				Username           string     `json:"username"`
 				BoundAt            *time.Time `json:"bound_at"`
 				LastUsedAt         *time.Time `json:"last_used_at"`
+				ManagementURL      string     `json:"management_url"`
 				Bound              *bool      `json:"bound"`
 			} `json:"methods"`
 		} `json:"data"`
@@ -234,6 +235,9 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 		t.Fatalf("expected qr code third, got %s", response.Body.String())
 	}
 	github := payload.Data.Methods[3]
+	if github.ManagementURL != "https://github.com/settings/connections/applications/github-id" {
+		t.Fatalf("expected current GitHub app management link, got %s", response.Body.String())
+	}
 	if github.BoundAt == nil || !boundAt.Equal(*github.BoundAt) || github.LastUsedAt == nil || !lastUsedAt.Equal(*github.LastUsedAt) {
 		t.Fatalf("expected recorded binding timestamps, got %s", response.Body.String())
 	}
@@ -244,6 +248,9 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 		t.Fatalf("expected configured bound github method, got %s", response.Body.String())
 	}
 	qq := payload.Data.Methods[4]
+	if qq.ManagementURL != "" {
+		t.Fatalf("unsupported provider must not have a management link: %s", response.Body.String())
+	}
 	if qq.BoundAt != nil || qq.LastUsedAt != nil {
 		t.Fatalf("unbound provider must not expose timestamps: %s", response.Body.String())
 	}
@@ -251,6 +258,9 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 		t.Fatalf("expected configured unbound qq method, got %s", response.Body.String())
 	}
 	google := payload.Data.Methods[5]
+	if google.ManagementURL != "" {
+		t.Fatalf("unbound provider must not have a management link: %s", response.Body.String())
+	}
 	if google.Type != "third_party" || google.Available || google.Provider != "google" || google.Bound == nil || *google.Bound {
 		t.Fatalf("expected configured unbound google method, got %s", response.Body.String())
 	}
@@ -261,6 +271,20 @@ func TestUserLoginMethods_ReturnsUserAndSystemAvailableMethods(t *testing.T) {
 	router.ServeHTTP(unknown, request.Clone(context.Background()))
 	if unknown.Code != http.StatusOK || strings.Contains(unknown.Body.String(), `"bound_at"`) || strings.Contains(unknown.Body.String(), `"last_used_at"`) {
 		t.Fatalf("unknown timestamps must be omitted: %s", unknown.Body.String())
+	}
+	if err := database.Create(&model.UserThirdParty{UserID: "u1", Provider: "google", ProviderUID: "g1"}).Error; err != nil {
+		t.Fatalf("bind Google: %v", err)
+	}
+	boundGoogle := httptest.NewRecorder()
+	router.ServeHTTP(boundGoogle, request.Clone(context.Background()))
+	if boundGoogle.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %s", boundGoogle.Body.String())
+	}
+	if err := json.Unmarshal(boundGoogle.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal bound Google: %v", err)
+	}
+	if payload.Data.Methods[5].ManagementURL != "https://myaccount.google.com/connections" {
+		t.Fatalf("expected Google management link after binding, got %s", boundGoogle.Body.String())
 	}
 }
 

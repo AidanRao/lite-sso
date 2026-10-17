@@ -50,6 +50,7 @@ type LoginMethodResponse struct {
 	Username           string          `json:"username,omitempty"`
 	BoundAt            *time.Time      `json:"bound_at,omitempty"`
 	LastUsedAt         *time.Time      `json:"last_used_at,omitempty"`
+	ManagementURL      string          `json:"management_url,omitempty"`
 }
 
 // UserApplicationResponse describes an OAuth application used by a user.

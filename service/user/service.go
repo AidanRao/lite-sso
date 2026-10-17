@@ -120,6 +120,9 @@ func (s *UserService) GetLoginMethods(ctx context.Context, userID string) ([]dto
 			Bound:     &bound,
 		}
 		if bound {
+			if manager, ok := adapter.(thirdparty.AccountManager); ok {
+				method.ManagementURL = manager.ManagementURL()
+			}
 			method.Username = binding.Username
 			method.BoundAt = binding.BoundAt
 			method.LastUsedAt = binding.LastUsedAt

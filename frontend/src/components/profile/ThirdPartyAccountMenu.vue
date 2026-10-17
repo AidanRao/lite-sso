@@ -9,7 +9,8 @@
     :aria-controls="open ? menuID : undefined"
     :disabled="busy"
     @click="open ? close() : show()"
-    @keydown.down.up.prevent="show()"
+    @keydown.down.prevent="show()"
+    @keydown.up.prevent="show(true)"
     @keydown.esc.stop.prevent="close()"
   >
     <Ellipsis :size="20" aria-hidden="true" />
@@ -26,6 +27,19 @@
       tabindex="-1"
       @keydown="onKeydown"
     >
+      <a
+        v-if="managementUrl"
+        class="account-menu-link"
+        :href="managementUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        role="menuitem"
+        tabindex="-1"
+        @click="close()"
+      >
+        <span>在 {{ providerName }} 上管理</span>
+        <ExternalLink :size="15" aria-hidden="true" />
+      </a>
       <button
         class="account-menu-danger"
         type="button"
@@ -44,10 +58,11 @@
 
 <script setup>
 import { nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
-import { Ellipsis, Unlink } from 'lucide-vue-next'
+import { Ellipsis, ExternalLink, Unlink } from 'lucide-vue-next'
 
 const props = defineProps({
   providerName: { type: String, required: true },
+  managementUrl: { type: String, default: '' },
   disabled: { type: Boolean, default: false },
   busy: { type: Boolean, default: false }
 })
@@ -88,11 +103,13 @@ const close = (restoreFocus = true) => {
   removeListeners()
   if (restoreFocus) trigger.value?.focus()
 }
-const focusAction = () => {
-  const target = panel.value?.querySelector('button:not(:disabled)') || panel.value
+const actions = () => [...(panel.value?.querySelectorAll('[role="menuitem"]:not(:disabled)') || [])]
+const focusAction = (index = 0) => {
+  const items = actions()
+  const target = items.length ? items[(index + items.length) % items.length] : panel.value
   target?.focus()
 }
-const show = async () => {
+const show = async (fromEnd = false) => {
   if (props.busy || open.value) return
   position.value = { visibility: 'hidden' }
   open.value = true
@@ -101,7 +118,7 @@ const show = async () => {
   updatePosition()
   await nextTick()
   if (!open.value || !panel.value) return
-  focusAction()
+  focusAction(fromEnd ? -1 : 0)
   document.addEventListener('pointerdown', outside, true)
   document.addEventListener('focusin', outside)
   document.addEventListener('scroll', updatePosition, true)
@@ -116,7 +133,13 @@ const onKeydown = event => {
     close()
   } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
     event.preventDefault()
-    focusAction()
+    if (event.key === 'Home') focusAction(0)
+    else if (event.key === 'End') focusAction(-1)
+    else {
+      const current = actions().indexOf(document.activeElement)
+      const next = event.key === 'ArrowDown' ? 1 : -1
+      focusAction(current < 0 ? (next > 0 ? 0 : -1) : current + next)
+    }
   }
 }
 const unbind = () => {
@@ -134,8 +157,12 @@ onBeforeUnmount(removeListeners)
 .account-menu-trigger:hover:not(:disabled), .account-menu-trigger[aria-expanded=true] { background: var(--profile-surface-hover); }
 .account-menu-trigger:disabled { cursor: wait; opacity: .55; }
 .account-menu { position: fixed; z-index: 3000; box-sizing: border-box; padding: 6px; border: 1px solid var(--profile-border); border-radius: 6px; background: var(--profile-surface); color: var(--profile-text-strong); box-shadow: var(--profile-shadow-soft); }
-.account-menu-danger { display: flex; width: 100%; min-height: 34px; align-items: center; gap: 8px; padding: 7px 10px; border: 0; border-radius: 4px; background: transparent; color: var(--profile-danger); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.account-menu-danger, .account-menu-link { display: flex; width: 100%; min-height: 34px; box-sizing: border-box; align-items: center; gap: 8px; padding: 7px 10px; border: 0; border-radius: 4px; background: transparent; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.account-menu-link { justify-content: space-between; color: var(--profile-text-strong); text-decoration: none; }
+.account-menu-link svg { flex-shrink: 0; }
+.account-menu-link:hover { background: var(--profile-surface-hover); }
+.account-menu-danger { color: var(--profile-danger); }
 .account-menu-danger:hover:not(:disabled) { background: var(--profile-danger-soft); }
 .account-menu-danger:disabled { color: var(--profile-text-faint); cursor: not-allowed; }
-.account-menu-trigger:focus-visible, .account-menu-danger:focus-visible, .account-menu:focus-visible { outline: 2px solid var(--profile-accent); outline-offset: 2px; }
+.account-menu-trigger:focus-visible, .account-menu-danger:focus-visible, .account-menu-link:focus-visible, .account-menu:focus-visible { outline: 2px solid var(--profile-accent); outline-offset: 2px; }
 </style>
