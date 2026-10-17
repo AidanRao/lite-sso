@@ -2,9 +2,11 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 
+	"sso-server/common"
 	"sso-server/model"
 )
 
@@ -45,6 +47,26 @@ func (r *UserThirdPartyRepository) ListByUserID(ctx context.Context, userID stri
 
 func (r *UserThirdPartyRepository) Create(ctx context.Context, binding *model.UserThirdParty) error {
 	return r.db.WithContext(ctx).Create(binding).Error
+}
+
+// UpdateProfile refreshes provider account information without changing the binding identity.
+func (r *UserThirdPartyRepository) UpdateProfile(ctx context.Context, id uint, email, username string) error {
+	return r.db.WithContext(ctx).Model(&model.UserThirdParty{}).Where("id = ?", id).
+		Updates(map[string]any{"email": email, "username": username}).Error
+}
+
+// UpdateLastUsed records a successful login for the exact provider identity.
+func (r *UserThirdPartyRepository) UpdateLastUsed(ctx context.Context, userID, provider, providerUID string, usedAt time.Time) error {
+	result := r.db.WithContext(ctx).Model(&model.UserThirdParty{}).
+		Where("user_id = ? AND provider = ? AND provider_uid = ?", userID, provider, providerUID).
+		Update("last_used_at", usedAt.UTC())
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return common.ErrThirdPartyNotBound
+	}
+	return nil
 }
 
 func (r *UserThirdPartyRepository) Delete(ctx context.Context, id uint) error {

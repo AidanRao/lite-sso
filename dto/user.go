@@ -47,6 +47,10 @@ type LoginMethodResponse struct {
 	VerifiedEmailCount int64           `json:"verified_email_count,omitempty"`
 	Provider           string          `json:"provider,omitempty"`
 	Bound              *bool           `json:"bound,omitempty"`
+	Username           string          `json:"username,omitempty"`
+	BoundAt            *time.Time      `json:"bound_at,omitempty"`
+	LastUsedAt         *time.Time      `json:"last_used_at,omitempty"`
+	ManagementURL      string          `json:"management_url,omitempty"`
 }
 
 // UserApplicationResponse describes an OAuth application used by a user.

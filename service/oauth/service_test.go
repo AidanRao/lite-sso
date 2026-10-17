@@ -6,7 +6,9 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
@@ -199,6 +201,11 @@ func Test_OAuthService_ThirdPartyBind_PreviewsBeforeConfirmation(t *testing.T) {
 	if binding.ProviderUID != "gh_1" {
 		t.Fatalf("expected provider uid gh_1, got %q", binding.ProviderUID)
 	}
+	require.Equal(t, "alice", binding.Username)
+	require.Equal(t, "alice@example.com", binding.Email)
+	require.NotNil(t, binding.BoundAt)
+	require.WithinDuration(t, time.Now(), *binding.BoundAt, time.Second)
+	require.Nil(t, binding.LastUsedAt)
 	var imported model.UserEmail
 	if err := gormDB.First(&imported, "user_id = ? AND email = ?", "u1", "alice@example.com").Error; err != nil {
 		t.Fatalf("expected imported email: %v", err)
@@ -324,6 +331,75 @@ func Test_FindOrCreateUser_DoesNotResyncEmailForEstablishedBinding(t *testing.T)
 	}
 	if count != 1 {
 		t.Fatalf("expected no login-time resync, got %d emails", count)
+	}
+}
+
+func Test_FindOrCreateUser_SavesProviderProfileInEveryCreationFlow(t *testing.T) {
+	for _, provider := range []string{thirdparty.GitHub, thirdparty.Google, thirdparty.Feishu, thirdparty.QQ} {
+		for _, existingAccount := range []bool{false, true} {
+			name := provider + "/new"
+			if existingAccount {
+				name = provider + "/email-match"
+			}
+			t.Run(name, func(t *testing.T) {
+				database := newOAuthTestDB(t)
+				email := provider + "@example.com"
+				siteName := "site-name"
+				if existingAccount {
+					require.NoError(t, database.Create(&model.User{ID: "u1", Email: &email, Username: &siteName, Status: model.UserStatusActive}).Error)
+				}
+				profile := &thirdPartyProfile{Provider: provider, ProviderUID: "identity", Email: email, Username: "platform-name"}
+				service := NewOAuthService(&conf.Config{}, database, kv.NewMemoryStore(), db.NewUserRepository(database))
+				user, err := service.findOrCreateUser(context.Background(), profile)
+				require.NoError(t, err)
+				var binding model.UserThirdParty
+				require.NoError(t, database.First(&binding, "user_id = ?", user.ID).Error)
+				require.Equal(t, email, binding.Email)
+				require.Equal(t, profile.Username, binding.Username)
+				require.NotNil(t, binding.BoundAt)
+				require.WithinDuration(t, time.Now(), *binding.BoundAt, time.Second)
+				require.Nil(t, binding.LastUsedAt)
+				if existingAccount {
+					require.Equal(t, "u1", user.ID)
+					require.Equal(t, siteName, *user.Username)
+				} else {
+					require.Equal(t, profile.Username, *user.Username)
+				}
+			})
+		}
+	}
+}
+
+func Test_FindOrCreateUser_RefreshesLegacyProfileWithoutChangingSiteIdentity(t *testing.T) {
+	for _, provider := range []string{thirdparty.GitHub, thirdparty.Google, thirdparty.Feishu, thirdparty.QQ} {
+		t.Run(provider, func(t *testing.T) {
+			database := newOAuthTestDB(t)
+			email, siteName := "site@example.com", "site-name"
+			require.NoError(t, database.Create(&model.User{ID: "u1", Email: &email, Username: &siteName, Status: model.UserStatusActive}).Error)
+			binding := model.UserThirdParty{UserID: "u1", Provider: provider, ProviderUID: "identity"}
+			require.NoError(t, database.Create(&binding).Error)
+			service := NewOAuthService(&conf.Config{}, database, kv.NewMemoryStore(), db.NewUserRepository(database))
+			for _, accountName := range []string{"original-name", "updated-name", ""} {
+				profile := &thirdPartyProfile{Provider: provider, ProviderUID: "identity", Username: accountName}
+				if accountName != "" {
+					profile.Email = accountName + "@example.com"
+				}
+				_, err := service.findOrCreateUser(context.Background(), profile)
+				require.NoError(t, err)
+				require.NoError(t, database.First(&binding, binding.ID).Error)
+				require.Equal(t, profile.Email, binding.Email)
+				require.Equal(t, accountName, binding.Username)
+				require.Nil(t, binding.BoundAt)
+				require.Nil(t, binding.LastUsedAt)
+			}
+			user, err := db.NewUserRepository(database).FindByID(context.Background(), "u1")
+			require.NoError(t, err)
+			require.Equal(t, email, *user.Email)
+			require.Equal(t, siteName, *user.Username)
+			var emailCount int64
+			require.NoError(t, database.Model(&model.UserEmail{}).Where("user_id = ?", "u1").Count(&emailCount).Error)
+			require.EqualValues(t, 1, emailCount)
+		})
 	}
 }
 

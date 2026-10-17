@@ -14,8 +14,8 @@
         <button class="button" type="button" @click="loadLoginMethods">重新加载</button>
       </div>
       <div v-else-if="loginMethods.length" class="settings-list">
-        <template v-for="method in loginMethods" :key="methodKey(method)">
-          <div class="settings-row">
+        <template v-for="method in visibleLoginMethods" :key="methodKey(method)">
+          <div class="settings-row" :class="{ 'third-party-row': method.type === 'third_party' }">
             <div class="method-icon" aria-hidden="true">
               <Mail v-if="method.type === 'email_otp'" :size="20" />
               <RectangleEllipsis v-else-if="method.type === 'password'" :size="20" />
@@ -24,7 +24,7 @@
             </div>
             <div class="row-copy">
               <strong>{{ methodTitle(method) }}</strong>
-              <span>{{ methodDescription(method) }}</span>
+              <span v-if="methodDescription(method)">{{ methodDescription(method) }}</span>
             </div>
             <template v-if="method.type === 'email_otp'">
               <router-link class="button" to="/profile/access/emails">管理邮箱</router-link>
@@ -42,17 +42,16 @@
               <button v-else class="button" type="button" disabled title="设置密码功能暂未开放">设置密码</button>
             </template>
             <template v-else-if="method.type === 'third_party'">
-              <button v-if="!method.bound" class="button" type="button" @click="bindProvider(method.provider)">绑定</button>
-              <button
-                v-else
-                class="button danger"
-                type="button"
-				:disabled="Boolean(unbindingProvider) || !canUnbindThirdParty(method.provider)"
-				:title="canUnbindThirdParty(method.provider) ? `撤销 ${providerName(method.provider)} 授权` : '至少需要保留一种可用登录方式'"
-                @click="unbindProvider(method)"
-              >
-                {{ unbindingProvider === method.provider ? '撤销中…' : '撤销授权' }}
-              </button>
+              <div class="third-party-actions">
+                <time v-if="method.bound && method.last_used_at" class="method-last-used" :datetime="method.last_used_at">上次使用于 {{ formatDate(method.last_used_at) }}</time>
+                <ThirdPartyAccountMenu
+                  :provider-name="providerName(method.provider)"
+                  :management-url="method.management_url"
+                  :busy="Boolean(unbindingProvider)"
+                  :disabled="!canUnbindThirdParty(method.provider)"
+                  @unbind="unbindProvider(method)"
+                />
+              </div>
             </template>
           </div>
 
@@ -87,6 +86,27 @@
             </div>
           </form>
         </template>
+        <details v-if="unboundLoginMethods.length" class="unbound-methods">
+          <summary class="unbound-summary">
+            <ChevronRight class="disclosure-chevron" :size="18" aria-hidden="true" />
+            <span>更多选项</span>
+            <span class="unbound-provider-icons" aria-hidden="true">
+              <span v-for="method in unboundLoginMethods" :key="method.provider" :title="providerName(method.provider)" :data-provider="method.provider">
+                <ThirdPartyProviderIcon :provider="method.provider" :size="20" />
+              </span>
+            </span>
+          </summary>
+          <div v-for="method in unboundLoginMethods" :key="method.provider" class="settings-row third-party-row">
+            <div class="method-icon" aria-hidden="true">
+              <ThirdPartyProviderIcon :provider="method.provider" :size="20" />
+            </div>
+            <div class="row-copy">
+              <strong>{{ providerName(method.provider) }}</strong>
+              <span>绑定你的 {{ providerName(method.provider) }} 账号</span>
+            </div>
+            <button class="button" type="button" @click="bindProvider(method.provider)">绑定</button>
+          </div>
+        </details>
       </div>
       <div v-else class="section-state">当前账号暂无可用登录方式。</div>
     </ProfileSettingsSection>
@@ -143,10 +163,11 @@
 import { computed, inject, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Fingerprint, Mail, Pencil, Plus, QrCode, RectangleEllipsis, Trash2, TriangleAlert } from 'lucide-vue-next'
+import { ChevronRight, Fingerprint, Mail, Pencil, Plus, QrCode, RectangleEllipsis, Trash2, TriangleAlert } from 'lucide-vue-next'
 import { passkeyAPI, userAPI } from '../../api/auth'
 import PasskeyEnrollmentDialog from '../../components/PasskeyEnrollmentDialog.vue'
 import ProfileSettingsSection from '../../components/profile/ProfileSettingsSection.vue'
+import ThirdPartyAccountMenu from '../../components/profile/ThirdPartyAccountMenu.vue'
 import ThirdPartyProviderIcon from '../../components/ThirdPartyProviderIcon.vue'
 import { isReauthCancelled } from '../../utils/reauthCoordinator'
 import { passwordPolicyError } from '../../utils/passwordPolicy'
@@ -183,6 +204,8 @@ const providerNames = {
   google: 'Google'
 }
 
+const visibleLoginMethods = computed(() => loginMethods.value.filter(method => method.type !== 'third_party' || method.bound))
+const unboundLoginMethods = computed(() => loginMethods.value.filter(method => method.type === 'third_party' && !method.bound))
 const boundProviderCount = computed(() => loginMethods.value.filter(method => method.type === 'third_party' && method.bound).length)
 const canUnbindThirdParty = () => Boolean(user.value?.email?.trim()) || boundProviderCount.value > 1
 const passwordLengthValid = computed(() => {
@@ -197,8 +220,8 @@ const methodTitle = (method) => ({ email_otp: '邮箱验证码', password: '密�
 const methodDescription = (method) => {
   if (method.type === 'email_otp') return `已设置 ${Number(method.verified_email_count) || 0} 个验证后的邮箱`
   if (method.type === 'password') return method.available ? '已设置，可使用密码登录' : '未设置'
-  if (method.type === 'qr_code') return '可通过当前已登录设备扫码确认新设备登录'
-  return method.bound ? '已绑定，可用于登录当前账号' : '尚未绑定'
+  if (method.type === 'qr_code') return '可在当前已登录应用内扫码授权登录'
+  return (method.provider === 'google' ? method.email : method.username)?.trim()
 }
 
 const resetPasswordForm = () => {
@@ -321,9 +344,9 @@ const unbindProvider = async (method) => {
   const name = providerName(method.provider)
   try {
     await ElMessageBox.confirm(
-      `撤销后将无法再使用 ${name} 登录当前账号，确定继续吗？`,
-      `撤销 ${name} 授权`,
-      { confirmButtonText: '撤销授权', cancelButtonText: '取消', type: 'warning' }
+      `解绑后将无法再使用 ${name} 登录当前账号，确定继续吗？`,
+      `解绑 ${name}`,
+      { confirmButtonText: '解绑', cancelButtonText: '取消', type: 'warning', confirmButtonClass: 'danger-confirm-button' }
     )
   } catch {
     return
@@ -334,14 +357,19 @@ const unbindProvider = async (method) => {
     await userAPI.unbindThirdParty(method.provider)
     method.bound = false
     method.available = false
-    ElMessage.success(`${name} 授权已撤销`)
+    delete method.email
+    delete method.username
+    delete method.bound_at
+    delete method.last_used_at
+    delete method.management_url
+    ElMessage.success(`${name} 已解绑`)
   } catch (error) {
     if (isReauthCancelled(error)) return
     if (error.status === 401) {
       redirectToLogin()
       return
     }
-    ElMessage.error(error.message || '撤销授权失败')
+    ElMessage.error(error.message || '解绑失败')
   } finally {
     unbindingProvider.value = ''
   }
@@ -433,6 +461,66 @@ onMounted(() => {
 
 .settings-row:first-child {
   border-top: 0;
+}
+
+.unbound-methods {
+  border-top: 1px solid var(--profile-divider);
+}
+
+.unbound-methods:first-child {
+  border-top: 0;
+}
+
+.unbound-summary {
+  display: flex;
+  min-height: 44px;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  color: var(--profile-text-muted);
+  font-size: 14px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.unbound-summary::-webkit-details-marker {
+  display: none;
+}
+
+.unbound-summary:hover,
+.unbound-methods[open] > .unbound-summary {
+  background: var(--profile-surface-subtle);
+}
+
+.unbound-summary:focus-visible {
+  outline: 2px solid var(--profile-accent);
+  outline-offset: -2px;
+}
+
+.disclosure-chevron {
+  flex-shrink: 0;
+}
+
+.unbound-methods[open] .disclosure-chevron {
+  transform: rotate(90deg);
+}
+
+.unbound-provider-icons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  color: var(--profile-text-strong);
+}
+
+.unbound-provider-icons > span {
+  display: flex;
+  align-items: center;
+}
+
+.unbound-methods[open] .unbound-provider-icons {
+  display: none;
 }
 
 .password-change-form {
@@ -572,6 +660,7 @@ onMounted(() => {
 }
 
 .row-copy span {
+  overflow-wrap: anywhere;
   color: var(--profile-text-muted);
   font-size: 13px;
   line-height: 1.45;
@@ -580,6 +669,18 @@ onMounted(() => {
 .row-actions {
   display: flex;
   gap: 6px;
+}
+
+.third-party-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.method-last-used {
+  color: var(--profile-text-muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .section-state {
@@ -673,10 +774,34 @@ onMounted(() => {
     grid-template-columns: 30px minmax(0, 1fr);
   }
 
+  .settings-row.third-party-row {
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+  }
+
+  .third-party-actions {
+    display: contents;
+  }
+
+  .third-party-actions > .method-last-used {
+    grid-column: 2;
+    grid-row: 2;
+    margin-top: -6px;
+  }
+
+  .third-party-actions > .account-menu-trigger {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
   .settings-row > .button,
   .row-actions {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .settings-row.third-party-row > .button {
+    grid-column: 3;
+    justify-self: end;
   }
 
   .password-change-form {

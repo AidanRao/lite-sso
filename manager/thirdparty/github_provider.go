@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	oauth2 "golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
@@ -27,6 +28,10 @@ func (p *githubOAuthProvider) Configured() bool {
 
 func (p *githubOAuthProvider) AuthCodeURL(state string) string {
 	return p.oauthConfig().AuthCodeURL(state)
+}
+
+func (p *githubOAuthProvider) ManagementURL() string {
+	return "https://github.com/settings/connections/applications/" + url.PathEscape(p.cfg.ClientID)
 }
 
 func (p *githubOAuthProvider) FetchProfile(ctx context.Context, code string) (*Profile, error) {
@@ -138,16 +143,11 @@ func (r *githubUserResponse) toProfile() *Profile {
 		email = *r.Email
 	}
 
-	username := r.Name
-	if username == "" {
-		username = r.Login
-	}
-
 	return &Profile{
 		Provider:    GitHub,
 		ProviderUID: fmt.Sprintf("%d", r.ID),
 		Email:       email,
-		Username:    username,
+		Username:    r.Name,
 		AvatarURL:   r.AvatarURL,
 	}
 }

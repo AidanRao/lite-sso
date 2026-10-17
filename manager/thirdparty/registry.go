@@ -31,6 +31,11 @@ type Provider interface {
 	FetchProfile(ctx context.Context, code string) (*Profile, error)
 }
 
+// AccountManager optionally exposes the provider's authorization management page.
+type AccountManager interface {
+	ManagementURL() string
+}
+
 type registration struct {
 	name       string
 	authMethod string

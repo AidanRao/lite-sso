@@ -87,6 +87,10 @@ func (p *googleOAuthProvider) AuthCodeURL(state string) string {
 	return p.oauthConfig().AuthCodeURL(state)
 }
 
+func (p *googleOAuthProvider) ManagementURL() string {
+	return "https://myaccount.google.com/connections"
+}
+
 func (p *googleOAuthProvider) FetchProfile(ctx context.Context, code string) (*Profile, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
