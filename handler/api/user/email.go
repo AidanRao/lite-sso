@@ -90,7 +90,7 @@ func (h *UserHandler) SetPrimaryEmail(c *gin.Context) {
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"updated": true}))
 }
 
-// DeleteEmail removes an email identity. The last verified primary may be removed.
+// DeleteEmail removes a non-primary email while retaining at least one address.
 func (h *UserHandler) DeleteEmail(c *gin.Context) {
 	if err := h.emails.Delete(c.Request.Context(), c.GetString("user_id"), c.Param("id")); err != nil {
 		writeEmailError(c, err, nil)
@@ -126,7 +126,9 @@ func writeEmailError(c *gin.Context, err error, email *dto.UserEmailResponse) {
 	case errors.Is(err, common.ErrEmailNotVerified):
 		write(http.StatusConflict, "EMAIL_NOT_VERIFIED", "邮箱尚未验证")
 	case errors.Is(err, common.ErrPrimaryEmailDelete):
-		write(http.StatusConflict, "PRIMARY_EMAIL_DELETE_FORBIDDEN", "存在其他已验证邮箱，请先切换主邮箱再删除")
+		write(http.StatusConflict, "PRIMARY_EMAIL_DELETE_FORBIDDEN", "请先设置其他已验证邮箱为主邮箱，再删除此邮箱")
+	case errors.Is(err, common.ErrLastEmail):
+		write(http.StatusConflict, "LAST_EMAIL", "账号至少需要保留一个邮箱")
 	case errors.Is(err, common.ErrLastLoginMethod):
 		write(http.StatusConflict, "LAST_LOGIN_METHOD", "至少需要保留一种可用登录方式")
 	case errors.Is(err, common.ErrEmailVerificationInvalid):

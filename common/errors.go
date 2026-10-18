@@ -1,6 +1,8 @@
 package common
 
-import "errors"
+import (
+	"errors"
+)
 
 // User related errors
 var (
@@ -17,6 +19,7 @@ var (
 	ErrEmailLimitReached        = errors.New("email limit reached")
 	ErrEmailNotFound            = errors.New("email not found")
 	ErrEmailNotVerified         = errors.New("email not verified")
+	ErrLastEmail                = errors.New("last email cannot be removed")
 	ErrPrimaryEmailDelete       = errors.New("primary email cannot be deleted")
 	ErrEmailVerificationInvalid = errors.New("email verification invalid")
 	ErrEmailVerificationExpired = errors.New("email verification expired")

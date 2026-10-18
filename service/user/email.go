@@ -228,7 +228,7 @@ func (s *EmailService) SetPrimary(ctx context.Context, userID string, emailID st
 	})
 }
 
-// Delete removes an address while preserving at least one usable login method.
+// Delete removes a non-primary address while preserving at least one email.
 func (s *EmailService) Delete(ctx context.Context, userID string, emailID string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockUser(ctx, tx, userID); err != nil {
@@ -241,23 +241,15 @@ func (s *EmailService) Delete(ctx context.Context, userID string, emailID string
 			}
 			return err
 		}
+		var emailCount int64
+		if err := tx.Model(&model.UserEmail{}).Where("user_id = ?", userID).Count(&emailCount).Error; err != nil {
+			return err
+		}
+		if emailCount <= 1 {
+			return common.ErrLastEmail
+		}
 		if record.IsPrimary {
-			var otherVerifiedCount int64
-			if err := tx.Model(&model.UserEmail{}).
-				Where("user_id = ? AND id <> ? AND verified_at IS NOT NULL", userID, record.ID).
-				Count(&otherVerifiedCount).Error; err != nil {
-				return err
-			}
-			if otherVerifiedCount > 0 {
-				return common.ErrPrimaryEmailDelete
-			}
-			var providerCount int64
-			if err := tx.Model(&model.UserThirdParty{}).Where("user_id = ?", userID).Count(&providerCount).Error; err != nil {
-				return err
-			}
-			if providerCount == 0 {
-				return common.ErrLastLoginMethod
-			}
+			return common.ErrPrimaryEmailDelete
 		}
 		return tx.Delete(&record).Error
 	})
