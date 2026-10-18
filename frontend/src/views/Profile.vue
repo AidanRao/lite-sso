@@ -1,7 +1,7 @@
 <template>
   <main class="settings-page">
     <div class="settings-shell">
-      <ProfileSidebar :user="user" :is-admin="isAdmin" :features="features" />
+      <ProfileSidebar :user="user" :is-admin="isAdmin" :features="features" :email-reminder="showEmailReminder" />
 
       <section class="settings-content" aria-live="polite">
         <div v-if="permissionState.error" role="alert" class="permissions-error">
@@ -48,6 +48,7 @@ const features = computed(() => permissionState.error ? {} : permissionState.fea
 const pageEnabled = computed(() => featureEnabled(features.value, route.meta.featureKey))
 let requestVersion = 0
 const user = ref(null)
+const showEmailReminder = computed(() => Boolean(user.value) && !user.value.email)
 const isAdmin = computed(() => !permissionState.error && permissionState.isAdmin)
 const loading = ref(true)
 const loadError = ref('')
@@ -58,7 +59,7 @@ const setUser = (nextUser) => {
 
 const loadProfile = async () => {
   const version = ++requestVersion
-  loading.value = true
+  loading.value = !user.value
   loadError.value = ''
   try {
     const result = await userAPI.getProfile()
@@ -69,7 +70,7 @@ const loadProfile = async () => {
   } catch (error) {
     if (version !== requestVersion) return
     if (error.status === 401) {
-      router.replace({ path: '/login', query: { redirect: route.fullPath } })
+      router.replace({ path: '/login', query: { redirect: route.name === 'ProfileEmailVerification' ? route.path : route.fullPath } })
       return
     }
     loadError.value = error.message || '账号设置加载失败'
@@ -83,13 +84,14 @@ provide(PROFILE_CONTEXT_KEY, {
   isAdmin,
   features,
   setUser,
+  showEmailReminder,
   reload: loadProfile
 })
 
 const loadPermissions = async () => {
   try { await permissions.load() }
   catch (error) {
-    if (error.status === 401) router.replace({ path: '/login', query: { redirect: route.fullPath } })
+    if (error.status === 401) router.replace({ path: '/login', query: { redirect: route.name === 'ProfileEmailVerification' ? route.path : route.fullPath } })
   }
 }
 onBeforeUnmount(() => { ++requestVersion })

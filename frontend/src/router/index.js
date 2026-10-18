@@ -4,8 +4,10 @@ import Register from '../views/Register.vue'
 import ResetPassword from '../views/ResetPassword.vue'
 import OAuthCallback from '../views/OAuthCallback.vue'
 import Profile from '../views/Profile.vue'
+import { getEmailVerificationToken, rememberEmailVerificationToken } from '../utils/emailVerification'
 
 const routes = [
+  { path: '/setup-email', name: 'EmailSetup', meta: { title: '设置邮箱' }, component: () => import('../views/EmailSetup.vue') },
  { path: '/account/deletion', name: 'AccountDeletion', meta: { title: '账号注销' }, component: () => import('../views/AccountDeletion.vue') },
   {
     path: '/',
@@ -119,6 +121,18 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+router.beforeEach((to) => {
+  if (to.name !== 'ProfileEmailVerification') return
+  const token = getEmailVerificationToken(to.hash)
+  if (!token) return
+  try {
+    rememberEmailVerificationToken(token)
+    return { path: to.path, query: to.query, replace: true }
+  } catch {
+    // If browser storage is unavailable, retain the fragment for in-session verification.
+  }
 })
 
 router.afterEach(async (to, from, failure) => {

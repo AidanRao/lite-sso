@@ -73,6 +73,7 @@ import ProfileSidebarItem from './ProfileSidebarItem.vue'
 import { filterFeatureNavigation } from '../../utils/features'
 
 const props = defineProps({
+  emailReminder: { type: Boolean, default: false },
   features: { type: Object, default: () => ({}) },
   user: {
     type: Object,
@@ -84,7 +85,7 @@ const props = defineProps({
   }
 })
 
-const navigationItems = [
+const navigationItems = computed(() => [
   {
     label: 'Account',
     to: '/profile/account',
@@ -101,7 +102,8 @@ const navigationItems = [
       {
         label: 'Emails',
         to: '/profile/access/emails',
-        icon: Mail
+        icon: Mail,
+        notice: props.emailReminder ? '尚未设置已验证邮箱，点击设置' : ''
       },
       {
         label: '密码与认证',
@@ -131,9 +133,9 @@ const navigationItems = [
       { featureKey: 'profile.audit_logs', label: '操作日志', to: '/profile/archived/audit-logs', icon: ScrollText }
     ]
   }
-]
+])
 
-const navigation = computed(() => filterFeatureNavigation(navigationItems, props.features))
+const navigation = computed(() => filterFeatureNavigation(navigationItems.value, props.features))
 
 const displayName = computed(() => props.user?.username || props.user?.email || 'Lite SSO 用户')
 const avatarInitial = computed(() => displayName.value.slice(0, 1).toUpperCase())

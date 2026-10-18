@@ -7,10 +7,13 @@
       :style="indentStyle"
       :to="item.to"
       :aria-current="isActive ? 'page' : undefined"
+      :title="item.notice || undefined"
+      :aria-label="item.notice ? `${item.label}：${item.notice}` : undefined"
     >
       <component :is="item.icon" v-if="item.icon" :size="17" aria-hidden="true" />
       <span>{{ item.label }}</span>
       <span v-if="item.beta" class="beta-badge">Beta</span>
+      <CircleAlert v-if="item.notice" class="notice-icon" :size="16" aria-hidden="true" />
     </RouterLink>
 
     <div
@@ -35,6 +38,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { CircleAlert } from 'lucide-vue-next'
 
 defineOptions({ name: 'ProfileSidebarItem' })
 
@@ -59,6 +63,12 @@ const indentStyle = computed(() => ({
 </script>
 
 <style scoped>
+.notice-icon {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--profile-warning);
+}
+
 .beta-badge {
   margin-left: auto;
   border: 1px solid var(--profile-border-muted);

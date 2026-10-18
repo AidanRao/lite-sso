@@ -113,7 +113,7 @@ func Test_QRCode_StateMachineBothBackends(t *testing.T) {
 					result, _, err := s.CompleteQRCodeLogin(ctx, challenge.Code, ticket, challenge.BrowserToken, metadata)
 					if err == nil {
 						successes.Add(1)
-						require.Equal(t, redirect, result.RedirectURL)
+						require.Equal(t, emailSetupRedirect(redirect), result.RedirectURL)
 					}
 				})
 			}

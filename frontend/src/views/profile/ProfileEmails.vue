@@ -96,7 +96,7 @@ import { userAPI } from '../../api/auth'
 import ProfileSettingsSection from '../../components/profile/ProfileSettingsSection.vue'
 import ThirdPartyProviderIcon from '../../components/ThirdPartyProviderIcon.vue'
 import SelectMenu from '../../components/SelectMenu.vue'
-import { getEmailVerificationToken } from '../../utils/emailVerification'
+import { forgetEmailVerificationToken, getEmailVerificationToken, readEmailVerificationToken } from '../../utils/emailVerification'
 import { isReauthCancelled } from '../../utils/reauthCoordinator'
 import { PROFILE_CONTEXT_KEY } from './profileContext'
 
@@ -225,15 +225,22 @@ const changePrimary = async () => {
 }
 
 const confirmFromLink = async () => {
-  const token = getEmailVerificationToken(route.hash)
+  if (route.name !== 'ProfileEmailVerification') return
+  const token = getEmailVerificationToken(route.hash) || readEmailVerificationToken()
   if (!token) return
   await router.replace('/profile/access/emails')
   try {
     await userAPI.confirmEmailVerification(token)
+    forgetEmailVerificationToken()
     verificationState.type = 'success'
     verificationState.message = '邮箱验证成功，现在可以用于登录。'
     await Promise.all([loadEmails(), profile.reload()])
   } catch (error) {
+    if (error.status === 401) {
+      router.replace({ path: '/login', query: { redirect: '/profile/access/emails/verify' } })
+      return
+    }
+    if (error.status === 403 || error.status === 410) forgetEmailVerificationToken()
     verificationState.type = 'error'
     verificationState.message = error.message || '邮箱验证失败，请重新发送验证邮件。'
   }
