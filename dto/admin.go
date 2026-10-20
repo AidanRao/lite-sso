@@ -1,6 +1,8 @@
 package dto
 
-import "time"
+import (
+	"time"
+)
 
 // AdminUserResponse represents a user row in system administration.
 type AdminUserResponse struct {
@@ -30,7 +32,7 @@ type OAuthClientResponse struct {
 	Audiences     []string `json:"audiences"`
 	AllowedScopes []string `json:"allowed_scopes"`
 	HomepageURL   string   `json:"homepage_url"`
-	RedirectURI   string   `json:"redirect_uri"`
+	RedirectURIs  []string `json:"redirect_uris"`
 	LogoutURI     string   `json:"logout_uri"`
 	LogoURL       *string  `json:"logo_url"`
 }
@@ -51,18 +53,45 @@ type CreateOAuthClientRequest struct {
 	Audiences     []string `json:"audiences"`
 	AllowedScopes []string `json:"allowed_scopes"`
 	HomepageURL   string   `json:"homepage_url" binding:"required"`
-	RedirectURI   string   `json:"redirect_uri" binding:"required"`
+	RedirectURIs  []string `json:"redirect_uris" binding:"required,min=1"`
 	LogoutURI     string   `json:"logout_uri"`
 }
 
 // UpdateOAuthClientRequest represents the request body for updating an OAuth client.
 type UpdateOAuthClientRequest struct {
 	Name          string   `json:"name" binding:"required"`
-	ClientSecret  *string  `json:"client_secret"`
 	ClientType    *string  `json:"client_type"`
 	Audiences     []string `json:"audiences"`
 	AllowedScopes []string `json:"allowed_scopes"`
 	HomepageURL   string   `json:"homepage_url" binding:"required"`
-	RedirectURI   string   `json:"redirect_uri" binding:"required"`
+	RedirectURIs  []string `json:"redirect_uris" binding:"required,min=1"`
 	LogoutURI     string   `json:"logout_uri"`
+}
+
+// OAuthClientDetailResponse adds the number of associated users without secret metadata.
+type OAuthClientDetailResponse struct {
+	OAuthClientResponse
+	UserCount int64 `json:"user_count"`
+}
+
+// OAuthClientUserResponse describes one client association.
+type OAuthClientUserResponse struct {
+	UserID      string    `json:"user_id"`
+	Username    *string   `json:"username"`
+	Email       *string   `json:"email"`
+	AvatarURL   *string   `json:"avatar_url"`
+	LastLoginAt time.Time `json:"last_login_at"`
+}
+
+// OAuthClientUsersPage is a bounded page of client associations.
+type OAuthClientUsersPage struct {
+	Users    []OAuthClientUserResponse `json:"users"`
+	Total    int64                     `json:"total"`
+	Page     int                       `json:"page"`
+	PageSize int                       `json:"page_size"`
+}
+
+// OAuthClientUsersRemovalResponse reports the number of removed associations.
+type OAuthClientUsersRemovalResponse struct {
+	RemovedCount int64 `json:"removed_count"`
 }

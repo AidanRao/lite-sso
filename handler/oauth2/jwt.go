@@ -25,9 +25,11 @@ import (
 )
 
 type accessClaims struct {
-	IssuedAtMicro int64  `json:"issued_at_us,omitempty"`
-	ClientID      string `json:"client_id"`
-	Scope         string `json:"scope,omitempty"`
+	RegistrationID  string `json:"client_registration_id,omitempty"`
+	AuthorizationID string `json:"client_authorization_id,omitempty"`
+	IssuedAtMicro   int64  `json:"issued_at_us,omitempty"`
+	ClientID        string `json:"client_id"`
+	Scope           string `json:"scope,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -83,11 +85,11 @@ func newTokenSigner(cfg conf.OAuthTokenConfig) (*tokenSigner, error) {
 	return &tokenSigner{issuer: issuer, kid: kid, privateKey: key, publicKeys: keys, ttl: cfg.AccessTokenTTL}, nil
 }
 
-func (s *tokenSigner) sign(userID, clientID string, audiences, scopes []string, now time.Time) (string, error) {
+func (s *tokenSigner) sign(userID, clientID, registrationID, authorizationID string, audiences, scopes []string, now time.Time) (string, error) {
 	if userID == "" || clientID == "" || len(audiences) == 0 {
 		return "", errors.New("OAuth token requires subject, client and audience")
 	}
-	claims := accessClaims{IssuedAtMicro: now.UnixMicro(), ClientID: clientID, Scope: strings.Join(scopes, " "), RegisteredClaims: jwt.RegisteredClaims{
+	claims := accessClaims{RegistrationID: registrationID, AuthorizationID: authorizationID, IssuedAtMicro: now.UnixMicro(), ClientID: clientID, Scope: strings.Join(scopes, " "), RegisteredClaims: jwt.RegisteredClaims{
 		Issuer: s.issuer, Subject: userID, Audience: jwt.ClaimStrings(audiences),
 		IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(s.ttl)),
 	}}
@@ -149,7 +151,12 @@ func (g jwtAccessGenerator) Token(ctx context.Context, data *gooauth2.GenerateBa
 	if err != nil || db.ValidateUserSession(ctx, g.owner.db, user, session, time.Now()) != nil {
 		return "", "", oauth2errors.ErrInvalidGrant
 	}
-	access, err := g.owner.signer.sign(data.UserID, client.ClientID, client.Audiences, strings.Fields(data.TokenInfo.GetScope()), data.CreateAt)
+	registrationID := extension.GetExtension().Get("registration_id")
+	authorizationID := extension.GetExtension().Get("authorization_id")
+	if _, err := db.ValidateOAuthAuthorization(ctx, g.owner.db, data.UserID, client.ClientID, registrationID, authorizationID); err != nil {
+		return "", "", oauth2errors.ErrInvalidGrant
+	}
+	access, err := g.owner.signer.sign(data.UserID, client.ClientID, registrationID, authorizationID, client.Audiences, strings.Fields(data.TokenInfo.GetScope()), data.CreateAt)
 	return access, "", err
 }
 
@@ -159,6 +166,9 @@ func (o *OAuth2) HandleJWKS(c *gin.Context) {
 }
 
 func (o *OAuth2) validateAccountClaims(ctx context.Context, claims *accessClaims) error {
+	if _, err := db.ValidateOAuthAuthorization(ctx, o.db, claims.Subject, claims.ClientID, claims.RegistrationID, claims.AuthorizationID); err != nil {
+		return oauth2errors.ErrInvalidAccessToken
+	}
 	user, err := db.NewUserRepository(o.db).FindByID(ctx, claims.Subject)
 	if err != nil || user.Status == model.UserStatusDisabled || user.Status != model.UserStatusActive {
 		return oauth2errors.ErrInvalidAccessToken

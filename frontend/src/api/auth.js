@@ -254,6 +254,12 @@ export const reauthAPI = {
 const isReauthEndpoint = (url = '') => String(url).includes('/user/reauth/')
 
 export const adminAPI = {
+  getOAuthClient: id => api.get(`/admin/oauth-clients/${id}`),
+  listOAuthClientUsers: (id, params) => api.get(`/admin/oauth-clients/${id}/users`, { params }),
+  removeOAuthClientUser: (id, userID) => api.delete(`/admin/oauth-clients/${id}/users/${encodeURIComponent(userID)}`),
+  clearOAuthClientUsers: id => api.delete(`/admin/oauth-clients/${id}/users`),
+  deleteOAuthClient: id => api.delete(`/admin/oauth-clients/${id}`),
+  rotateOAuthClientSecret: id => api.post(`/admin/oauth-clients/${id}/secret/rotate`),
   getFeatures: () => api.get('/admin/features'),
   updateFeature: (key, policy) => api.put(`/admin/features/${encodeURIComponent(key)}`, policy),
   listUsers: () => {

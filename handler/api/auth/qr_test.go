@@ -38,7 +38,8 @@ func Test_QRHandlers_OAuthPermissionsBrowserIsolationAndContinuation(t *testing.
 	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserSession{}, &model.UserOAuthClient{}))
 	require.NoError(t, database.Create(&model.User{ID: "u1", Status: model.UserStatusActive}).Error)
 	require.NoError(t, database.Create(&model.OAuthClient{Name: "Scanner", ClientID: "scanner", Audiences: []string{"sso-api"}, AllowedScopes: []string{"qr:login"}}).Error)
-	require.NoError(t, database.Create(&model.OAuthClient{Name: "Target", ClientID: "target", ClientSecret: "secret", ClientType: model.OAuthClientTypeConfidential, RedirectURI: "https://target.test/callback", Audiences: []string{"target-api"}}).Error)
+	require.NoError(t, database.Create(&model.UserOAuthClient{UserID: "u1", ClientID: "scanner", LastLoginAt: time.Now()}).Error)
+	require.NoError(t, database.Create(&model.OAuthClient{Name: "Target", ClientID: "target", ClientSecret: "secret", ClientType: model.OAuthClientTypeConfidential, RedirectURIs: []string{"https://target.test/callback"}, Audiences: []string{"target-api"}}).Error)
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	cfg := &conf.Config{Auth: conf.AuthConfig{JWTSecret: "session-test-secret"}, Server: conf.ServerConfig{CookieSecure: true}, Tokens: conf.TokenConfig{
@@ -168,5 +169,5 @@ func Test_QRHandlers_OAuthPermissionsBrowserIsolationAndContinuation(t *testing.
 	require.Equal(t, 403, inactive.Code)
 	require.Contains(t, inactive.Body.String(), "USER_INACTIVE")
 	require.NoError(t, database.Where("client_id = ?", "scanner").Delete(&model.OAuthClient{}).Error)
-	require.Contains(t, call("POST", "/api/auth/qr/scan", body, token, "", nil).Body.String(), "QR_CLIENT_FORBIDDEN")
+	require.Equal(t, 401, call("POST", "/api/auth/qr/scan", body, token, "", nil).Code)
 }

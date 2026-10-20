@@ -1,20 +1,9 @@
 package oauth2
 
-import (
-	"strings"
-
-	oauth2errors "github.com/go-oauth2/oauth2/v4/errors"
-)
-
-func ResolveRedirectURI(redirectURI string, requested string) (string, error) {
-	redirectURI = strings.TrimSpace(redirectURI)
-	requested = strings.TrimSpace(requested)
-
-	if redirectURI == "" || requested == "" {
-		return "", oauth2errors.ErrInvalidRedirectURI
-	}
-	if redirectURI != requested {
-		return "", oauth2errors.ErrInvalidRedirectURI
+// ResolveRedirectURI returns the requested URI only when it exactly matches an allowed URI.
+func ResolveRedirectURI(allowedURIs string, requested string) (string, error) {
+	if err := ValidateRedirectURI(allowedURIs, requested); err != nil {
+		return "", err
 	}
 	return requested, nil
 }

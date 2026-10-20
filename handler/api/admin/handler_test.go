@@ -102,7 +102,7 @@ func TestAdminOAuthClients_CreateAndUpdate(t *testing.T) {
 	createAdminTestSession(t, kvStore, "sid-admin", "admin-user")
 	router := newAdminTestRouter(cfg, database, kvStore)
 
-	createBody := `{"name":"订单系统","client_id":"order-app","client_secret":"secret-1","homepage_url":"https://order.example.com","redirect_uri":"https://order.example.com/callback","logout_uri":"https://order.example.com/logout"}`
+	createBody := `{"name":"订单系统","client_id":"order-app","client_secret":"secret-1","homepage_url":"https://order.example.com","redirect_uris":["https://order.example.com/callback","https://admin.example.com/callback"],"logout_uri":"https://order.example.com/logout"}`
 	createResp := doAdminJSONRequest(t, router, http.MethodPost, "/api/admin/oauth-clients", "sid-admin", createBody)
 	if createResp.Code != http.StatusOK {
 		t.Fatalf("expected create 200, got %d, body=%s", createResp.Code, createResp.Body.String())
@@ -111,13 +111,17 @@ func TestAdminOAuthClients_CreateAndUpdate(t *testing.T) {
 	var created struct {
 		Data struct {
 			Client struct {
-				ID          uint   `json:"id"`
-				HomepageURL string `json:"homepage_url"`
+				ID           uint     `json:"id"`
+				HomepageURL  string   `json:"homepage_url"`
+				RedirectURIs []string `json:"redirect_uris"`
 			} `json:"client"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
 		t.Fatalf("unmarshal create response: %v", err)
+	}
+	if len(created.Data.Client.RedirectURIs) != 2 {
+		t.Fatalf("expected two callback URIs, body=%s", createResp.Body.String())
 	}
 	if created.Data.Client.ID == 0 {
 		t.Fatalf("expected created client id, body=%s", createResp.Body.String())
@@ -126,7 +130,7 @@ func TestAdminOAuthClients_CreateAndUpdate(t *testing.T) {
 		t.Fatalf("expected homepage url in response, body=%s", createResp.Body.String())
 	}
 
-	updateBody := `{"name":"订单中心","client_id":"order-center","homepage_url":"https://order.example.com/home","redirect_uri":"https://order.example.com/oauth/callback","logout_uri":"https://order.example.com/logout"}`
+	updateBody := `{"name":"订单中心","client_id":"order-center","homepage_url":"https://order.example.com/home","redirect_uris":["https://order.example.com/oauth/callback","app://oauth/callback"],"logout_uri":"https://order.example.com/logout"}`
 	updateResp := doAdminJSONRequest(t, router, http.MethodPut, "/api/admin/oauth-clients/1", "sid-admin", updateBody)
 	if updateResp.Code != http.StatusOK {
 		t.Fatalf("expected update 200, got %d, body=%s", updateResp.Code, updateResp.Body.String())
@@ -162,14 +166,14 @@ func TestAdminOAuthClients_CreateAndUpdate(t *testing.T) {
 	if client.ClientType != model.OAuthClientTypeConfidential {
 		t.Fatalf("expected omitted client type to default to confidential, got %q", client.ClientType)
 	}
-	if client.RedirectURI != "https://order.example.com/oauth/callback" {
-		t.Fatalf("unexpected redirect uri: %s", client.RedirectURI)
+	if len(client.RedirectURIs) != 2 || client.RedirectURIs[0] != "https://order.example.com/oauth/callback" || client.RedirectURIs[1] != "app://oauth/callback" {
+		t.Fatalf("unexpected redirect uris: %v", client.RedirectURIs)
 	}
 	if client.LogoutURI != "https://order.example.com/logout" {
 		t.Fatalf("unexpected logout uri: %s", client.LogoutURI)
 	}
 
-	publicBody := `{"name":"Android 客户端","client_id":"android-app","client_type":"public","homepage_url":"https://android.example.com","redirect_uri":"lite-sso-demo://oauth/callback"}`
+	publicBody := `{"name":"Android 客户端","client_id":"android-app","client_type":"public","homepage_url":"https://android.example.com","redirect_uris":["lite-sso-demo://oauth/callback"]}`
 	publicResponse := doAdminJSONRequest(t, router, http.MethodPost, "/api/admin/oauth-clients", "sid-admin", publicBody)
 	if publicResponse.Code != http.StatusOK {
 		t.Fatalf("expected public client create 200, got %d, body=%s", publicResponse.Code, publicResponse.Body.String())
@@ -199,7 +203,7 @@ func TestAdminOAuthClientSecret_ReturnsSecretSeparately(t *testing.T) {
 		ClientID:     "order-app",
 		ClientSecret: "secret-1",
 		HomepageURL:  "https://order.example.com",
-		RedirectURI:  "https://order.example.com/callback",
+		RedirectURIs: []string{"https://order.example.com/callback"},
 		LogoutURI:    "https://order.example.com/logout",
 		LogoURL:      &logoURL,
 	}).Error; err != nil {
@@ -249,7 +253,7 @@ func TestAdminOAuthClientLogo_UploadClearAndSizeLimit(t *testing.T) {
 		ClientID:     "order-app",
 		ClientSecret: "secret",
 		HomepageURL:  "https://order.example.com",
-		RedirectURI:  "https://order.example.com/callback",
+		RedirectURIs: []string{"https://order.example.com/callback"},
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
 	}
@@ -297,7 +301,7 @@ func TestAdminUserDetail_ReturnsProfileOverview(t *testing.T) {
 		ClientID:     "demo",
 		ClientSecret: "secret",
 		HomepageURL:  "https://demo.example.com",
-		RedirectURI:  "https://demo.example.com/callback",
+		RedirectURIs: []string{"https://demo.example.com/callback"},
 		LogoURL:      &logoURL,
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
@@ -392,6 +396,12 @@ func newAdminTestRouterWithImageStore(cfg *conf.Config, database *gorm.DB, kvSto
 	group.GET("/users", handler.ListUsers)
 	group.GET("/users/:id", handler.GetUserDetail)
 	group.GET("/oauth-clients", handler.ListOAuthClients)
+	group.GET("/oauth-clients/:id", handler.GetOAuthClient)
+	group.GET("/oauth-clients/:id/users", handler.ListOAuthClientUsers)
+	group.DELETE("/oauth-clients/:id/users/:userID", handler.RemoveOAuthClientUsers)
+	group.DELETE("/oauth-clients/:id/users", handler.RemoveOAuthClientUsers)
+	group.DELETE("/oauth-clients/:id", handler.DeleteOAuthClient)
+	group.POST("/oauth-clients/:id/secret/rotate", handler.RotateOAuthClientSecret)
 	group.GET("/oauth-clients/:id/secret", handler.GetOAuthClientSecret)
 	group.POST("/oauth-clients", handler.CreateOAuthClient)
 	group.PUT("/oauth-clients/:id", handler.UpdateOAuthClient)
@@ -444,7 +454,7 @@ func createAdminTestUser(t *testing.T, database *gorm.DB, id string, email strin
 	user := &model.User{
 		ID:        id,
 		Email:     &email,
-		Status: model.UserStatusActive,
+		Status:    model.UserStatusActive,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}

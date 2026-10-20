@@ -9,7 +9,6 @@ import (
 
 func ValidateRedirectURI(baseURI string, redirectURI string) error {
 	baseURI = strings.TrimSpace(baseURI)
-	redirectURI = strings.TrimSpace(redirectURI)
 
 	if baseURI == "" || redirectURI == "" {
 		return oauth2errors.ErrInvalidRedirectURI
@@ -20,7 +19,7 @@ func ValidateRedirectURI(baseURI string, redirectURI string) error {
 			return oauth2errors.ErrInvalidRedirectURI
 		}
 		for _, value := range allowed {
-			if strings.TrimSpace(value) == redirectURI {
+			if value == redirectURI {
 				return nil
 			}
 		}

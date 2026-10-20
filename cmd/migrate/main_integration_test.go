@@ -203,6 +203,40 @@ func Test_ThirdPartyTimestampsMigration_UpAndDown(t *testing.T) {
 	assert.Zero(t, columnCount)
 }
 
+func Test_OAuthClientRedirectURIsMigration_UpAndDown(t *testing.T) {
+	testDatabase := newPostgresTestDatabase(t)
+	database := testDatabase.open(t)
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
+	provider, err := migration.NewProvider(database, os.DirFS("../../migrations"), 1, 11)
+	require.NoError(t, err)
+	ctx := t.Context()
+	_, err = provider.UpTo(ctx, 16)
+	require.NoError(t, err)
+	_, err = database.ExecContext(ctx, `INSERT INTO oauth_clients (name, client_id, client_secret, homepage_url, redirect_uri)
+		VALUES ('App', 'app', 'secret', 'https://app.example.com', 'https://app.example.com/callback?source=sso'),
+		       ('Empty', 'empty', 'secret', 'https://empty.example.com', '')`)
+	require.NoError(t, err)
+	_, err = provider.UpTo(ctx, 17)
+	require.NoError(t, err)
+	var callbacks, columnType string
+	require.NoError(t, database.QueryRowContext(ctx, "SELECT redirect_uris::text FROM oauth_clients WHERE client_id = 'app'").Scan(&callbacks))
+	assert.JSONEq(t, `["https://app.example.com/callback?source=sso"]`, callbacks)
+	require.NoError(t, database.QueryRowContext(ctx, "SELECT redirect_uris::text FROM oauth_clients WHERE client_id = 'empty'").Scan(&callbacks))
+	assert.JSONEq(t, `[]`, callbacks)
+	require.NoError(t, database.QueryRowContext(ctx, "SELECT data_type FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'oauth_clients' AND column_name = 'redirect_uris'").Scan(&columnType))
+	assert.Equal(t, "jsonb", columnType)
+	_, err = database.ExecContext(ctx, `UPDATE oauth_clients SET redirect_uris = '["https://app.example.com/callback?source=sso","app://oauth/callback"]'::jsonb WHERE client_id = 'app'`)
+	require.NoError(t, err)
+	_, err = provider.Down(ctx)
+	require.NoError(t, err)
+	require.NoError(t, database.QueryRowContext(ctx, "SELECT redirect_uri FROM oauth_clients WHERE client_id = 'app'").Scan(&callbacks))
+	assert.Equal(t, "https://app.example.com/callback?source=sso", callbacks)
+	require.NoError(t, database.QueryRowContext(ctx, "SELECT redirect_uri FROM oauth_clients WHERE client_id = 'empty'").Scan(&callbacks))
+	assert.Empty(t, callbacks)
+	_, err = provider.UpTo(ctx, 17)
+	require.NoError(t, err)
+}
+
 func Test_MigrationLock_ProductionTimeout(t *testing.T) {
 	assert.Equal(t, uint64(5), migration.LockPeriod)
 	assert.Equal(t, uint64(60), migration.LockFailureThreshold)
@@ -268,7 +302,7 @@ func assertMigrationVersionsRecordedOnce(t *testing.T, database *sql.DB) {
 		versions[version] = count
 	}
 	require.NoError(t, rows.Err())
-	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 1, 16: 1}, versions)
+	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 1, 16: 1, 17: 1, 18: 1}, versions)
 }
 
 func assertFinalDatabaseStructure(t *testing.T, database *sql.DB) {
@@ -304,11 +338,12 @@ func assertFinalDatabaseStructure(t *testing.T, database *sql.DB) {
 		columns[column] = true
 	}
 	require.NoError(t, rows.Err())
-	assert.True(t, columns["redirect_uri"])
+	assert.True(t, columns["redirect_uris"])
+	assert.True(t, columns["registration_id"])
 	assert.True(t, columns["homepage_url"])
 	assert.True(t, columns["logout_uri"])
 	assert.True(t, columns["client_type"])
-	assert.False(t, columns["redirect_uris"])
+	assert.False(t, columns["redirect_uri"])
 	assert.False(t, columns["logout_uris"])
 }
 
@@ -329,7 +364,7 @@ func Test_UserStatusMigration_PreservesSuspensionAndCanRollback(t *testing.T) {
 	require.NoError(t, err)
 	_, err = database.ExecContext(t.Context(), "INSERT INTO users (id,is_active) VALUES ('active',true),('disabled',false)")
 	require.NoError(t, err)
-	_, err = provider.Up(t.Context())
+	_, err = provider.UpTo(t.Context(), 14)
 	require.NoError(t, err)
 	var active, disabled string
 	require.NoError(t, database.QueryRowContext(t.Context(), "SELECT status FROM users WHERE id = 'active'").Scan(&active))

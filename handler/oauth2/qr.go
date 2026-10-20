@@ -26,6 +26,9 @@ func (o *OAuth2) ValidateQRCodeToken(request *http.Request) (auth.QRActor, bool,
 	if err != nil || o.validateClaimsCutoff(request.Context(), user.ID, claims) != nil {
 		return auth.QRActor{}, false, common.ErrInvalidCredentials
 	}
+	if _, err := db.ValidateOAuthAuthorization(request.Context(), o.db, claims.Subject, claims.ClientID, claims.RegistrationID, claims.AuthorizationID); err != nil {
+		return auth.QRActor{}, false, common.ErrInvalidCredentials
+	}
 	permitted := slices.Contains(claims.Audience, auth.QRLoginAudience) && slices.Contains(strings.Fields(claims.Scope), auth.QRLoginScope)
-	return auth.QRActor{UserID: claims.Subject, ClientID: claims.ClientID}, permitted, nil
+	return auth.QRActor{UserID: claims.Subject, ClientID: claims.ClientID, RegistrationID: claims.RegistrationID, AuthorizationID: claims.AuthorizationID}, permitted, nil
 }

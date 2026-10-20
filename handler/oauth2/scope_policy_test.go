@@ -31,7 +31,7 @@ func Test_OAuthScopes_DefaultSubsetAndLiveRefresh(t *testing.T) {
 	t.Cleanup(func() { _ = connection.Close() })
 	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserSession{}, &model.UserOAuthClient{}))
 	require.NoError(t, database.Create(&model.User{ID: "u1", Status: model.UserStatusActive}).Error)
-	client := model.OAuthClient{ClientID: "app", Name: "App", ClientType: model.OAuthClientTypeConfidential, ClientSecret: "secret", RedirectURI: "https://app.test/callback", Audiences: []string{"app-api"}, AllowedScopes: []string{"read", "write"}}
+	client := model.OAuthClient{ClientID: "app", Name: "App", ClientType: model.OAuthClientTypeConfidential, ClientSecret: "secret", RedirectURIs: []string{"https://app.test/callback"}, Audiences: []string{"app-api"}, AllowedScopes: []string{"read", "write"}}
 	require.NoError(t, database.Create(&client).Error)
 	cfg := &conf.Config{Auth: conf.AuthConfig{JWTSecret: "test-secret"}, Tokens: conf.TokenConfig{
 		OAuth:   conf.OAuthTokenConfig{Issuer: "https://sso.test", SigningKID: "test", SigningPrivateKeyPEM: testPrivateKeyPEM(t), AccessTokenTTL: time.Hour, RefreshTokenTTL: time.Hour, AuthorizationCodeTTL: time.Minute},
@@ -50,7 +50,7 @@ func Test_OAuthScopes_DefaultSubsetAndLiveRefresh(t *testing.T) {
 	})
 	router.POST("/oauth/token", o.HandleToken)
 	authorize := func(scope *string) string {
-		query := url.Values{"client_id": {"app"}, "redirect_uri": {client.RedirectURI}, "response_type": {"code"}}
+		query := url.Values{"client_id": {"app"}, "redirect_uri": {client.RedirectURIs[0]}, "response_type": {"code"}}
 		if scope != nil {
 			query.Set("scope", *scope)
 		}
@@ -93,7 +93,7 @@ func Test_OAuthScopes_DefaultSubsetAndLiveRefresh(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			query, err := url.ParseQuery(authorize(tc.scope))
 			require.NoError(t, err)
-			data := parse(request(url.Values{"grant_type": {"authorization_code"}, "code": {query.Get("code")}, "redirect_uri": {client.RedirectURI}}))
+			data := parse(request(url.Values{"grant_type": {"authorization_code"}, "code": {query.Get("code")}, "redirect_uri": {client.RedirectURIs[0]}}))
 			require.Equal(t, tc.expected, dataScope(data))
 			if tc.name == "subset" {
 				initial = data
@@ -120,7 +120,7 @@ func Test_OAuthScopes_DefaultSubsetAndLiveRefresh(t *testing.T) {
 	require.Empty(t, dataScope(data))
 	emptyQuery, err := url.ParseQuery(authorize(nil))
 	require.NoError(t, err)
-	emptyData := parse(request(url.Values{"grant_type": {"authorization_code"}, "code": {emptyQuery.Get("code")}, "redirect_uri": {client.RedirectURI}}))
+	emptyData := parse(request(url.Values{"grant_type": {"authorization_code"}, "code": {emptyQuery.Get("code")}, "redirect_uri": {client.RedirectURIs[0]}}))
 	require.Empty(t, dataScope(emptyData))
 	// A scope revoked between authorization and exchange cannot be signed.
 	client.AllowedScopes = []string{"read"}
@@ -129,7 +129,7 @@ func Test_OAuthScopes_DefaultSubsetAndLiveRefresh(t *testing.T) {
 	require.NoError(t, err)
 	client.AllowedScopes = []string{}
 	require.NoError(t, database.Save(&client).Error)
-	require.NotEqual(t, 200, request(url.Values{"grant_type": {"authorization_code"}, "code": {query.Get("code")}, "redirect_uri": {client.RedirectURI}}).Code)
+	require.NotEqual(t, 200, request(url.Values{"grant_type": {"authorization_code"}, "code": {query.Get("code")}, "redirect_uri": {client.RedirectURIs[0]}}).Code)
 }
 
 func dataScope(data map[string]interface{}) string { scope, _ := data["scope"].(string); return scope }

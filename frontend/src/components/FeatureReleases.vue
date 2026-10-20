@@ -1,6 +1,6 @@
 <template>
   <section class="releases" aria-label="功能发布">
-    <header><div><h2>功能发布</h2><p>调整开放范围和 Beta 标签，保存后生效。</p></div>
+    <header><div><h1>功能发布</h1></div>
       <button type="button" :disabled="loading || saving" @click="load">刷新</button></header>
     <p v-if="loading" role="status">正在加载功能配置…</p>
     <p v-else-if="error" role="alert">{{ error }} <button type="button" @click="load">重试</button></p>
@@ -84,8 +84,8 @@ onMounted(load)
 
 <style scoped>
 .releases { padding: 24px; color: #1f2328; }
-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-h2 { margin: 0; font-size: 20px; font-weight: 600; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 20px; border-bottom: 1px solid #d8dee4; }
+h1 { margin: 0; font-size: 25px; font-weight: 500; }
 p, small { color: #656d76; font-size: 13px; }
 form { margin-top: 24px; }
 fieldset { border: 1px solid #d0d7de; border-radius: 6px; padding: 20px; display: grid; gap: 20px; min-width: 0; }

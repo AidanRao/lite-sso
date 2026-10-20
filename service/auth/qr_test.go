@@ -19,6 +19,7 @@ import (
 
 	"sso-server/common"
 	"sso-server/conf"
+	"sso-server/dal/db"
 	"sso-server/dal/kv"
 	"sso-server/model"
 )
@@ -31,12 +32,17 @@ func qrTestService(t *testing.T, store kv.Store) *AuthService {
 	require.NoError(t, err)
 	connection.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = connection.Close() })
-	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserSession{}))
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserOAuthClient{}, &model.UserSession{}))
 	for _, id := range []string{"u1", "u2"} {
 		require.NoError(t, database.Create(&model.User{ID: id, Status: model.UserStatusActive}).Error)
 	}
 	for _, id := range []string{"scanner", "other"} {
 		require.NoError(t, database.Create(&model.OAuthClient{ClientID: id, Name: id, Audiences: []string{QRLoginAudience}, AllowedScopes: []string{QRLoginScope}}).Error)
+	}
+	for _, userID := range []string{"u1", "u2"} {
+		for _, clientID := range []string{"scanner", "other"} {
+			require.NoError(t, database.Create(&model.UserOAuthClient{UserID: userID, ClientID: clientID, LastLoginAt: time.Now()}).Error)
+		}
 	}
 	return NewAuthService(&conf.Config{Auth: conf.AuthConfig{JWTSecret: "qr-test-secret"}, Tokens: conf.TokenConfig{
 		OAuth:   conf.OAuthTokenConfig{Issuer: "https://sso.test"},
@@ -171,6 +177,39 @@ func Test_QRCode_CancelRejectRevocationAndExpiry(t *testing.T) {
 	_, err = s.PollQRCode(ctx, expired.Code, metadata.DeviceID, expired.BrowserToken)
 	require.ErrorIs(t, err, common.ErrQRCodeExpired)
 	require.ErrorIs(t, s.ValidateQRCodeActor(ctx, QRActor{UserID: "u1", ClientID: "absent"}), common.ErrQRCodeClientForbidden)
+}
+
+func Test_QRCode_RemovedAuthorizationCannotCompleteAfterRelogin(t *testing.T) {
+	for _, recreateClient := range []bool{false, true} {
+		name := "association"
+		if recreateClient {
+			name = "registration"
+		}
+		t.Run(name, func(t *testing.T) {
+			s := qrTestService(t, kv.NewMemoryStore())
+			metadata := LoginMetadata{DeviceID: "browser"}
+			actor := QRActor{UserID: "u1", ClientID: "scanner"}
+			challenge, err := s.GenerateQRCode(t.Context(), "", metadata)
+			require.NoError(t, err)
+			_, err = s.ScanQRCode(t.Context(), challenge.Code, actor)
+			require.NoError(t, err)
+			require.NoError(t, s.ConfirmQRCode(t.Context(), challenge.Code, actor))
+			approved, err := s.PollQRCode(t.Context(), challenge.Code, metadata.DeviceID, challenge.BrowserToken)
+			require.NoError(t, err)
+			require.NoError(t, s.db.Where("user_id = ? AND client_id = ?", "u1", "scanner").Delete(&model.UserOAuthClient{}).Error)
+			if recreateClient {
+				require.NoError(t, s.db.Where("client_id = ?", "scanner").Delete(&model.OAuthClient{}).Error)
+				require.NoError(t, db.NewOAuthClientRepository(s.db).Create(t.Context(), &model.OAuthClient{ClientID: "scanner", Name: "Scanner", Audiences: []string{QRLoginAudience}, AllowedScopes: []string{QRLoginScope}}))
+			}
+			require.NoError(t, db.NewUserOAuthClientRepository(s.db).RecordLogin(t.Context(), "u1", "scanner", time.Now()))
+			require.ErrorIs(t, s.ConfirmQRCode(t.Context(), challenge.Code, actor), common.ErrQRCodeClientForbidden)
+			_, _, err = s.CompleteQRCodeLogin(t.Context(), challenge.Code, approved.LoginTicket, challenge.BrowserToken, metadata)
+			require.ErrorIs(t, err, common.ErrQRCodeClientForbidden)
+			var sessionCount int64
+			require.NoError(t, s.db.Model(&model.UserSession{}).Count(&sessionCount).Error)
+			require.Zero(t, sessionCount)
+		})
+	}
 }
 
 type failingQRStore struct{ kv.Store }

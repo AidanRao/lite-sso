@@ -22,7 +22,7 @@ func Test_TokenSigner_JWKSAndExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().Truncate(time.Second)
-	access, err := signer.sign("usr_1", "android-app", []string{"classhopper-api", "profile-api"}, []string{"courses:read"}, now)
+	access, err := signer.sign("usr_1", "android-app", "", "", []string{"classhopper-api", "profile-api"}, []string{"courses:read"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func Test_TokenSigner_JWKSAndExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JWKS public key failed to verify access token: %v", err)
 	}
-	expired, err := signer.sign("usr_1", "android-app", []string{"classhopper-api"}, nil, now.Add(-31*time.Minute))
+	expired, err := signer.sign("usr_1", "android-app", "", "", []string{"classhopper-api"}, nil, now.Add(-31*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func Test_TokenSigner_PreviousPublicKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldToken, err := oldSigner.sign("usr_1", "android-app", []string{"classhopper-api"}, nil, time.Now())
+	oldToken, err := oldSigner.sign("usr_1", "android-app", "", "", []string{"classhopper-api"}, nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

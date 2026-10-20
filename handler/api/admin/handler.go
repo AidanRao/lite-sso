@@ -99,6 +99,7 @@ func (h *AdminHandler) GetOAuthClientSecret(c *gin.Context) {
 		return
 	}
 
+	c.Header("Cache-Control", "no-store")
 	secret, err := h.admin.GetOAuthClientSecret(c.Request.Context(), uint(id64))
 	if err != nil {
 		writeOAuthClientError(c, err, "获取平台密钥失败")
@@ -126,7 +127,7 @@ func (h *AdminHandler) CreateOAuthClient(c *gin.Context) {
 
 	audit.Target(c, "oauth_client", strconv.FormatUint(uint64(client.ID), 10))
 	audit.Client(c, client.ClientID)
-	audit.Changed(c, "name", "client_type", "client_secret", "homepage_url", "redirect_uri", "logout_uri")
+	audit.Changed(c, "name", "client_type", "client_secret", "homepage_url", "redirect_uris", "logout_uri")
 	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"client": client}))
 }
@@ -153,10 +154,7 @@ func (h *AdminHandler) UpdateOAuthClient(c *gin.Context) {
 
 	audit.Target(c, "oauth_client", strconv.FormatUint(uint64(client.ID), 10))
 	audit.Client(c, client.ClientID)
-	audit.Changed(c, "name", "client_type", "homepage_url", "redirect_uri", "logout_uri")
-	if req.ClientSecret != nil {
-		audit.Changed(c, "client_secret")
-	}
+	audit.Changed(c, "name", "client_type", "homepage_url", "redirect_uris", "logout_uri")
 	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{"client": client}))
 }

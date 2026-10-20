@@ -21,12 +21,14 @@ var ErrInvalidRefresh = errors.New("invalid OAuth refresh token")
 
 // RefreshGrant binds a refresh token to the original OAuth authorization.
 type RefreshGrant struct {
-	UserID       string    `json:"user_id"`
-	ClientID     string    `json:"client_id"`
-	Audiences    []string  `json:"audiences"`
-	Scopes       []string  `json:"scopes"`
-	AuthorizedAt int64     `json:"authorized_at"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	RegistrationID  string    `json:"client_registration_id,omitempty"`
+	AuthorizationID string    `json:"client_authorization_id,omitempty"`
+	UserID          string    `json:"user_id"`
+	ClientID        string    `json:"client_id"`
+	Audiences       []string  `json:"audiences"`
+	Scopes          []string  `json:"scopes"`
+	AuthorizedAt    int64     `json:"authorized_at"`
+	ExpiresAt       time.Time `json:"expires_at"`
 }
 
 // RefreshStore persists and rotates OAuth refresh grants.

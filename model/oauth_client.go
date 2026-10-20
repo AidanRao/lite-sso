@@ -21,18 +21,19 @@ func (t OAuthClientType) IsPublic() bool {
 }
 
 type OAuthClient struct {
-	ID            uint            `gorm:"primaryKey;autoIncrement"`
-	Name          string          `gorm:"type:varchar(50);not null"`
-	ClientID      string          `gorm:"type:varchar(50);uniqueIndex;not null"`
-	ClientSecret  string          `gorm:"type:varchar(255);not null"`
-	ClientType    OAuthClientType `gorm:"type:varchar(20);not null;default:confidential"`
-	Audiences     []string        `gorm:"type:jsonb;serializer:json;not null;default:'[]'"`
-	AllowedScopes []string        `gorm:"type:jsonb;serializer:json;not null;default:'[]'"`
-	HomepageURL   string          `gorm:"type:text;not null"`
-	RedirectURI   string          `gorm:"type:text;not null"`
-	LogoutURI     string          `gorm:"type:text"`
-	LogoURL       *string         `gorm:"type:text"`
-	LogoObjectKey *string         `gorm:"type:varchar(512)"`
+	ID             uint            `gorm:"primaryKey;autoIncrement"`
+	Name           string          `gorm:"type:varchar(50);not null"`
+	RegistrationID string          `gorm:"type:varchar(36);not null"`
+	ClientID       string          `gorm:"type:varchar(50);uniqueIndex;not null"`
+	ClientSecret   string          `gorm:"type:varchar(255);not null"`
+	ClientType     OAuthClientType `gorm:"type:varchar(20);not null;default:confidential"`
+	Audiences      []string        `gorm:"type:jsonb;serializer:json;not null;default:'[]'"`
+	AllowedScopes  []string        `gorm:"type:jsonb;serializer:json;not null;default:'[]'"`
+	HomepageURL    string          `gorm:"type:text;not null"`
+	RedirectURIs   []string        `gorm:"type:jsonb;serializer:json;not null;default:'[]'"`
+	LogoutURI      string          `gorm:"type:text"`
+	LogoURL        *string         `gorm:"type:text"`
+	LogoObjectKey  *string         `gorm:"type:varchar(512)"`
 }
 
 func (OAuthClient) TableName() string {

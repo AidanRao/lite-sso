@@ -2,6 +2,7 @@ package oauth2
 
 import (
 	"context"
+	"encoding/json"
 
 	gooauth2 "github.com/go-oauth2/oauth2/v4"
 	oauth2errors "github.com/go-oauth2/oauth2/v4/errors"
@@ -34,10 +35,15 @@ func (s *ClientStore) GetByID(ctx context.Context, id string) (gooauth2.ClientIn
 		return nil, oauth2errors.ErrInvalidClient
 	}
 
+	redirectURIs, err := json.Marshal(client.RedirectURIs)
+	if err != nil {
+		return nil, oauth2errors.ErrInvalidClient
+	}
+
 	return &models.Client{
 		ID:     client.ClientID,
 		Secret: clientSecretFor(client),
-		Domain: client.RedirectURI,
+		Domain: string(redirectURIs),
 		Public: client.ClientType.IsPublic(),
 	}, nil
 }

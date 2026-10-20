@@ -38,6 +38,11 @@ type OAuth2 struct {
 }
 
 type authorizationSessionKey struct{}
+type authorizationIdentityKey struct{}
+type authorizationIdentity struct {
+	RegistrationID  string
+	AuthorizationID string
+}
 
 func New(cfg *conf.Config) (*OAuth2, error) {
 	if kv.Client == nil {
@@ -80,6 +85,10 @@ func newWithStores(cfg *conf.Config, database *gorm.DB, tokenStore gooauth2.Toke
 			extension := info.GetExtension()
 			extension.Set("session_id", sessionID)
 			extension.Set("authorized_at", strconv.FormatInt(time.Now().UnixMicro(), 10))
+			if identity, ok := request.Request.Context().Value(authorizationIdentityKey{}).(authorizationIdentity); ok {
+				extension.Set("registration_id", identity.RegistrationID)
+				extension.Set("authorization_id", identity.AuthorizationID)
+			}
 			info.SetExtension(extension)
 		}
 	})
@@ -181,6 +190,10 @@ func (o *OAuth2) HandleAuthorize(c *gin.Context) {
 
 	var ti gooauth2.TokenInfo
 	err = o.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		locked, err := db.NewOAuthClientRepository(tx).LockByClientID(ctx, req.ClientID)
+		if err != nil || locked.ID != configured.ID || locked.RegistrationID != configured.RegistrationID {
+			return oauth2errors.ErrInvalidClient
+		}
 		user, err := db.LockActiveUser(ctx, tx, userID)
 		if err != nil {
 			return oauth2errors.ErrAccessDenied
@@ -193,11 +206,17 @@ func (o *OAuth2) HandleAuthorize(c *gin.Context) {
 		if err != nil || db.ValidateUserSession(ctx, tx, user, session, now) != nil {
 			return oauth2errors.ErrAccessDenied
 		}
-		ti, err = o.server.GetAuthorizeToken(ctx, req)
+		associations := db.NewUserOAuthClientRepository(tx)
+		if err := associations.RecordLogin(ctx, userID, req.ClientID, now); err != nil {
+			return err
+		}
+		association, err := associations.FindAssociation(ctx, userID, req.ClientID)
 		if err != nil {
 			return err
 		}
-		return db.NewUserOAuthClientRepository(tx).RecordLogin(ctx, userID, req.ClientID, now)
+		req.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), authorizationIdentityKey{}, authorizationIdentity{RegistrationID: locked.RegistrationID, AuthorizationID: association.AuthorizationID}))
+		ti, err = o.server.GetAuthorizeToken(ctx, req)
+		return err
 	})
 	if err != nil {
 		o.redirectOrWriteAuthorizeError(c, req, err)
@@ -254,7 +273,7 @@ func (o *OAuth2) HandleToken(c *gin.Context) {
 		o.writeTokenError(c, oauth2errors.ErrInvalidGrant)
 		return
 	}
-	grant := oauth.RefreshGrant{UserID: info.GetUserID(), ClientID: info.GetClientID(), Audiences: client.Audiences, Scopes: strings.Fields(info.GetScope()), AuthorizedAt: authorizedAt, ExpiresAt: time.Now().Add(o.cfg.Tokens.OAuth.RefreshTokenTTL)}
+	grant := oauth.RefreshGrant{RegistrationID: extended.GetExtension().Get("registration_id"), AuthorizationID: extended.GetExtension().Get("authorization_id"), UserID: info.GetUserID(), ClientID: info.GetClientID(), Audiences: client.Audiences, Scopes: strings.Fields(info.GetScope()), AuthorizedAt: authorizedAt, ExpiresAt: time.Now().Add(o.cfg.Tokens.OAuth.RefreshTokenTTL)}
 	if err := o.withRefreshAccount(c.Request.Context(), grant, func() error { return o.refresh.Issue(c.Request.Context(), refreshToken, grant) }); err != nil {
 		if errors.Is(err, oauth.ErrInvalidRefresh) {
 			o.writeTokenError(c, oauth2errors.ErrInvalidGrant)
@@ -301,6 +320,10 @@ func (o *OAuth2) handleRefresh(c *gin.Context, request *gooauth2.TokenGenerateRe
 		o.writeTokenError(c, oauth2errors.ErrInvalidClient)
 		return
 	}
+	if _, err := db.ValidateOAuthAuthorization(ctx, o.db, grant.UserID, grant.ClientID, grant.RegistrationID, grant.AuthorizationID); err != nil {
+		o.writeTokenError(c, oauth2errors.ErrInvalidGrant)
+		return
+	}
 	user, err := db.NewUserRepository(o.db).FindByID(ctx, grant.UserID)
 	if err != nil || user.Status == model.UserStatusDisabled || user.Status == model.UserStatusPendingDeletion || db.CheckUserRevocation(ctx, o.db, user.ID, grant.AuthorizedAt) != nil {
 		o.writeTokenError(c, oauth2errors.ErrInvalidGrant)
@@ -322,7 +345,7 @@ func (o *OAuth2) handleRefresh(c *gin.Context, request *gooauth2.TokenGenerateRe
 		o.writeTokenError(c, oauth2errors.ErrInvalidGrant)
 		return
 	}
-	access, err := o.signer.sign(grant.UserID, grant.ClientID, audiences, allowedScopes, time.Now())
+	access, err := o.signer.sign(grant.UserID, grant.ClientID, grant.RegistrationID, grant.AuthorizationID, audiences, allowedScopes, time.Now())
 	if err != nil {
 		o.writeTokenError(c, err)
 		return
@@ -408,6 +431,12 @@ func (o *OAuth2) RefreshStore() oauth.RefreshStore { return o.refresh }
 // withRefreshAccount serializes issuance and rotation with deletion and its durable cutoff.
 func (o *OAuth2) withRefreshAccount(ctx context.Context, grant oauth.RefreshGrant, issue func() error) error {
 	return o.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := db.NewOAuthClientRepository(tx).LockByClientID(ctx, grant.ClientID); err != nil {
+			return oauth.ErrInvalidRefresh
+		}
+		if _, err := db.ValidateOAuthAuthorization(ctx, tx, grant.UserID, grant.ClientID, grant.RegistrationID, grant.AuthorizationID); err != nil {
+			return oauth.ErrInvalidRefresh
+		}
 		user, err := db.LockActiveUser(ctx, tx, grant.UserID)
 		if err != nil || db.CheckUserRevocation(ctx, tx, user.ID, grant.AuthorizedAt) != nil {
 			return oauth.ErrInvalidRefresh
