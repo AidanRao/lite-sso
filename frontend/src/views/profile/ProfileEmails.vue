@@ -31,6 +31,7 @@
                 </span>
               </div>
               <p v-if="item.is_primary" class="email-note">此邮箱用于账号通知、二次验证和其他默认邮件。</p>
+              <p v-if="emailDeleteReason(item)" class="email-note">{{ emailDeleteReason(item) }}</p>
               <button
                 v-if="!item.verified"
                 class="resend-link"
@@ -45,7 +46,7 @@
             <details class="more-menu">
               <summary class="icon-button" aria-label="更多操作"><Ellipsis :size="20" /></summary>
               <div class="menu-popover">
-                <button class="menu-danger" type="button" :disabled="deletingID === item.id" @click="deleteEmail(item, $event)">
+                <button class="menu-danger" type="button" :disabled="Boolean(deletingID) || Boolean(emailDeleteReason(item))" :title="emailDeleteReason(item)" @click="deleteEmail(item, $event)">
                   <Trash2 :size="16" />
                   {{ deletingID === item.id ? '删除中…' : '删除邮箱' }}
                 </button>
@@ -95,7 +96,7 @@ import { userAPI } from '../../api/auth'
 import ProfileSettingsSection from '../../components/profile/ProfileSettingsSection.vue'
 import ThirdPartyProviderIcon from '../../components/ThirdPartyProviderIcon.vue'
 import SelectMenu from '../../components/SelectMenu.vue'
-import { getEmailVerificationToken } from '../../utils/emailVerification'
+import { forgetEmailVerificationToken, getEmailVerificationToken, readEmailVerificationToken } from '../../utils/emailVerification'
 import { isReauthCancelled } from '../../utils/reauthCoordinator'
 import { PROFILE_CONTEXT_KEY } from './profileContext'
 
@@ -120,6 +121,12 @@ const verificationState = reactive({ type: '', message: '' })
 const atLimit = computed(() => emails.value.length >= maxAddresses.value)
 const verifiedEmails = computed(() => emails.value.filter(item => item.verified))
 const primaryEmailOptions = computed(() => verifiedEmails.value.map(item => ({ value: item.id, label: item.email })))
+
+const emailDeleteReason = (item) => {
+  if (emails.value.length <= 1) return '账号至少需要保留一个邮箱。'
+  if (item.is_primary) return '请先设置其他已验证邮箱为主邮箱，再删除此邮箱。'
+  return ''
+}
 
 const providerName = (provider) => ({ github: 'GitHub', feishu: '飞书', qq: 'QQ', google: 'Google' }[provider] || provider)
 
@@ -177,7 +184,7 @@ const resendVerification = async (item) => {
 
 const deleteEmail = async (item, event) => {
   event?.currentTarget?.closest('details')?.removeAttribute('open')
-  if (deletingID.value) return
+  if (deletingID.value || emailDeleteReason(item)) return
   try {
     await ElMessageBox.confirm(`确定删除邮箱 ${item.email}？删除后将无法再使用该邮箱登录。`, '删除邮箱', {
       confirmButtonText: '删除邮箱',
@@ -218,15 +225,22 @@ const changePrimary = async () => {
 }
 
 const confirmFromLink = async () => {
-  const token = getEmailVerificationToken(route.hash)
+  if (route.name !== 'ProfileEmailVerification') return
+  const token = getEmailVerificationToken(route.hash) || readEmailVerificationToken()
   if (!token) return
   await router.replace('/profile/access/emails')
   try {
     await userAPI.confirmEmailVerification(token)
+    forgetEmailVerificationToken()
     verificationState.type = 'success'
     verificationState.message = '邮箱验证成功，现在可以用于登录。'
     await Promise.all([loadEmails(), profile.reload()])
   } catch (error) {
+    if (error.status === 401) {
+      router.replace({ path: '/login', query: { redirect: '/profile/access/emails/verify' } })
+      return
+    }
+    if (error.status === 403 || error.status === 410) forgetEmailVerificationToken()
     verificationState.type = 'error'
     verificationState.message = error.message || '邮箱验证失败，请重新发送验证邮件。'
   }

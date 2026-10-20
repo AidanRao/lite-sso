@@ -26,6 +26,7 @@
             <strong>邮箱</strong>
             <span>{{ user?.email || '未设置' }}</span>
           </div>
+          <RouterLink v-if="showEmailReminder" class="button email-setup-link" to="/profile/access/emails">设置邮箱</RouterLink>
         </div>
       </div>
     </ProfileSettingsSection>
@@ -101,7 +102,7 @@ if (!profile) throw new Error('ProfileAccount must be rendered inside Profile')
 
 const route = useRoute()
 const router = useRouter()
-const { user, setUser } = profile
+const { user, setUser, showEmailReminder } = profile
 const deletionDialogOpen = ref(false)
 const onDeletionSubmitted = (data) => {
  rememberDeletion(data)
@@ -201,6 +202,7 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
 </script>
 
 <style scoped>
+.email-setup-link { flex-shrink: 0; white-space: nowrap; }
 :deep(#account-deletion-title) { color: var(--profile-danger); }
 .deletion-row p { margin: 0 0 14px; font-size: 14px; line-height: 1.6; color: var(--profile-text-strong); }
 .button.danger { color: var(--profile-danger); }

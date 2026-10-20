@@ -173,6 +173,13 @@ func (s *AuthService) CompleteLoginWithContext(ctx context.Context, userID strin
 			if err != nil {
 				return err
 			}
+			verifiedEmailCount, err := db.NewUserEmailRepository(tx).CountVerifiedByUserID(ctx, userID)
+			if err != nil {
+				return err
+			}
+			if verifiedEmailCount == 0 {
+				redirectURL = emailSetupRedirect(redirectURL)
+			}
 		}
 		sessionID := "ses_" + uuid.NewString()
 		refreshToken, err := generateRefreshToken(sessionID)

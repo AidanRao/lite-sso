@@ -25,6 +25,7 @@ var safeErrors = []struct {
 	{err: common.ErrEmailNotFound, code: "EMAIL_NOT_FOUND"},
 	{err: common.ErrEmailNotVerified, code: "EMAIL_NOT_VERIFIED"},
 	{err: common.ErrPrimaryEmailDelete, code: "PRIMARY_EMAIL_DELETE"},
+	{err: common.ErrLastEmail, code: "LAST_EMAIL"},
 	{err: common.ErrEmailVerificationInvalid, code: "EMAIL_VERIFICATION_INVALID"},
 	{err: common.ErrEmailVerificationExpired, code: "EMAIL_VERIFICATION_EXPIRED"},
 	{err: common.ErrEmailVerificationResend, code: "EMAIL_VERIFICATION_RESEND"},

@@ -139,7 +139,10 @@ func Test_QRHandlers_OAuthPermissionsBrowserIsolationAndContinuation(t *testing.
 	require.Equal(t, 403, call("POST", "/api/auth/qr/complete", completeBody, "", "wrong", cookies).Code)
 	complete := call("POST", "/api/auth/qr/complete", completeBody, "", browser, cookies)
 	result := decode(complete)
-	require.Equal(t, redirect, result["redirect_url"])
+	setupURL, err := url.Parse(result["redirect_url"].(string))
+	require.NoError(t, err)
+	require.Equal(t, "/setup-email", setupURL.Path)
+	require.Equal(t, redirect, setupURL.Query().Get("redirect"))
 	sessionCookies := complete.Result().Cookies()
 	require.Len(t, sessionCookies, 2)
 	for _, cookie := range sessionCookies {
