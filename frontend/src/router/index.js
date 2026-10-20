@@ -106,9 +106,19 @@ const routes = [
   },
   {
     path: '/admin',
-    name: 'Admin',
-    meta: { title: '系统管理' },
-    component: () => import('../views/Admin.vue')
+    component: () => import('../views/Admin.vue'),
+    children: [
+      { path: '', name: 'Admin', redirect: '/admin/users' },
+      { path: 'users', name: 'AdminUsers', meta: { title: '用户管理' }, component: () => import('../views/admin/AdminUsers.vue') },
+      { path: 'clients', name: 'AdminClients', meta: { title: '客户端管理' }, component: () => import('../views/admin/AdminClients.vue') },
+      { path: 'clients/new', name: 'AdminClientNew', meta: { title: '新增客户端' }, component: () => import('../views/admin/AdminClientForm.vue') },
+      { path: 'clients/:id(\\d+)', meta: { clientDetail: true }, component: () => import('../views/admin/AdminClientDetails.vue'), children: [
+        { path: '', name: 'AdminClientGeneral', meta: { title: '客户端详情' }, component: () => import('../views/admin/AdminClientGeneral.vue') },
+        { path: 'users', name: 'AdminClientUsers', meta: { title: '客户端用户' }, component: () => import('../views/admin/AdminClientUsers.vue') },
+        { path: 'advanced', name: 'AdminClientAdvanced', meta: { title: '客户端高级设置' }, component: () => import('../views/admin/AdminClientAdvanced.vue') }
+      ] },
+      { path: 'features', name: 'AdminFeatures', meta: { title: '功能发布' }, component: () => import('../components/FeatureReleases.vue') }
+    ]
   },
   {
     path: '/docs/:slug?',

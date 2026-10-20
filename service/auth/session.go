@@ -138,6 +138,14 @@ func (s *AuthService) CompleteLoginWithContext(ctx context.Context, userID strin
 	var result *LoginResult
 	var pair *TokenPair
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if actor, ok := ctx.Value(qrAuthorizationKey{}).(QRActor); ok {
+			if _, err := db.NewOAuthClientRepository(tx).LockByClientID(ctx, actor.ClientID); err != nil {
+				return common.ErrQRCodeClientForbidden
+			}
+			if err := validateQRCodeActor(ctx, tx, actor); err != nil {
+				return err
+			}
+		}
 		user, err := db.LockUser(ctx, tx, userID)
 		if err != nil {
 			return common.ErrInvalidCredentials

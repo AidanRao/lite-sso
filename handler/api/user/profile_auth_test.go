@@ -74,7 +74,7 @@ func TestUserProfile_WithSessionCookieReturnsUser(t *testing.T) {
 		ClientID:     "c1",
 		ClientSecret: "s1",
 		HomepageURL:  "https://demo.example.com",
-		RedirectURI:  "http://localhost/cb",
+		RedirectURIs: []string{"http://localhost/cb"},
 		LogoURL:      &logoURL,
 	}).Error; err != nil {
 		t.Fatalf("create oauth client: %v", err)
@@ -344,7 +344,7 @@ func TestUserApplications_ReturnsOnlyApplicationData(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	logoURL := "https://cdn.example.com/demo.png"
-	if err := database.Create(&model.OAuthClient{Name: "Demo", ClientID: "demo", ClientSecret: "secret", HomepageURL: "https://demo.example.com", RedirectURI: "https://demo.example.com/callback", LogoURL: &logoURL}).Error; err != nil {
+	if err := database.Create(&model.OAuthClient{Name: "Demo", ClientID: "demo", ClientSecret: "secret", HomepageURL: "https://demo.example.com", RedirectURIs: []string{"https://demo.example.com/callback"}, LogoURL: &logoURL}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
 	}
 	if err := database.Create(&model.UserOAuthClient{UserID: "u1", ClientID: "demo", LastLoginAt: time.Now()}).Error; err != nil {

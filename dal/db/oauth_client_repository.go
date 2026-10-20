@@ -3,7 +3,9 @@ package db
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"sso-server/model"
 )
@@ -83,9 +85,45 @@ func (r *OAuthClientRepository) ExistsClientID(ctx context.Context, clientID str
 }
 
 func (r *OAuthClientRepository) Create(ctx context.Context, client *model.OAuthClient) error {
+	if client.RegistrationID == "" {
+		client.RegistrationID = uuid.NewString()
+	}
 	return r.db.WithContext(ctx).Create(client).Error
 }
 
 func (r *OAuthClientRepository) Update(ctx context.Context, client *model.OAuthClient) error {
-	return r.db.WithContext(ctx).Save(client).Error
+	result := r.db.WithContext(ctx).Model(&model.OAuthClient{}).Where("id = ?", client.ID).Select("Name", "ClientType", "Audiences", "AllowedScopes", "HomepageURL", "RedirectURIs", "LogoutURI").Updates(client)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// LockByID serializes management and authorization writes for one client.
+func (r *OAuthClientRepository) LockByID(ctx context.Context, id uint) (*model.OAuthClient, error) {
+	var client model.OAuthClient
+	err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&client, "id = ?", id).Error
+	return &client, err
+}
+
+// LockByClientID uses the same row lock as management operations.
+func (r *OAuthClientRepository) LockByClientID(ctx context.Context, clientID string) (*model.OAuthClient, error) {
+	var client model.OAuthClient
+	err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&client, "client_id = ?", clientID).Error
+	return &client, err
+}
+
+// UpdateLogo changes only logo fields and never recreates a missing client.
+func (r *OAuthClientRepository) UpdateLogo(ctx context.Context, client *model.OAuthClient) error {
+	result := r.db.WithContext(ctx).Model(&model.OAuthClient{}).Where("id = ?", client.ID).Updates(map[string]any{"logo_url": client.LogoURL, "logo_object_key": client.LogoObjectKey})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }

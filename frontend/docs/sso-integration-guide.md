@@ -14,41 +14,70 @@ SSO 管理员需为接入系统登记客户端信息：
 | `audiences` | 允许访问的业务 API 标识列表，至少配置一个才能签发令牌 | `["classhopper-api"]` |
 | `allowed_scopes` | 应用权限列表；未传 scope 时全部签发 | `["courses:read"]` |
 | `homepage_url` | 系统首页地址，用于退出后的 `redirect` 域名校验 | `https://order.example.com` |
-| `redirect_uri` | 登录回调地址 | `https://order.example.com/auth/sso/callback` |
+| `redirect_uris` | 允许的登录回调地址列表，至少一个 | `["https://order.example.com/auth/sso/callback", "http://localhost:3000/auth/sso/callback"]` |
 | `logout_uri` | 可选，全局登出通知地址 | `https://order.example.com/auth/sso/logout` |
 
-登记示例：
+管理界面中每行填写一个允许的回调地址；创建和更新客户端 API 使用 `redirect_uris` 字符串数组。每次 OAuth 授权请求仍提交单个 `redirect_uri`，兑换授权码时须使用同一地址。不支持通配符或前缀匹配。
 
-```sql
-INSERT INTO oauth_clients (name, client_id, client_secret, audiences, allowed_scopes, homepage_url, redirect_uri, logout_uri)
-VALUES (
-    '订单系统',
-    'order-app',
-    'replace-with-secret',
-    '["classhopper-api"]'::jsonb,
-    '["courses:read"]'::jsonb,
-    'https://order.example.com',
-    'https://order.example.com/auth/sso/callback',
-    'https://order.example.com/auth/sso/logout'
-);
+部署此更新前执行 `00017_add_oauth_client_redirect_uris.sql` 迁移，原有单个地址会保留为数组中的一项。回滚迁移时仅保留列表中的第一个地址。
+
+通过管理页面或 `POST /api/admin/oauth-clients` 登记，后端会分配独立的注册标记。请勿直接插入数据库或复用旧记录的标记。
+
+服务端客户端请求示例：
+
+```json
+{
+  "name": "订单系统",
+  "client_id": "order-app",
+  "client_type": "confidential",
+  "client_secret": "replace-with-secret",
+  "audiences": ["classhopper-api"],
+  "allowed_scopes": ["courses:read"],
+  "homepage_url": "https://order.example.com",
+  "redirect_uris": ["https://order.example.com/auth/sso/callback", "http://localhost:3000/auth/sso/callback"],
+  "logout_uri": "https://order.example.com/auth/sso/logout"
+}
 ```
 
-公共客户端示例（如 Android、iOS、桌面客户端或单页 Web 应用；也可在管理界面选择“公共客户端”登记）：
+公共客户端请求示例（如 Android、iOS、桌面客户端或单页 Web 应用）：
 
-```sql
-INSERT INTO oauth_clients (name, client_id, client_secret, client_type, audiences, allowed_scopes, homepage_url, redirect_uri, logout_uri)
-VALUES (
-    'Android App',
-    'android-app',
-    '',
-    'public',
-    '["classhopper-api"]'::jsonb,
-    '["courses:read"]'::jsonb,
-    'https://android.example.com',
-    'lite-sso-demo://oauth/callback',
-    ''
-);
+```json
+{
+  "name": "Android App",
+  "client_id": "android-app",
+  "client_type": "public",
+  "audiences": ["classhopper-api"],
+  "allowed_scopes": ["courses:read"],
+  "homepage_url": "https://android.example.com",
+  "redirect_uris": ["lite-sso-demo://oauth/callback"]
+}
 ```
+
+### 客户端详情与用户授权管理
+
+管理员在 `/admin/clients/:id` 编辑 General 配置，在 `/admin/clients/:id/users` 分页管理关联用户，在 `/admin/clients/:id/advanced` 删除客户端。Users 默认每页 20 条，按最后登录时间倒序、用户 ID 升序排列；页码保存在 URL 中。清空全部作用于整个客户端。
+
+以下 API 都需要 SSO 管理员会话，`:id` 是数据库中的数字 ID：
+
+| 方法与路径 | 说明 |
+| --- | --- |
+| `GET /api/admin/oauth-clients/:id` | `data.client` 返回配置和 `user_count`，无任何密钥信息 |
+| `GET /api/admin/oauth-clients/:id/users?page=1&page_size=20` | `data` 返回 `users`、`total`、`page`、`page_size`；每页最多 100 条 |
+| `DELETE /api/admin/oauth-clients/:id/users/:userID` | 移除单个关联，返回 `data.removed_count`，重复移除返回 0 |
+| `DELETE /api/admin/oauth-clients/:id/users` | 移除全部关联与授权，返回实际移除数量 |
+| `GET /api/admin/oauth-clients/:id/secret` | 按需读取完整密钥，响应禁止缓存 |
+| `POST /api/admin/oauth-clients/:id/secret/rotate` | 轮换单一密钥，返回新密钥，旧密钥立即失效，响应禁止缓存 |
+| `DELETE /api/admin/oauth-clients/:id` | 仅允许删除无关联用户的客户端 |
+
+详情页密钥默认显示固定的 `xxx`，点击显示时才请求密钥接口，隐藏时清除页面中的完整值。普通配置更新不接受 `client_secret`；公共客户端没有密钥操作。切换成公共客户端会清除密钥，切回服务端客户端由后端生成新密钥。审计不保存密钥内容。
+
+移除仅撤销当前客户端的关联及授权，保留 SSO 账号、登录会话和其他客户端授权；用户以后可以重新登录。客户端删除在事务内重新检查关联人数；非零时返回 HTTP 409，`data.code = "CLIENT_HAS_USERS"`，`data.user_count` 为当前人数，不会自动清空关联。删除成功后彻底移除记录并清理 Logo，允许重新注册相同 Client ID。
+
+每次客户端注册分配 `registration_id`，每次重新建立已移除的关联分配 `authorization_id`。授权码、OAuth JWT、Refresh Token 和扫码确认绑定这些标记，旧授权不会因重新登录或同名客户端注册而恢复。正常重复登录保留现有标记，既有有效授权不受影响。移除或删除后，SSO 在线校验和刷新立即拒绝旧授权；业务端仅离线验签的 JWT 仍按自身有效期过期。Refresh Token 和授权码存储中的失效记录保留到自身 TTL，由在线标记校验拒绝使用。
+
+### 升级顺序
+
+先执行 `00017_add_oauth_client_redirect_uris.sql` 和 `00018_add_oauth_authorization_identity.sql`，再更新全部服务实例，最后开放用户移除与客户端删除入口。迁移为存量客户端和关联保留空标记，使存量授权继续有效；新注册和新关联必须由新版服务生成标记。迁移完成后旧版实例不能写入缺失标记的新记录，应在维护窗口完成切换，或先停止旧实例的 OAuth 写流量。混用旧版实例时禁止开放移除和删除功能。回滚标记迁移会失去授权隔离保障，不能在已经移除授权后直接回滚到旧服务。
 
 ## 2. 接口地址
 
@@ -335,7 +364,7 @@ if __name__ == "__main__":
 - 每次登录必须生成并校验 `state`。
 - OAuth Refresh Token 每次使用后轮换，客户端必须保存新值并丢弃旧值。
 - 公共客户端必须使用 PKCE `S256`；服务端客户端可继续使用现有 secret 流程，也可选用 PKCE `S256`。
-- `redirect_uri` 必须与管理端登记的地址完全一致。服务端回调生产环境应使用 HTTPS；原生公共客户端可登记精确的自定义 Scheme 回调。
+- `redirect_uri` 必须与管理端 `redirect_uris` 列表中的一项完全一致（包括路径、查询参数和末尾斜杠），且不得包含片段（`#`）。服务端回调生产环境应使用 HTTPS；原生公共客户端可登记精确的自定义 Scheme 回调。
 - 退出登录携带的 `redirect` 只校验域名是否与已登记的 `homepage_url` 一致，不要求路径与 `homepage_url` 相同。
 - 如需联动登出，可登记 `logout_uri`，由 SSO 登出流程通知接入系统清除本地会话。
 

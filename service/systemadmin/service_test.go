@@ -7,6 +7,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
@@ -121,10 +122,61 @@ func Test_UploadOAuthClientLogo_RequiresStorageAndClient(t *testing.T) {
 	}
 }
 
+func Test_OAuthClientRedirectURIs_CreateAndUpdate(t *testing.T) {
+	database := newOAuthClientLogoTestDB(t)
+	service := NewAdminService(&conf.Config{}, database, nil)
+	request := dto.CreateOAuthClientRequest{
+		Name: "App", ClientID: "multi-callback", ClientType: "public", HomepageURL: "https://app.example.com",
+		RedirectURIs: []string{" https://app.example.com/callback ", "app://oauth/callback", "https://app.example.com/callback"},
+	}
+	created, err := service.CreateOAuthClient(t.Context(), request)
+	require.NoError(t, err)
+	require.Equal(t, []string{"https://app.example.com/callback", "app://oauth/callback"}, created.RedirectURIs)
+	var saved model.OAuthClient
+	require.NoError(t, database.First(&saved, created.ID).Error)
+	require.Equal(t, created.RedirectURIs, saved.RedirectURIs)
+
+	updated, err := service.UpdateOAuthClient(t.Context(), created.ID, dto.UpdateOAuthClientRequest{
+		Name: request.Name, HomepageURL: request.HomepageURL,
+		RedirectURIs: []string{"https://admin.example.com/callback?source=sso", "app://oauth/callback"},
+	})
+	require.NoError(t, err)
+	require.NoError(t, database.First(&saved, created.ID).Error)
+	require.Equal(t, updated.RedirectURIs, saved.RedirectURIs)
+	require.Equal(t, []string{"https://admin.example.com/callback?source=sso", "app://oauth/callback"}, saved.RedirectURIs)
+}
+
+func Test_OAuthClientRedirectURIs_RejectInvalidConfiguration(t *testing.T) {
+	database := newOAuthClientLogoTestDB(t)
+	service := NewAdminService(&conf.Config{}, database, nil)
+	request := dto.CreateOAuthClientRequest{
+		Name: "App", ClientID: "validate-callbacks", ClientType: "public", HomepageURL: "https://app.example.com",
+		RedirectURIs: []string{"app://oauth/callback"},
+	}
+	created, err := service.CreateOAuthClient(t.Context(), request)
+	require.NoError(t, err)
+	for _, values := range [][]string{
+		nil, {}, {""}, {"   "}, {"/relative"}, {"https://app.example.com/callback", "invalid"},
+		{"https://app.example.com/callback#fragment"}, {"https://user:password@app.example.com/callback"},
+		{"https://app.example.com/call back"}, {"https://app.example.com/callback\nextra"},
+	} {
+		request.RedirectURIs = values
+		_, err := service.CreateOAuthClient(t.Context(), request)
+		require.ErrorIs(t, err, common.ErrInvalidOAuthClient)
+		_, err = service.UpdateOAuthClient(t.Context(), created.ID, dto.UpdateOAuthClientRequest{
+			Name: request.Name, HomepageURL: request.HomepageURL, RedirectURIs: values,
+		})
+		require.ErrorIs(t, err, common.ErrInvalidOAuthClient)
+	}
+	var saved model.OAuthClient
+	require.NoError(t, database.First(&saved, created.ID).Error)
+	require.Equal(t, []string{"app://oauth/callback"}, saved.RedirectURIs)
+}
+
 func Test_OAuthClientClaims_CreateAndUpdate(t *testing.T) {
 	database := newOAuthClientLogoTestDB(t)
 	service := NewAdminService(&conf.Config{}, database, nil)
-	request := dto.CreateOAuthClientRequest{Name: "Android", ClientID: "android-app", ClientType: "public", HomepageURL: "https://app.example.com", RedirectURI: "app://callback", Audiences: []string{"classhopper-api", "profile-api"}, AllowedScopes: []string{"courses:read", "profile:read"}}
+	request := dto.CreateOAuthClientRequest{Name: "Android", ClientID: "android-app", ClientType: "public", HomepageURL: "https://app.example.com", RedirectURIs: []string{"app://callback"}, Audiences: []string{"classhopper-api", "profile-api"}, AllowedScopes: []string{"courses:read", "profile:read"}}
 	created, err := service.CreateOAuthClient(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +184,7 @@ func Test_OAuthClientClaims_CreateAndUpdate(t *testing.T) {
 	if len(created.Audiences) != 2 || len(created.AllowedScopes) != 2 {
 		t.Fatalf("claim configuration was not returned: %#v", created)
 	}
-	updated, err := service.UpdateOAuthClient(context.Background(), created.ID, dto.UpdateOAuthClientRequest{Name: request.Name, ClientType: &request.ClientType, HomepageURL: request.HomepageURL, RedirectURI: request.RedirectURI, Audiences: []string{"classhopper-api"}, AllowedScopes: []string{"courses:read"}})
+	updated, err := service.UpdateOAuthClient(context.Background(), created.ID, dto.UpdateOAuthClientRequest{Name: request.Name, ClientType: &request.ClientType, HomepageURL: request.HomepageURL, RedirectURIs: request.RedirectURIs, Audiences: []string{"classhopper-api"}, AllowedScopes: []string{"courses:read"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +219,7 @@ func createOAuthClientForLogoTest(t *testing.T, database *gorm.DB, logoURL *stri
 		ClientID:      "demo-client",
 		ClientSecret:  "secret",
 		HomepageURL:   "https://demo.example.com",
-		RedirectURI:   "https://demo.example.com/callback",
+		RedirectURIs:  []string{"https://demo.example.com/callback"},
 		LogoURL:       logoURL,
 		LogoObjectKey: logoObjectKey,
 	}

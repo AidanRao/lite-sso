@@ -3,6 +3,7 @@ package systemadmin
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"net/url"
@@ -22,6 +23,7 @@ import (
 )
 
 type AdminService struct {
+	database           *gorm.DB
 	cfg                *conf.Config
 	userRepo           *db.UserRepository
 	clientRepo         *db.OAuthClientRepository
@@ -40,6 +42,7 @@ func NewAdminService(cfg *conf.Config, database *gorm.DB, imageStore manageross.
 		registry = thirdparty.NewBuiltins(cfg)
 	}
 	return &AdminService{
+		database:           database,
 		cfg:                cfg,
 		userRepo:           db.NewUserRepository(database),
 		clientRepo:         db.NewOAuthClientRepository(database),
@@ -133,10 +136,18 @@ func (s *AdminService) UploadOAuthClientLogo(ctx context.Context, id uint, conte
 	}
 	log.Printf("oauth client logo upload oss completed: client_id=%d duration_ms=%d", id, time.Since(startedAt).Milliseconds())
 
-	previousObjectKey := client.LogoObjectKey
-	client.LogoURL = &logoURL
-	client.LogoObjectKey = &objectKey
-	if err := s.clientRepo.Update(ctx, client); err != nil {
+	var previousObjectKey *string
+	err = s.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		current, err := db.NewOAuthClientRepository(tx).LockByID(ctx, id)
+		if err != nil {
+			return clientLookupError(err)
+		}
+		previousObjectKey = current.LogoObjectKey
+		current.LogoURL, current.LogoObjectKey = &logoURL, &objectKey
+		client = current
+		return db.NewOAuthClientRepository(tx).UpdateLogo(ctx, current)
+	})
+	if err != nil {
 		cleanupFailed := false
 		if deleteErr := s.imageStore.DeleteImage(ctx, objectKey); deleteErr != nil {
 			cleanupFailed = true
@@ -164,10 +175,18 @@ func (s *AdminService) ClearOAuthClientLogo(ctx context.Context, id uint) (*dto.
 		return nil, common.ErrOAuthClientNotFound
 	}
 
-	previousObjectKey := client.LogoObjectKey
-	client.LogoURL = nil
-	client.LogoObjectKey = nil
-	if err := s.clientRepo.Update(ctx, client); err != nil {
+	var previousObjectKey *string
+	err = s.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		current, err := db.NewOAuthClientRepository(tx).LockByID(ctx, id)
+		if err != nil {
+			return clientLookupError(err)
+		}
+		previousObjectKey = current.LogoObjectKey
+		current.LogoURL, current.LogoObjectKey = nil, nil
+		client = current
+		return db.NewOAuthClientRepository(tx).UpdateLogo(ctx, current)
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -199,7 +218,10 @@ func (s *AdminService) ListOAuthClients(ctx context.Context) ([]dto.OAuthClientR
 func (s *AdminService) GetOAuthClientSecret(ctx context.Context, id uint) (*dto.OAuthClientSecretResponse, error) {
 	client, err := s.clientRepo.FindByID(ctx, id)
 	if err != nil {
-		return nil, common.ErrOAuthClientNotFound
+		return nil, clientLookupError(err)
+	}
+	if client.ClientType.IsPublic() {
+		return nil, common.ErrInvalidOAuthClient
 	}
 
 	return &dto.OAuthClientSecretResponse{
@@ -215,7 +237,7 @@ func toAdminUserResponse(user *model.User, cfg *conf.Config) *dto.AdminUserRespo
 		Email:     user.Email,
 		Username:  user.Username,
 		AvatarURL: user.AvatarURL,
-		Status: user.Status,
+		Status:    user.Status,
 		IsAdmin:   cfg.IsAdminUser(user.ID),
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
@@ -235,7 +257,7 @@ func (s *AdminService) CreateOAuthClient(ctx context.Context, req dto.CreateOAut
 	if err != nil {
 		return nil, err
 	}
-	redirectURI, err := normalizeURI(req.RedirectURI)
+	redirectURIs, err := normalizeRedirectURIs(req.RedirectURIs)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +296,7 @@ func (s *AdminService) CreateOAuthClient(ctx context.Context, req dto.CreateOAut
 		Audiences:     audiences,
 		AllowedScopes: scopes,
 		HomepageURL:   homepageURL,
-		RedirectURI:   redirectURI,
+		RedirectURIs:  redirectURIs,
 		LogoutURI:     logoutURI,
 	}
 	if err := s.clientRepo.Create(ctx, client); err != nil {
@@ -286,60 +308,76 @@ func (s *AdminService) CreateOAuthClient(ctx context.Context, req dto.CreateOAut
 
 // UpdateOAuthClient validates and updates an OAuth client.
 func (s *AdminService) UpdateOAuthClient(ctx context.Context, id uint, req dto.UpdateOAuthClientRequest) (*dto.OAuthClientResponse, error) {
-	client, err := s.clientRepo.FindByID(ctx, id)
-	if err != nil {
-		return nil, common.ErrOAuthClientNotFound
-	}
+	var response dto.OAuthClientResponse
+	err := s.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		client, err := db.NewOAuthClientRepository(tx).LockByID(ctx, id)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return common.ErrOAuthClientNotFound
+		}
+		if err != nil {
+			return err
+		}
 
-	name := strings.TrimSpace(req.Name)
-	clientType := client.ClientType
-	if req.ClientType != nil {
-		clientType = model.OAuthClientType(strings.TrimSpace(*req.ClientType))
-	}
-	homepageURL, err := normalizeURI(req.HomepageURL)
-	if err != nil {
-		return nil, err
-	}
-	redirectURI, err := normalizeURI(req.RedirectURI)
-	if err != nil {
-		return nil, err
-	}
-	logoutURI, err := normalizeOptionalURI(req.LogoutURI)
-	if err != nil {
-		return nil, err
-	}
-	if name == "" || !clientType.IsValid() {
-		return nil, common.ErrInvalidOAuthClient
-	}
-	audiences, err := normalizeClaimValues(req.Audiences)
-	if err != nil {
-		return nil, err
-	}
-	scopes, err := normalizeClaimValues(req.AllowedScopes)
-	if err != nil {
-		return nil, err
-	}
+		name := strings.TrimSpace(req.Name)
+		clientType := client.ClientType
+		if req.ClientType != nil {
+			clientType = model.OAuthClientType(strings.TrimSpace(*req.ClientType))
+		}
+		homepageURL, err := normalizeURI(req.HomepageURL)
+		if err != nil {
+			return err
+		}
+		redirectURIs, err := normalizeRedirectURIs(req.RedirectURIs)
+		if err != nil {
+			return err
+		}
+		logoutURI, err := normalizeOptionalURI(req.LogoutURI)
+		if err != nil {
+			return err
+		}
+		if name == "" || !clientType.IsValid() {
+			return common.ErrInvalidOAuthClient
+		}
+		audiences, err := normalizeClaimValues(req.Audiences)
+		if err != nil {
+			return err
+		}
+		scopes, err := normalizeClaimValues(req.AllowedScopes)
+		if err != nil {
+			return err
+		}
 
-	client.Name = name
-	client.HomepageURL = homepageURL
-	client.RedirectURI = redirectURI
-	client.LogoutURI = logoutURI
-	client.ClientType = clientType
-	client.Audiences = audiences
-	client.AllowedScopes = scopes
-	if clientType.IsPublic() {
-		client.ClientSecret = ""
-	} else if req.ClientSecret != nil && strings.TrimSpace(*req.ClientSecret) != "" {
-		client.ClientSecret = strings.TrimSpace(*req.ClientSecret)
-	}
-	if !clientType.IsPublic() && client.ClientSecret == "" {
-		return nil, common.ErrInvalidOAuthClient
-	}
+		client.Name = name
+		client.HomepageURL = homepageURL
+		client.RedirectURIs = redirectURIs
+		client.LogoutURI = logoutURI
+		client.ClientType = clientType
+		client.Audiences = audiences
+		client.AllowedScopes = scopes
+		if clientType.IsPublic() {
+			client.ClientSecret = ""
+		} else if client.ClientSecret == "" {
+			client.ClientSecret, err = newClientSecret()
+			if err != nil {
+				return err
+			}
+		}
+		if !clientType.IsPublic() && client.ClientSecret == "" {
+			return common.ErrInvalidOAuthClient
+		}
 
-	if err := s.clientRepo.Update(ctx, client); err != nil {
+		if err := tx.Model(&model.OAuthClient{}).Where("id = ?", client.ID).Update("client_secret", client.ClientSecret).Error; err != nil {
+			return err
+		}
+		if err := db.NewOAuthClientRepository(tx).Update(ctx, client); err != nil {
+			return err
+		}
+		response = toOAuthClientResponse(client)
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	response := toOAuthClientResponse(client)
 	return &response, nil
 }
 
@@ -352,7 +390,7 @@ func toOAuthClientResponse(client *model.OAuthClient) dto.OAuthClientResponse {
 		Audiences:     append([]string{}, client.Audiences...),
 		AllowedScopes: append([]string{}, client.AllowedScopes...),
 		HomepageURL:   client.HomepageURL,
-		RedirectURI:   client.RedirectURI,
+		RedirectURIs:  append([]string{}, client.RedirectURIs...),
 		LogoutURI:     client.LogoutURI,
 		LogoURL:       client.LogoURL,
 	}
@@ -367,6 +405,27 @@ func normalizeClaimValues(values []string) ([]string, error) {
 		}
 		if !slices.Contains(result, value) {
 			result = append(result, value)
+		}
+	}
+	return result, nil
+}
+
+func normalizeRedirectURIs(values []string) ([]string, error) {
+	if len(values) == 0 {
+		return nil, common.ErrInvalidOAuthClient
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		normalized, err := normalizeURI(value)
+		if err != nil || strings.ContainsAny(normalized, "#\r\n\t ") {
+			return nil, common.ErrInvalidOAuthClient
+		}
+		parsed, err := url.Parse(normalized)
+		if err != nil || parsed.User != nil {
+			return nil, common.ErrInvalidOAuthClient
+		}
+		if !slices.Contains(result, normalized) {
+			result = append(result, normalized)
 		}
 	}
 	return result, nil

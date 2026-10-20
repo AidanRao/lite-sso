@@ -178,6 +178,7 @@ func Test_Middleware_RealPasswordEmailQRCodeAndLogoutFlows(t *testing.T) {
 	require.NoError(t, err)
 	cfg.Tokens.OAuth = conf.OAuthTokenConfig{Issuer: "https://sso.test", SigningKID: "test-key", SigningPrivateKeyPEM: string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})), AccessTokenTTL: time.Hour, RefreshTokenTTL: time.Hour, AuthorizationCodeTTL: time.Minute}
 	require.NoError(t, database.Create(&model.OAuthClient{ClientID: "scanner", Name: "Scanner", Audiences: []string{auth.QRLoginAudience}, AllowedScopes: []string{auth.QRLoginScope}}).Error)
+	require.NoError(t, database.Create(&model.UserOAuthClient{UserID: "u1", ClientID: "scanner", LastLoginAt: time.Now()}).Error)
 	oauthServer, err := oauth2.NewWithStores(cfg, database, nil)
 	require.NoError(t, err)
 	scannerJWT := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{"iss": "https://sso.test", "sub": "u1", "client_id": "scanner", "aud": []string{auth.QRLoginAudience}, "scope": auth.QRLoginScope, "exp": time.Now().Add(time.Hour).Unix()})

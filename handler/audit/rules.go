@@ -45,6 +45,10 @@ func Rules() []Rule {
 		{Method: "PUT", Route: "/api/admin/oauth-clients/:id", Action: "admin.client.update", TargetType: "oauth_client", TargetParam: "id"},
 		{Method: "POST", Route: "/api/admin/oauth-clients/:id/logo", Action: "admin.client.logo.update", TargetType: "oauth_client", TargetParam: "id"},
 		{Method: "DELETE", Route: "/api/admin/oauth-clients/:id/logo", Action: "admin.client.logo.clear", TargetType: "oauth_client", TargetParam: "id"},
+		{Method: "DELETE", Route: "/api/admin/oauth-clients/:id", Action: "admin.client.delete", TargetType: "oauth_client", TargetParam: "id"},
+		{Method: "DELETE", Route: "/api/admin/oauth-clients/:id/users", Action: "admin.client.users.clear", TargetType: "oauth_client", TargetParam: "id"},
+		{Method: "DELETE", Route: "/api/admin/oauth-clients/:id/users/:userID", Action: "admin.client.user.remove", TargetType: "oauth_client", TargetParam: "id"},
+		{Method: "POST", Route: "/api/admin/oauth-clients/:id/secret/rotate", Action: "admin.client.secret.rotate", TargetType: "oauth_client", TargetParam: "id"},
 		{Method: "GET", Route: "/api/admin/oauth-clients/:id/secret", Action: "admin.client.secret.view", TargetType: "oauth_client", TargetParam: "id"},
 	}
 }

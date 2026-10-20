@@ -33,7 +33,7 @@ func Test_OAuthDeletion_DurableCutoffBlocksOldCodeRefreshAndOnlineJWT(t *testing
 	require.NoError(t, database.AutoMigrate(&model.User{}, &model.UserDeletion{}, &model.UserEmail{}, &model.OAuthClient{}, &model.UserSession{}, &model.UserOAuthClient{}))
 	require.NoError(t, database.Create(&model.User{ID: "owner", Status: model.UserStatusActive}).Error)
 	cfg := &conf.Config{Auth: conf.AuthConfig{JWTSecret: "secret"}, Tokens: conf.TokenConfig{Session: conf.SessionTokenConfig{AccessTokenTTL: time.Hour, RefreshTokenTTL: time.Hour}, OAuth: conf.OAuthTokenConfig{Issuer: "https://sso.test", SigningKID: "test", SigningPrivateKeyPEM: testPrivateKeyPEM(t), AccessTokenTTL: time.Hour, RefreshTokenTTL: time.Hour, AuthorizationCodeTTL: time.Minute}}}
-	client := model.OAuthClient{ClientID: "app", Name: "App", ClientType: model.OAuthClientTypeConfidential, ClientSecret: "secret", RedirectURI: "https://app.test/callback", Audiences: []string{"app"}, AllowedScopes: []string{"read"}}
+	client := model.OAuthClient{ClientID: "app", Name: "App", ClientType: model.OAuthClientTypeConfidential, ClientSecret: "secret", RedirectURIs: []string{"https://app.test/callback"}, Audiences: []string{"app"}, AllowedScopes: []string{"read"}}
 	require.NoError(t, database.Create(&client).Error)
 	server, err := NewWithStores(cfg, database, nil)
 	require.NoError(t, err)
@@ -49,7 +49,7 @@ func Test_OAuthDeletion_DurableCutoffBlocksOldCodeRefreshAndOnlineJWT(t *testing
 	router.POST("/oauth/token", server.HandleToken)
 	authorize := func() string {
 		response := httptest.NewRecorder()
-		router.ServeHTTP(response, httptest.NewRequest("GET", "/oauth/authorize?response_type=code&client_id=app&redirect_uri="+url.QueryEscape(client.RedirectURI), nil))
+		router.ServeHTTP(response, httptest.NewRequest("GET", "/oauth/authorize?response_type=code&client_id=app&redirect_uri="+url.QueryEscape(client.RedirectURIs[0]), nil))
 		require.Equal(t, 302, response.Code, response.Body.String())
 		location, err := url.Parse(response.Header().Get("Location"))
 		require.NoError(t, err)
@@ -65,7 +65,7 @@ func Test_OAuthDeletion_DurableCutoffBlocksOldCodeRefreshAndOnlineJWT(t *testing
 	}
 	code := authorize()
 	pendingCode := authorize()
-	response := request(url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {client.RedirectURI}})
+	response := request(url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {client.RedirectURIs[0]}})
 	require.Equal(t, 200, response.Code, response.Body.String())
 	var tokens map[string]any
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &tokens))
@@ -76,7 +76,7 @@ func Test_OAuthDeletion_DurableCutoffBlocksOldCodeRefreshAndOnlineJWT(t *testing
 	require.NoError(t, database.Create(&deletion).Error)
 	require.NoError(t, database.Model(&model.User{}).Where("id = ?", "owner").Update("status", model.UserStatusPendingDeletion).Error)
 	require.Equal(t, 401, request(url.Values{"grant_type": {"refresh_token"}, "refresh_token": {oldRefresh}}).Code)
-	require.Equal(t, 401, request(url.Values{"grant_type": {"authorization_code"}, "code": {pendingCode}, "redirect_uri": {client.RedirectURI}}).Code)
+	require.Equal(t, 401, request(url.Values{"grant_type": {"authorization_code"}, "code": {pendingCode}, "redirect_uri": {client.RedirectURIs[0]}}).Code)
 	r := httptest.NewRequest(http.MethodGet, "/oauth/userinfo", nil)
 	r.Header.Set("Authorization", "Bearer "+oldAccess)
 	_, err = server.ValidateToken(r)
@@ -87,7 +87,9 @@ func Test_OAuthDeletion_DurableCutoffBlocksOldCodeRefreshAndOnlineJWT(t *testing
 	require.Equal(t, 401, request(url.Values{"grant_type": {"refresh_token"}, "refresh_token": {oldRefresh}}).Code)
 	_, err = server.ValidateToken(r)
 	require.Error(t, err)
-	grant := oauth.RefreshGrant{UserID: "owner", ClientID: "app", AuthorizedAt: cutoff.Add(time.Second).UnixMicro(), ExpiresAt: time.Now().Add(time.Hour)}
+	var association model.UserOAuthClient
+	require.NoError(t, database.First(&association, "user_id = ? AND client_id = ?", "owner", "app").Error)
+	grant := oauth.RefreshGrant{AuthorizationID: association.AuthorizationID, UserID: "owner", ClientID: "app", AuthorizedAt: cutoff.Add(time.Second).UnixMicro(), ExpiresAt: time.Now().Add(time.Hour)}
 	require.NoError(t, server.refresh.Issue(t.Context(), "fresh", grant))
 	require.NoError(t, server.refresh.RevokeUserBefore(t.Context(), "owner", cutoff))
 	require.Equal(t, 200, request(url.Values{"grant_type": {"refresh_token"}, "refresh_token": {"fresh"}}).Code)

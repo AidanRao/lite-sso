@@ -162,7 +162,7 @@ func Test_Logout_WithLogoutURI_ReturnsJSON(t *testing.T) {
 		ClientID:     "test-client",
 		ClientSecret: "secret",
 		HomepageURL:  "https://app.example.com",
-		RedirectURI:  "https://app.example.com/home",
+		RedirectURIs: []string{"https://app.example.com/home"},
 		LogoutURI:    "https://app.example.com/logout",
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
@@ -229,7 +229,7 @@ func Test_Logout_WithLogoutURI_OnlyNotifiesUserLoggedInClients(t *testing.T) {
 			ClientID:     "current-client",
 			ClientSecret: "secret",
 			HomepageURL:  "https://current.example.com",
-			RedirectURI:  "https://current.example.com/callback",
+			RedirectURIs: []string{"https://current.example.com/callback"},
 			LogoutURI:    "https://current.example.com/logout",
 		},
 		{
@@ -237,7 +237,7 @@ func Test_Logout_WithLogoutURI_OnlyNotifiesUserLoggedInClients(t *testing.T) {
 			ClientID:     "other-client",
 			ClientSecret: "secret",
 			HomepageURL:  "https://other.example.com",
-			RedirectURI:  "https://other.example.com/callback",
+			RedirectURIs: []string{"https://other.example.com/callback"},
 			LogoutURI:    "https://other.example.com/logout",
 		},
 	}
@@ -300,7 +300,7 @@ func Test_Logout_RedirectAllowsSameHomepageDomain(t *testing.T) {
 		ClientID:     "test-client",
 		ClientSecret: "secret",
 		HomepageURL:  "https://app.example.com/home",
-		RedirectURI:  "https://app.example.com/callback",
+		RedirectURIs: []string{"https://app.example.com/callback"},
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
 	}
@@ -356,7 +356,7 @@ func Test_Logout_RedirectAllowsRelativePath(t *testing.T) {
 		ClientID:     "test-client",
 		ClientSecret: "secret",
 		HomepageURL:  "https://app.example.com/home",
-		RedirectURI:  "https://app.example.com/callback",
+		RedirectURIs: []string{"https://app.example.com/callback"},
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
 	}
@@ -411,7 +411,7 @@ func Test_Logout_RedirectRejectsSimilarHomepageDomain(t *testing.T) {
 		ClientID:     "test-client",
 		ClientSecret: "secret",
 		HomepageURL:  "https://app.example.com/home",
-		RedirectURI:  "https://app.example.com/callback",
+		RedirectURIs: []string{"https://app.example.com/callback"},
 		LogoutURI:    "https://app.example.com/logout",
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)

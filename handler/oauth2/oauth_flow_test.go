@@ -49,7 +49,7 @@ func TestOAuth2_Authorize_RequiresSession(t *testing.T) {
 		Name:         "app",
 		ClientID:     "c1",
 		ClientSecret: "s1",
-		RedirectURI:  "http://localhost/cb",
+		RedirectURIs: []string{"http://localhost/cb"},
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 		ClientSecret:  clientSecret,
 		Audiences:     []string{"classhopper-api", "profile-api"},
 		AllowedScopes: []string{"courses:read", "profile:read"},
-		RedirectURI:   redirectURI,
+		RedirectURIs:  []string{"https://primary.example.com/callback", redirectURI},
 	}).Error; err != nil {
 		t.Fatalf("create client: %v", err)
 	}
@@ -188,6 +188,30 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	form.Set("code", code)
 	form.Set("redirect_uri", redirectURI)
 	form.Set("code_verifier", codeVerifier)
+
+	form.Set("redirect_uri", "https://primary.example.com/callback")
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(clientID, clientSecret)
+	r.ServeHTTP(w, req)
+	if w.Code == http.StatusOK {
+		t.Fatal("authorization code must not be redeemable with another registered callback")
+	}
+	// Each exchange attempt consumes its code, so obtain a fresh one for the valid exchange.
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, confidentialAuthorizeURL, nil)
+	req.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected fresh authorization code, got %d: %s", w.Code, w.Body.String())
+	}
+	u, err = url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	form.Set("code", u.Query().Get("code"))
+	form.Set("redirect_uri", redirectURI)
 
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
@@ -365,7 +389,7 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 		Audiences:     []string{"classhopper-api"},
 		AllowedScopes: []string{"courses:read"},
 		HomepageURL:   "https://android.example.com",
-		RedirectURI:   publicRedirectURI,
+		RedirectURIs:  []string{"https://android.example.com/callback", publicRedirectURI},
 	}).Error; err != nil {
 		t.Fatalf("create public client: %v", err)
 	}
@@ -395,6 +419,27 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 	publicForm.Set("code", publicCode)
 	publicForm.Set("redirect_uri", publicRedirectURI)
 	publicForm.Set("code_verifier", codeVerifier)
+	publicForm.Set("redirect_uri", "https://android.example.com/callback")
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(publicForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.ServeHTTP(w, req)
+	if w.Code == http.StatusOK {
+		t.Fatal("public client code must remain bound to its original callback")
+	}
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, publicAuthorizeURL, nil)
+	req.AddCookie(&http.Cookie{Name: serviceauth.SessionCookieName, Value: pair.SessionID})
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected fresh public authorization code, got %d: %s", w.Code, w.Body.String())
+	}
+	publicCallback, err = url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicForm.Set("code", publicCallback.Query().Get("code"))
+	publicForm.Set("redirect_uri", publicRedirectURI)
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(publicForm.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

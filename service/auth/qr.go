@@ -50,27 +50,33 @@ const (
 )
 
 // QRActor is the verified OAuth identity approving a browser login.
+type qrAuthorizationKey struct{}
+
 type QRActor struct {
-	UserID   string `json:"user_id"`
-	ClientID string `json:"client_id"`
+	RegistrationID  string `json:"client_registration_id,omitempty"`
+	AuthorizationID string `json:"client_authorization_id,omitempty"`
+	UserID          string `json:"user_id"`
+	ClientID        string `json:"client_id"`
 }
 
 // QRCodeData is private storage, never a public response.
 type QRCodeData struct {
-	Code          string       `json:"code"`
-	Status        QRCodeStatus `json:"status"`
-	UserID        string       `json:"user_id"`
-	ClientID      string       `json:"client_id"`
-	DeviceID      string       `json:"device_id"`
-	BrowserDigest string       `json:"browser_digest"`
-	LoginTicket   string       `json:"login_ticket"`
-	Redirect      string       `json:"redirect"`
-	TargetName    string       `json:"target_name"`
-	IP            string       `json:"ip"`
-	Location      string       `json:"location"`
-	UserAgent     string       `json:"user_agent"`
-	CreatedAt     time.Time    `json:"created_at"`
-	ExpiresAt     time.Time    `json:"expires_at"`
+	RegistrationID  string       `json:"client_registration_id,omitempty"`
+	AuthorizationID string       `json:"client_authorization_id,omitempty"`
+	Code            string       `json:"code"`
+	Status          QRCodeStatus `json:"status"`
+	UserID          string       `json:"user_id"`
+	ClientID        string       `json:"client_id"`
+	DeviceID        string       `json:"device_id"`
+	BrowserDigest   string       `json:"browser_digest"`
+	LoginTicket     string       `json:"login_ticket"`
+	Redirect        string       `json:"redirect"`
+	TargetName      string       `json:"target_name"`
+	IP              string       `json:"ip"`
+	Location        string       `json:"location"`
+	UserAgent       string       `json:"user_agent"`
+	CreatedAt       time.Time    `json:"created_at"`
+	ExpiresAt       time.Time    `json:"expires_at"`
 }
 
 // QRCodeChallenge separates the scannable payload from browser-only credentials.
@@ -136,20 +142,27 @@ func (s *AuthService) GenerateQRCode(ctx context.Context, redirect string, metad
 
 // ValidateQRCodeActor checks live application permissions and account status.
 func (s *AuthService) ValidateQRCodeActor(ctx context.Context, actor QRActor) error {
+	return validateQRCodeActor(ctx, s.db, actor)
+}
+
+func validateQRCodeActor(ctx context.Context, database *gorm.DB, actor QRActor) error {
 	if actor.UserID == "" || actor.ClientID == "" {
 		return common.ErrQRCodeClientForbidden
 	}
-	client, err := db.NewOAuthClientRepository(s.db).FindByClientID(ctx, actor.ClientID)
+	client, err := db.NewOAuthClientRepository(database).FindByClientID(ctx, actor.ClientID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return common.ErrQRCodeClientForbidden
 	}
 	if err != nil {
 		return err
 	}
+	if _, err := db.ValidateOAuthAuthorization(ctx, database, actor.UserID, actor.ClientID, actor.RegistrationID, actor.AuthorizationID); err != nil {
+		return common.ErrQRCodeClientForbidden
+	}
 	if !slices.Contains(client.AllowedScopes, QRLoginScope) || !slices.Contains(client.Audiences, QRLoginAudience) {
 		return common.ErrQRCodeClientForbidden
 	}
-	user, err := db.NewUserRepository(s.db).FindByID(ctx, actor.UserID)
+	user, err := db.NewUserRepository(database).FindByID(ctx, actor.UserID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return common.ErrUserNotFound
 	}
@@ -237,7 +250,7 @@ func (s *AuthService) CompleteQRCodeLogin(ctx context.Context, code, ticket, bro
 	if data.Status != QRCodeStatusConfirmed {
 		return nil, nil, common.ErrQRCodeInvalidStatus
 	}
-	if err := s.ValidateQRCodeActor(ctx, QRActor{UserID: data.UserID, ClientID: data.ClientID}); err != nil {
+	if err := s.ValidateQRCodeActor(ctx, QRActor{UserID: data.UserID, ClientID: data.ClientID, RegistrationID: data.RegistrationID, AuthorizationID: data.AuthorizationID}); err != nil {
 		return nil, nil, err
 	}
 	data, err = s.transitionQRCode(ctx, code, "complete", QRActor{}, metadata.DeviceID, browserToken, ticket)
@@ -248,7 +261,7 @@ func (s *AuthService) CompleteQRCodeLogin(ctx context.Context, code, ticket, bro
 	if err != nil || db.CheckUserRevocation(ctx, s.db, user.ID, data.CreatedAt.UnixMicro()) != nil {
 		return nil, nil, common.ErrQRCodeInvalidStatus
 	}
-	return s.CompleteLoginWithContext(ctx, data.UserID, data.Redirect, metadata, AuthMethodQR)
+	return s.CompleteLoginWithContext(context.WithValue(ctx, qrAuthorizationKey{}, QRActor{UserID: data.UserID, ClientID: data.ClientID, RegistrationID: data.RegistrationID, AuthorizationID: data.AuthorizationID}), data.UserID, data.Redirect, metadata, AuthMethodQR)
 }
 
 func qrDigest(value string) string {
@@ -336,13 +349,14 @@ func (data *QRCodeData) transition(operation string, actor QRActor, deviceID, br
 		if err := data.validateBrowser(deviceID, browserToken); err != nil {
 			return err
 		}
-	} else if data.Status != QRCodeStatusPending && (data.UserID != actor.UserID || data.ClientID != actor.ClientID) {
+	} else if data.Status != QRCodeStatusPending && (data.UserID != actor.UserID || data.ClientID != actor.ClientID || data.RegistrationID != actor.RegistrationID || data.AuthorizationID != actor.AuthorizationID) {
 		return common.ErrQRCodeInvalidUser
 	}
 	switch operation {
 	case "scan":
 		if data.Status == QRCodeStatusPending {
 			data.UserID, data.ClientID, data.Status = actor.UserID, actor.ClientID, QRCodeStatusScanned
+			data.RegistrationID, data.AuthorizationID = actor.RegistrationID, actor.AuthorizationID
 		} else if data.Status != QRCodeStatusScanned && data.Status != QRCodeStatusConfirmed {
 			return common.ErrQRCodeInvalidStatus
 		}
