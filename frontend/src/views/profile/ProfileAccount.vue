@@ -25,7 +25,6 @@
           <div class="row-copy">
             <strong>邮箱</strong>
             <span>{{ user?.email || '未设置' }}</span>
-            <span v-if="showEmailReminder" class="email-reminder">尚未设置已验证邮箱，建议添加以便登录和找回密码。</span>
           </div>
           <RouterLink v-if="showEmailReminder" class="button email-setup-link" to="/profile/access/emails">设置邮箱</RouterLink>
         </div>
