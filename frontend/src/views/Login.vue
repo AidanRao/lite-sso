@@ -297,7 +297,7 @@ const passwordValueValid = computed(() => Boolean(passwordForm.value.password))
 const passwordFormValid = computed(() => passwordEmailValid.value && passwordValueValid.value)
 const passwordLoginInvalid = computed(() => !passwordFormValid.value && passwordLockSeconds.value <= 0 && !loading.value)
 const passwordLoginDisabled = computed(() => loading.value || passwordLockSeconds.value > 0)
-const targetPlatformName = computed(() => targetClientName.value || 'SSO')
+const targetPlatformName = computed(() => targetClientName.value || '账号中心')
 const registerRoute = computed(() => {
   if (!redirectUrl.value || redirectUrl.value === '/profile') {
     return '/register'
