@@ -70,6 +70,7 @@ type QRCodeData struct {
 	DeviceID        string       `json:"device_id"`
 	BrowserDigest   string       `json:"browser_digest"`
 	LoginTicket     string       `json:"login_ticket"`
+	RememberMe      bool         `json:"remember_me"`
 	Redirect        string       `json:"redirect"`
 	TargetName      string       `json:"target_name"`
 	IP              string       `json:"ip"`
@@ -99,7 +100,7 @@ type QRCodePreview struct {
 }
 
 // GenerateQRCode creates a fixed-lifetime request bound to the requesting browser.
-func (s *AuthService) GenerateQRCode(ctx context.Context, redirect string, metadata LoginMetadata) (*QRCodeChallenge, error) {
+func (s *AuthService) GenerateQRCode(ctx context.Context, redirect string, metadata LoginMetadata, options LoginOptions) (*QRCodeChallenge, error) {
 	redirect, err := NormalizeLoginRedirect(redirect)
 	if err != nil {
 		return nil, err
@@ -119,7 +120,7 @@ func (s *AuthService) GenerateQRCode(ctx context.Context, redirect string, metad
 	}
 	now := time.Now().UTC()
 	data := QRCodeData{Code: uuid.NewString(), Status: QRCodeStatusPending, DeviceID: metadata.DeviceID,
-		BrowserDigest: qrDigest(secret), Redirect: redirect, TargetName: target, IP: requestmeta.NormalizeIP(metadata.IP), Location: s.loginLocation(metadata.IP),
+		BrowserDigest: qrDigest(secret), RememberMe: options.RememberMe, Redirect: redirect, TargetName: target, IP: requestmeta.NormalizeIP(metadata.IP), Location: s.loginLocation(metadata.IP),
 		UserAgent: useragent.Normalize(metadata.UserAgent), CreatedAt: now, ExpiresAt: now.Add(qrCodeExpire)}
 	payload, err := json.Marshal(struct {
 		Type    string `json:"type"`
@@ -261,7 +262,7 @@ func (s *AuthService) CompleteQRCodeLogin(ctx context.Context, code, ticket, bro
 	if err != nil || db.CheckUserRevocation(ctx, s.db, user.ID, data.CreatedAt.UnixMicro()) != nil {
 		return nil, nil, common.ErrQRCodeInvalidStatus
 	}
-	return s.CompleteLoginWithContext(context.WithValue(ctx, qrAuthorizationKey{}, QRActor{UserID: data.UserID, ClientID: data.ClientID, RegistrationID: data.RegistrationID, AuthorizationID: data.AuthorizationID}), data.UserID, data.Redirect, metadata, AuthMethodQR)
+	return s.CompleteLoginWithContext(context.WithValue(ctx, qrAuthorizationKey{}, QRActor{UserID: data.UserID, ClientID: data.ClientID, RegistrationID: data.RegistrationID, AuthorizationID: data.AuthorizationID}), data.UserID, data.Redirect, metadata, AuthMethodQR, LoginOptions{RememberMe: data.RememberMe})
 }
 
 func qrDigest(value string) string {

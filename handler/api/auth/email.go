@@ -18,6 +18,7 @@ import (
 // LoginWithEmailOTP handles challenge-based email login.
 func (h *AuthHandler) LoginWithEmailOTP(c *gin.Context) {
 	var req struct {
+		RememberMe  bool   `json:"remember_me"`
 		ChallengeID string `json:"challenge_id" binding:"required"`
 		OTP         string `json:"code" binding:"required,len=6"`
 		Redirect    string `json:"redirect"`
@@ -43,7 +44,7 @@ func (h *AuthHandler) LoginWithEmailOTP(c *gin.Context) {
 		return
 	}
 	audit.Actor(c, user.ID, "")
-	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, req.Redirect, handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders), serviceauth.AuthMethodEmailOTP)
+	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, req.Redirect, handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders), serviceauth.AuthMethodEmailOTP, serviceauth.LoginOptions{RememberMe: req.RememberMe})
 	if err != nil {
 		audit.Error(c, err)
 		log.Printf("auth email login failed: stage=session_create user_id=%s ip=%s error=%v", user.ID, requestmeta.IP(c.Request, h.trustProxyHeaders), err)
@@ -53,7 +54,7 @@ func (h *AuthHandler) LoginWithEmailOTP(c *gin.Context) {
 	audit.Actor(c, user.ID, pair.SessionID)
 	audit.Device(c, deviceID)
 	audit.Completed(c, "session_created")
-	WriteLoginCookies(c, pair, h.cookieSecure, h.auth.RefreshTokenTTL())
+	WriteLoginCookies(c, pair, h.cookieSecure)
 	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }

@@ -11,6 +11,7 @@ type UserSession struct {
 	DeviceID         string     `gorm:"type:varchar(64);not null;index"`
 	Purpose          string     `gorm:"type:varchar(32);not null;default:normal"`
 	DeletionID       *string    `gorm:"type:varchar(36)"`
+	RememberMe       bool       `gorm:"not null"`
 	AuthMethod       string     `gorm:"type:varchar(32);not null"`
 	RefreshTokenHash string     `gorm:"type:char(64);not null"`
 	IP               string     `gorm:"type:varchar(64);not null"`

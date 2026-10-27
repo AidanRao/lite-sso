@@ -230,13 +230,14 @@ func (c *Config) ValidateOAuthTokenLifetimes() error {
 
 // SessionTokenConfig contains lifetimes for first-party login sessions.
 type SessionTokenConfig struct {
-	AccessTokenTTL  time.Duration `mapstructure:"access_token_ttl"`
-	RefreshTokenTTL time.Duration `mapstructure:"refresh_token_ttl"`
+	AccessTokenTTL      time.Duration `mapstructure:"access_token_ttl"`
+	RefreshTokenTTL     time.Duration `mapstructure:"refresh_token_ttl"`
+	TemporarySessionTTL time.Duration `mapstructure:"temporary_session_ttl"`
 }
 
 // ValidateSessionTokenLifetimes checks the first-party session token lifetimes.
 func (c *Config) ValidateSessionTokenLifetimes() error {
-	if c.Tokens.Session.AccessTokenTTL <= 0 || c.Tokens.Session.RefreshTokenTTL <= 0 {
+	if c.Tokens.Session.AccessTokenTTL <= 0 || c.Tokens.Session.RefreshTokenTTL <= 0 || c.Tokens.Session.TemporarySessionTTL <= 0 {
 		return errors.New("session token lifetimes must be positive")
 	}
 	return nil
@@ -336,6 +337,7 @@ func bindEnvs(v *viper.Viper) {
 		"tokens.oauth.previous_public_keys",
 		"tokens.session.access_token_ttl",
 		"tokens.session.refresh_token_ttl",
+		"tokens.session.temporary_session_ttl",
 		"tokens.reauth.grant_ttl",
 		"auth.otp_secret",
 		"auth.jwt_secret",
@@ -408,6 +410,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("tokens.oauth.refresh_token_ttl", "720h")
 	v.SetDefault("tokens.session.access_token_ttl", "15m")
 	v.SetDefault("tokens.session.refresh_token_ttl", "720h")
+	v.SetDefault("tokens.session.temporary_session_ttl", "12h")
 	v.SetDefault("tokens.reauth.grant_ttl", "5m")
 	v.SetDefault("email.max_addresses", 3)
 	defaults := map[string]any{

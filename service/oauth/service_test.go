@@ -18,6 +18,7 @@ import (
 	"sso-server/dal/kv"
 	"sso-server/manager/thirdparty"
 	"sso-server/model"
+	"sso-server/service/auth"
 )
 
 type fakeThirdPartyProvider struct {
@@ -56,7 +57,7 @@ func Test_OAuthService_HandleThirdPartyLogin_RegisteredCustomProvider(t *testing
 	}
 	registry.Freeze()
 	service := NewOAuthService(&conf.Config{}, nil, kv.NewMemoryStore(), nil, registry)
-	authURL, err := service.HandleThirdPartyLogin(context.Background(), "custom", "/profile")
+	authURL, err := service.HandleThirdPartyLogin(context.Background(), "custom", "/profile", auth.LoginOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +91,7 @@ func TestOAuthService_HandleThirdPartyLogin_FeishuBuildsAuthURL(t *testing.T) {
 	}
 	service := NewOAuthService(cfg, nil, kv.NewMemoryStore(), nil)
 
-	authURL, err := service.HandleThirdPartyLogin(context.Background(), thirdparty.Feishu, "/profile")
+	authURL, err := service.HandleThirdPartyLogin(context.Background(), thirdparty.Feishu, "/profile", auth.LoginOptions{})
 	if err != nil {
 		t.Fatalf("handle feishu login: %v", err)
 	}
@@ -123,7 +124,7 @@ func Test_OAuthService_HandleThirdPartyLogin_QQBuildsAuthURL(t *testing.T) {
 		ClientID: "qq-app-id", ClientSecret: "qq-app-key", RedirectURI: "https://sso.example.com/api/auth/third/qq/callback",
 	}}}
 	service := NewOAuthService(cfg, nil, kv.NewMemoryStore(), nil)
-	authURL, err := service.HandleThirdPartyLogin(context.Background(), thirdparty.QQ, "/profile")
+	authURL, err := service.HandleThirdPartyLogin(context.Background(), thirdparty.QQ, "/profile", auth.LoginOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

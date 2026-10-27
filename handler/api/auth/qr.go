@@ -15,8 +15,16 @@ import (
 
 // GenerateQRCode creates the payload and separate browser credentials.
 func (h *AuthHandler) GenerateQRCode(c *gin.Context) {
+	var req struct {
+		RememberMe bool `form:"remember_me"`
+	}
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误"})
+		return
+	}
+	options := auth.LoginOptions{RememberMe: req.RememberMe}
 	deviceID, isNewDevice := auth.EnsureDeviceID(c.Request)
-	challenge, err := h.auth.GenerateQRCode(c.Request.Context(), c.Query("redirect"), handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders))
+	challenge, err := h.auth.GenerateQRCode(c.Request.Context(), c.Query("redirect"), handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders), options)
 	if err != nil {
 		writeQRError(c, err)
 		return
@@ -111,7 +119,7 @@ func (h *AuthHandler) CompleteQRCode(c *gin.Context) {
 	audit.Actor(c, result.User.ID, pair.SessionID)
 	audit.Device(c, deviceID)
 	audit.Completed(c, "session_created")
-	WriteLoginCookies(c, pair, h.cookieSecure, h.auth.RefreshTokenTTL())
+	WriteLoginCookies(c, pair, h.cookieSecure)
 	audit.Success(c)
 	qrNoCache(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))

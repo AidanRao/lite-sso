@@ -86,6 +86,7 @@ func passwordPolicyMessage(err error) string {
 // Register handles user registration
 func (h *UserHandler) Register(c *gin.Context) {
 	var req struct {
+		RememberMe  bool    `json:"remember_me"`
 		Email       string  `json:"email" binding:"required,email"`
 		Password    string  `json:"password" binding:"required"`
 		Username    *string `json:"username"`
@@ -121,7 +122,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	audit.Actor(c, user.ID, "")
 	audit.Completed(c, "user_created")
-	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, "", handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders), serviceauth.AuthMethodPassword)
+	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, "", handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders), serviceauth.AuthMethodPassword, serviceauth.LoginOptions{RememberMe: req.RememberMe})
 	if err != nil {
 		audit.Error(c, err)
 		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "注册失败", Data: nil})
@@ -133,7 +134,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 	audit.Actor(c, user.ID, pair.SessionID)
 	audit.AuthMethod(c, "password")
 	audit.Completed(c, "session_created")
-	apiauth.WriteLoginCookies(c, pair, h.cookieSecure, h.auth.RefreshTokenTTL())
+	apiauth.WriteLoginCookies(c, pair, h.cookieSecure)
 	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }

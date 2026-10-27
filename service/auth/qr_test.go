@@ -64,7 +64,7 @@ func Test_QRCode_StateMachineBothBackends(t *testing.T) {
 			ctx := context.Background()
 			metadata := LoginMetadata{DeviceID: "dev-browser", IP: "192.0.2.1", UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.2849.68"}
 			redirect := "/oauth/authorize?client_id=scanner&state=original&code_challenge=original&code_challenge_method=S256"
-			challenge, err := s.GenerateQRCode(ctx, redirect, metadata)
+			challenge, err := s.GenerateQRCode(ctx, redirect, metadata, LoginOptions{})
 			require.NoError(t, err)
 			require.NotContains(t, challenge.QRPayload, challenge.BrowserToken)
 			require.NotContains(t, challenge.QRPayload, "redirect")
@@ -142,7 +142,7 @@ func Test_QRCode_CancelRejectRevocationAndExpiry(t *testing.T) {
 	actor := QRActor{UserID: "u1", ClientID: "scanner"}
 	metadata := LoginMetadata{DeviceID: "dev-browser"}
 	generate := func() *QRCodeChallenge {
-		result, err := s.GenerateQRCode(ctx, "", metadata)
+		result, err := s.GenerateQRCode(ctx, "", metadata, LoginOptions{})
 		require.NoError(t, err)
 		return result
 	}
@@ -189,7 +189,7 @@ func Test_QRCode_RemovedAuthorizationCannotCompleteAfterRelogin(t *testing.T) {
 			s := qrTestService(t, kv.NewMemoryStore())
 			metadata := LoginMetadata{DeviceID: "browser"}
 			actor := QRActor{UserID: "u1", ClientID: "scanner"}
-			challenge, err := s.GenerateQRCode(t.Context(), "", metadata)
+			challenge, err := s.GenerateQRCode(t.Context(), "", metadata, LoginOptions{})
 			require.NoError(t, err)
 			_, err = s.ScanQRCode(t.Context(), challenge.Code, actor)
 			require.NoError(t, err)
@@ -232,7 +232,7 @@ func Test_QRCode_RedisCompareAndSetRejectsStaleSnapshots(t *testing.T) {
 	store := kv.NewRedisStore(client)
 	s := qrTestService(t, store)
 	ctx := context.Background()
-	challenge, err := s.GenerateQRCode(ctx, "", LoginMetadata{DeviceID: "dev-test"})
+	challenge, err := s.GenerateQRCode(ctx, "", LoginMetadata{DeviceID: "dev-test"}, LoginOptions{})
 	require.NoError(t, err)
 	raw, err := store.Get(ctx, kv.KeyQR(challenge.Code))
 	require.NoError(t, err)

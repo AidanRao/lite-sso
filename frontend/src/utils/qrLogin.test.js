@@ -113,3 +113,12 @@ test('a late confirmation after local expiry cannot resurrect the request', asyn
   assert.equal(fixture.calls.some(call => call[0] === 'complete'), false)
   assert.equal(fixture.changes.at(-1).image, '')
 })
+
+test('QR login defaults to remembered sessions and preserves an explicit backend choice', async () => {
+  const generated = []
+  const fixture = setup({ getQRCode: async (...args) => { generated.push(args); return { data: challenge('choice') } } })
+  await fixture.controller.start('/profile')
+  await fixture.controller.start('/profile', false)
+  assert.deepEqual(generated, [['/profile', true], ['/profile', false]])
+  fixture.controller.stop()
+})

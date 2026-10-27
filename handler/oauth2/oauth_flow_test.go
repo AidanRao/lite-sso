@@ -138,7 +138,7 @@ func TestOAuth2_AuthorizeTokenUserinfo_Flow(t *testing.T) {
 		DeviceID:  "dev-1",
 		IP:        "192.0.2.1",
 		UserAgent: "oauth-flow-test",
-	}, serviceauth.AuthMethodPassword)
+	}, serviceauth.AuthMethodPassword, serviceauth.LoginOptions{})
 	if err != nil {
 		t.Fatalf("create persistent session: %v", err)
 	}

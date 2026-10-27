@@ -38,7 +38,7 @@ func Test_OAuthDeletion_DurableCutoffBlocksOldCodeRefreshAndOnlineJWT(t *testing
 	server, err := NewWithStores(cfg, database, nil)
 	require.NoError(t, err)
 	login := auth.NewAuthService(cfg, database, kv.NewMemoryStore(), nil, nil, nil)
-	_, pair, err := login.CompleteLoginWithContext(t.Context(), "owner", "", auth.LoginMetadata{}, auth.AuthMethodPassword)
+	_, pair, err := login.CompleteLoginWithContext(t.Context(), "owner", "", auth.LoginMetadata{}, auth.AuthMethodPassword, auth.LoginOptions{})
 	require.NoError(t, err)
 	router := gin.New()
 	router.GET("/oauth/authorize", func(c *gin.Context) {

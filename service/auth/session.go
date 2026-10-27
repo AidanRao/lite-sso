@@ -26,7 +26,7 @@ import (
 const (
 	RefreshTokenCookieName = "sso_refresh_token"
 	SessionCookieName      = "sso_session"
-	SessionTTL             = 12 * time.Hour
+	TemporarySessionTTL    = 12 * time.Hour
 )
 
 type AuthMethod string
@@ -37,6 +37,11 @@ const (
 	AuthMethodQR       AuthMethod = "QR"
 )
 
+// LoginOptions describes the requested session persistence independently of device metadata.
+type LoginOptions struct {
+	RememberMe bool
+}
+
 type LoginMetadata struct {
 	DeviceID           string
 	IP                 string
@@ -46,11 +51,13 @@ type LoginMetadata struct {
 }
 
 type TokenPair struct {
-	Status       string
-	SessionID    string `json:"-"`
-	AccessToken  string
-	RefreshToken string
-	ExpiresIn    int
+	Status           string
+	SessionID        string    `json:"-"`
+	RememberMe       bool      `json:"-"`
+	SessionExpiresAt time.Time `json:"-"`
+	AccessToken      string
+	RefreshToken     string
+	ExpiresIn        int
 }
 
 func generateSessionID() (string, error) {
@@ -78,9 +85,19 @@ func (s *AuthService) refreshTokenTTL() time.Duration {
 	return s.cfg.Tokens.Session.RefreshTokenTTL
 }
 
-// RefreshTokenTTL returns the configured lifetime of a refresh token.
-func (s *AuthService) RefreshTokenTTL() time.Duration {
-	return s.refreshTokenTTL()
+// sessionLifetime is the single policy for creating temporary or remembered sessions.
+func (s *AuthService) sessionLifetime(options LoginOptions) time.Duration {
+	if options.RememberMe {
+		return s.refreshTokenTTL()
+	}
+	ttl := s.cfg.Tokens.Session.TemporarySessionTTL
+	if ttl <= 0 {
+		ttl = TemporarySessionTTL
+	}
+	if maximum := s.refreshTokenTTL(); maximum > 0 && ttl > maximum {
+		ttl = maximum
+	}
+	return ttl
 }
 
 func (s *AuthService) jwtSecret() []byte {
@@ -131,7 +148,7 @@ func (s *AuthService) ParseAccessToken(tokenString string) (*accessClaims, error
 }
 
 // CompleteLoginWithContext creates the persistent session and both tokens.
-func (s *AuthService) CompleteLoginWithContext(ctx context.Context, userID string, redirect string, metadata LoginMetadata, method AuthMethod) (*LoginResult, *TokenPair, error) {
+func (s *AuthService) CompleteLoginWithContext(ctx context.Context, userID string, redirect string, metadata LoginMetadata, method AuthMethod, options LoginOptions) (*LoginResult, *TokenPair, error) {
 	if s.db == nil {
 		return nil, nil, errors.New("database is nil")
 	}
@@ -194,8 +211,8 @@ func (s *AuthService) CompleteLoginWithContext(ctx context.Context, userID strin
 		if err != nil {
 			return err
 		}
-		session := &model.UserSession{ID: sessionID, UserID: user.ID, DeviceID: metadata.DeviceID, AuthMethod: string(method), Purpose: purpose, DeletionID: deletionID,
-			RefreshTokenHash: refreshHash(refreshToken), IP: requestmeta.NormalizeIP(metadata.IP), Location: s.loginLocation(metadata.IP), UserAgent: useragent.Normalize(metadata.UserAgent), CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(s.refreshTokenTTL())}
+		session := &model.UserSession{ID: sessionID, UserID: user.ID, DeviceID: metadata.DeviceID, AuthMethod: string(method), RememberMe: options.RememberMe, Purpose: purpose, DeletionID: deletionID,
+			RefreshTokenHash: refreshHash(refreshToken), IP: requestmeta.NormalizeIP(metadata.IP), Location: s.loginLocation(metadata.IP), UserAgent: useragent.Normalize(metadata.UserAgent), CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(s.sessionLifetime(options))}
 		if err := db.NewUserSessionRepository(tx).Create(ctx, session); err != nil {
 			return err
 		}
@@ -209,7 +226,7 @@ func (s *AuthService) CompleteLoginWithContext(ctx context.Context, userID strin
 			}
 		}
 		result = &LoginResult{User: dto.ToUserResponse(user), RedirectURL: redirectURL, AccessToken: accessToken, TokenType: "Bearer", ExpiresIn: expiresIn}
-		pair = &TokenPair{Status: user.Status, SessionID: sessionID, AccessToken: accessToken, RefreshToken: refreshToken, ExpiresIn: expiresIn}
+		pair = &TokenPair{Status: user.Status, SessionID: sessionID, RememberMe: session.RememberMe, SessionExpiresAt: session.ExpiresAt, AccessToken: accessToken, RefreshToken: refreshToken, ExpiresIn: expiresIn}
 		return nil
 	})
 	return result, pair, err
@@ -217,7 +234,7 @@ func (s *AuthService) CompleteLoginWithContext(ctx context.Context, userID strin
 
 // CompleteLogin is retained as a small internal adapter for non-HTTP callers.
 func (s *AuthService) CompleteLogin(ctx context.Context, userID string, redirect string) (*LoginResult, string, error) {
-	result, pair, err := s.CompleteLoginWithContext(ctx, userID, redirect, LoginMetadata{}, AuthMethodPassword)
+	result, pair, err := s.CompleteLoginWithContext(ctx, userID, redirect, LoginMetadata{}, AuthMethodPassword, LoginOptions{})
 	if err != nil {
 		return nil, "", err
 	}
@@ -274,7 +291,7 @@ func (s *AuthService) RefreshTokens(ctx context.Context, refreshToken string) (*
 		if err != nil {
 			return err
 		}
-		pair = &TokenPair{Status: user.Status, SessionID: session.ID, AccessToken: access, RefreshToken: newRefresh, ExpiresIn: expiresIn}
+		pair = &TokenPair{Status: user.Status, SessionID: session.ID, RememberMe: session.RememberMe, SessionExpiresAt: session.ExpiresAt, AccessToken: access, RefreshToken: newRefresh, ExpiresIn: expiresIn}
 		return nil
 	})
 	if reuse {

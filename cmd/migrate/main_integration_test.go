@@ -302,7 +302,7 @@ func assertMigrationVersionsRecordedOnce(t *testing.T, database *sql.DB) {
 		versions[version] = count
 	}
 	require.NoError(t, rows.Err())
-	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 1, 16: 1, 17: 1, 18: 1}, versions)
+	assert.Equal(t, map[int64]int{1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 1, 16: 1, 17: 1, 18: 1, 19: 1}, versions)
 }
 
 func assertFinalDatabaseStructure(t *testing.T, database *sql.DB) {
@@ -378,4 +378,47 @@ func Test_UserStatusMigration_PreservesSuspensionAndCanRollback(t *testing.T) {
 	assert.False(t, enabled)
 	_, err = provider.Up(t.Context())
 	require.NoError(t, err)
+}
+
+func Test_SessionRememberMeMigration_RevokesExistingSessions(t *testing.T) {
+	testDatabase := newPostgresTestDatabase(t)
+	database := testDatabase.open(t)
+	t.Cleanup(func() { require.NoError(t, database.Close()) })
+	provider, err := migration.NewProvider(database, os.DirFS("../../migrations"), 1, 11)
+	require.NoError(t, err)
+	_, err = provider.UpTo(context.Background(), 18)
+	require.NoError(t, err)
+	_, err = database.ExecContext(context.Background(), `
+ INSERT INTO user_session (id,user_id,device_id,auth_method,refresh_token_hash,ip,user_agent,created_at,last_seen_at,expires_at,revoked_at,revoke_reason)
+ VALUES
+ ('active','user','dev_test','PASSWORD',repeat('a',64),'127.0.0.1','test',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP+INTERVAL '1 day',NULL,NULL),
+ ('revoked','user','dev_test','PASSWORD',repeat('b',64),'127.0.0.1','test',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP+INTERVAL '1 day',CURRENT_TIMESTAMP,'logout')`)
+	require.NoError(t, err)
+	_, err = provider.UpTo(context.Background(), 19)
+	require.NoError(t, err)
+	var revoked bool
+	var reason string
+	var remember bool
+	require.NoError(t, database.QueryRowContext(context.Background(), "SELECT revoked_at IS NOT NULL,revoke_reason,remember_me FROM user_session WHERE id='active'").Scan(&revoked, &reason, &remember))
+	require.True(t, revoked)
+	require.Equal(t, "session_policy_changed", reason)
+	require.False(t, remember)
+	require.NoError(t, database.QueryRowContext(context.Background(), "SELECT revoke_reason FROM user_session WHERE id='revoked'").Scan(&reason))
+	require.Equal(t, "logout", reason)
+	var nullable string
+	var columnDefault sql.NullString
+	require.NoError(t, database.QueryRowContext(context.Background(), "SELECT is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='user_session' AND column_name='remember_me'").Scan(&nullable, &columnDefault))
+	require.Equal(t, "NO", nullable)
+	require.False(t, columnDefault.Valid)
+	_, err = database.ExecContext(context.Background(), `
+ INSERT INTO user_session (id,user_id,device_id,auth_method,refresh_token_hash,ip,user_agent,created_at,last_seen_at,expires_at,remember_me)
+ VALUES ('new','user','dev_test','PASSWORD',repeat('c',64),'127.0.0.1','test',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP+INTERVAL '1 day',true)`)
+	require.NoError(t, err)
+	require.NoError(t, database.QueryRowContext(context.Background(), "SELECT remember_me FROM user_session WHERE id='new'").Scan(&remember))
+	require.True(t, remember)
+	_, err = provider.Down(context.Background())
+	require.NoError(t, err)
+	// Rolling back the column must not restore revoked credentials.
+	require.NoError(t, database.QueryRowContext(context.Background(), "SELECT revoked_at IS NOT NULL FROM user_session WHERE id='active'").Scan(&revoked))
+	require.True(t, revoked)
 }
