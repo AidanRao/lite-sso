@@ -18,11 +18,12 @@ import (
 // LoginWithPassword handles password-based login.
 func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 	var req struct {
-		Email     string `json:"email" binding:"required,email"`
-		Password  string `json:"password" binding:"required"`
-		Redirect  string `json:"redirect"`
-		CaptchaID string `json:"captcha_id"`
-		Captcha   string `json:"captcha"`
+		RememberMe bool   `json:"remember_me"`
+		Email      string `json:"email" binding:"required,email"`
+		Password   string `json:"password" binding:"required"`
+		Redirect   string `json:"redirect"`
+		CaptchaID  string `json:"captcha_id"`
+		Captcha    string `json:"captcha"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误", Data: nil})
@@ -56,7 +57,7 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 	}
 
 	audit.Actor(c, user.ID, "")
-	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, req.Redirect, handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders), serviceauth.AuthMethodPassword)
+	result, pair, err := h.auth.CompleteLoginWithContext(c.Request.Context(), user.ID, req.Redirect, handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders), serviceauth.AuthMethodPassword, serviceauth.LoginOptions{RememberMe: req.RememberMe})
 	if err != nil {
 		writeAuthError(c, err)
 		return
@@ -67,7 +68,7 @@ func (h *AuthHandler) LoginWithPassword(c *gin.Context) {
 	audit.Actor(c, user.ID, pair.SessionID)
 	audit.Device(c, deviceID)
 	audit.Completed(c, "session_created")
-	WriteLoginCookies(c, pair, h.cookieSecure, h.auth.RefreshTokenTTL())
+	WriteLoginCookies(c, pair, h.cookieSecure)
 	audit.Success(c)
 	c.JSON(http.StatusOK, ecode.OKResponse(result))
 }

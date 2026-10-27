@@ -1,7 +1,7 @@
 <template>
   <AuthLayout :title="`登录 ${targetName}`" :target-name="targetName" :logo="targetLogo" show-logo show-docs-link>
     <template #corner>
-      <button type="button" class="login-mode-switch" :disabled="busy" :aria-pressed="qrMode"
+      <button type="button" class="login-mode-switch" :disabled="busy || qrCompleting" :aria-pressed="qrMode"
         :aria-label="qrMode ? '返回账号登录' : '切换到扫码登录'" :title="qrMode ? '账号登录' : '扫码登录'" @click="qrMode = !qrMode">
         <Monitor v-if="qrMode" /><QrCode v-else />
       </button>
@@ -9,7 +9,7 @@
 
     <div v-if="errorMessage" class="auth-notice" role="alert">{{ errorMessage }}</div>
     <div class="login-method">
-      <QRLoginPanel v-if="qrMode" :redirect="redirectUrl" @complete="finishLogin" />
+      <QRLoginPanel v-if="qrMode" :redirect="redirectUrl" @complete="finishLogin" @busy="qrCompleting = $event" />
       <template v-else>
         <div class="login-tabs" role="tablist" aria-label="登录方式">
           <button v-for="tab in tabs" :id="`tab-${tab.key}`" :key="tab.key" type="button" role="tab"
@@ -35,7 +35,6 @@
                 </template>
               </el-input>
             </el-form-item>
-            <router-link :to="resetRoute" class="auth-forgot">忘记密码？</router-link>
             <div v-if="captchaRequired" class="login-captcha">
               <label class="auth-label" for="login-captcha">图形验证码</label>
               <div class="auth-captcha-row">
@@ -57,8 +56,11 @@
                 </template>
               </el-input>
             </el-form-item>
-            <div class="login-email-spacer" aria-hidden="true"></div>
           </template>
+          <div class="login-options">
+            <RememberLoginOption v-model="rememberMe" :disabled="busy" />
+            <router-link v-if="activeTab === 'password'" :to="resetRoute">忘记密码？</router-link>
+          </div>
           <button type="submit" class="auth-primary" :disabled="busy || (activeTab === 'password' && lockSeconds > 0)">
             <LoaderCircle v-if="busy" class="w-4 h-4 animate-spin" />
             {{ busy ? '登录中…' : activeTab === 'password' && lockSeconds > 0 ? `${lockSeconds} 秒后重试` : '登录' }}
@@ -67,8 +69,8 @@
       </template>
     </div>
     <template #footer>
-      <p class="auth-switch-link">还没有账号？<router-link :to="registerRoute">立即注册</router-link></p>
-      <AuthProviders :disabled="busy" @select="oauthLogin" />
+      <p v-if="!qrMode" class="auth-switch-link">还没有账号？<router-link :to="registerRoute">立即注册</router-link></p>
+      <AuthProviders :disabled="busy || qrCompleting" @select="oauthLogin" />
     </template>
   </AuthLayout>
   <SendCodeModal :visible="codeModalVisible" :email="form.email" purpose="LOGIN" @close="codeModalVisible = false" @success="acceptCode" />
@@ -82,6 +84,7 @@ import { authAPI, setAccessToken } from '../api/auth'
 import AuthLayout from '../components/AuthLayout.vue'
 import AuthProviders from '../components/AuthProviders.vue'
 import QRLoginPanel from '../components/QRLoginPanel.vue'
+import RememberLoginOption from '../components/RememberLoginOption.vue'
 import SendCodeModal from '../components/SendCodeModal.vue'
 import { getLoginRedirect, loadTargetClient } from '../utils/oauthTarget'
 import { normalizeAuthEmail, useAuthSubmission, useDeadline, useEmailChallenge, validAuthEmail } from '../utils/authState'
@@ -97,6 +100,8 @@ const resetRoute = routeFor('/reset-password')
 const tabs = [{ key: 'password', label: '密码登录' }, { key: 'email', label: '验证码登录' }]
 const activeTab = ref('password')
 const qrMode = ref(false)
+const qrCompleting = ref(false)
+const rememberMe = ref(true)
 const showPassword = ref(false)
 const errorMessage = ref('')
 const formRef = ref(null)
@@ -157,9 +162,9 @@ const handleLogin = () => run(async isCurrent => {
   }
   try {
     const response = mode === 'password'
-      ? await authAPI.loginWithPassword({ email: normalizeAuthEmail(form.email), password: form.password, redirect: redirectUrl,
+      ? await authAPI.loginWithPassword({ email: normalizeAuthEmail(form.email), password: form.password, redirect: redirectUrl, remember_me: rememberMe.value,
         ...(captchaRequired.value ? { captcha_id: captchaID.value, captcha: captchaInput.value } : {}) })
-      : await authAPI.loginWithEmail({ challenge_id: challengeId.value, code: code.value, redirect: redirectUrl })
+      : await authAPI.loginWithEmail({ challenge_id: challengeId.value, code: code.value, redirect: redirectUrl, remember_me: rememberMe.value })
     if (!isCurrent()) return
     finishLogin(response)
     return true
@@ -180,9 +185,9 @@ const handleLogin = () => run(async isCurrent => {
   }
 })
 const oauthLogin = provider => {
-  if (busy.value) return
+  if (busy.value || qrCompleting.value) return
   busy.value = true
-  window.location.assign(`/api/auth/third/${provider}?redirect=${encodeURIComponent(redirectUrl)}`)
+  window.location.assign(`/api/auth/third/${provider}?redirect=${encodeURIComponent(redirectUrl)}&remember_me=true`)
 }
 watch(() => normalizeAuthEmail(form.email), () => {
   clearLock()
@@ -197,7 +202,7 @@ onUnmounted(() => { captchaGeneration++ })
 </script>
 
 <style scoped>
-.login-method { --login-method-height: 286px; min-height: var(--login-method-height); }
+.login-method { --login-method-height: 304px; --qr-registration-space: 44px; min-height: var(--login-method-height); }
 .login-tabs { display: flex; gap: 28px; height: 45px; margin-bottom: 18px; border-bottom: 1px solid #e9e9e9; }
 .login-tabs button { position: relative; color: #999; font-size: 15px; padding-bottom: 12px; }
 .login-tabs button.active { color: #171717; font-weight: 600; }
@@ -207,7 +212,8 @@ onUnmounted(() => { captchaGeneration++ })
 .login-mode-switch svg { position: absolute; top: 9px; right: 9px; width: 23px; height: 23px; }
 .login-mode-switch:hover::before { background: #e9e9e9; }
 .login-mode-switch:focus-visible { outline-offset: -3px; }
-.login-email-spacer { height: 29px; }
+.login-options { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 20px; margin-bottom: 14px; font-size: 12px; }
 .login-captcha { margin-bottom: 20px; }
+@media (max-height: 700px) { .login-method { --qr-registration-space: 40px; } }
 @media (max-width: 767px) { .login-mode-switch { top: 0; right: -12px; border-radius: 0; } }
 </style>

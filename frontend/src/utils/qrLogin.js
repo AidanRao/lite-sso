@@ -61,7 +61,7 @@ export const createQRLoginController = ({ api, render, onChange, onComplete,
     if (current(version, request) && state.seconds > 0) pollTimer = schedule(() => poll(version, request), 2000)
   }
   return {
-    async start(redirect) {
+    async start(redirect, rememberMe = true) {
       const version = ++generation
       clearTimers()
       publish({ image: '', seconds: 0, loading: true, message: '正在生成二维码…', expired: false })
@@ -71,7 +71,7 @@ export const createQRLoginController = ({ api, render, onChange, onComplete,
           if (generation !== version) return
           active = null
         }
-        const response = await api.getQRCode(redirect)
+        const response = await api.getQRCode(redirect, rememberMe)
         const request = response.data || response
         if (generation !== version) { await cancel(request).catch(() => {}); return }
         active = request

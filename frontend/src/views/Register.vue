@@ -91,7 +91,7 @@ const handleRegister = () => run(async isCurrent => {
   if (!isCurrent()) return
   if (!challengeValid.value) { errorMessage.value = '请先获取有效的邮箱验证码'; return }
   try {
-    const response = await authAPI.register({ email: normalizeAuthEmail(form.email), password: form.password, challenge_id: challengeId.value, code: code.value })
+    const response = await authAPI.register({ email: normalizeAuthEmail(form.email), password: form.password, challenge_id: challengeId.value, code: code.value, remember_me: true })
     if (!isCurrent()) return
     const data = response.data || response
     setAccessToken(data.access_token)
@@ -104,7 +104,7 @@ const handleRegister = () => run(async isCurrent => {
 const oauthRegister = provider => {
   if (busy.value) return
   busy.value = true
-  window.location.assign(`/api/auth/third/${provider}?redirect=${encodeURIComponent(redirectUrl)}`)
+  window.location.assign(`/api/auth/third/${provider}?redirect=${encodeURIComponent(redirectUrl)}&remember_me=true`)
 }
 watch(() => form.email, () => { errorMessage.value = '' })
 onMounted(async () => { targetName.value = await loadTargetClientName(redirectUrl) || '账号中心' })

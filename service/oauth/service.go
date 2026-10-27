@@ -43,12 +43,13 @@ type OAuthService struct {
 }
 
 type thirdPartyState struct {
-	CreatedAt time.Time `json:"created_at"`
-	Provider  string    `json:"provider"`
-	Redirect  string    `json:"redirect"`
-	Action    string    `json:"action"`
-	UserID    string    `json:"user_id,omitempty"`
-	DeviceID  string    `json:"device_id,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	Provider   string    `json:"provider"`
+	Redirect   string    `json:"redirect"`
+	Action     string    `json:"action"`
+	UserID     string    `json:"user_id,omitempty"`
+	DeviceID   string    `json:"device_id,omitempty"`
+	RememberMe bool      `json:"remember_me"`
 }
 
 type pendingThirdPartyBinding struct {
@@ -65,6 +66,7 @@ type ThirdPartyCallbackResult struct {
 	DeviceID         string
 	PendingBindingID string
 	ProviderUID      string
+	LoginOptions     serviceauth.LoginOptions
 }
 
 // ThirdPartyBindingPreview contains the provider profile awaiting user confirmation.
@@ -117,11 +119,11 @@ func (s *OAuthService) GetUserInfo(ctx context.Context, userID string) (*dto.Use
 }
 
 // HandleThirdPartyLogin 发起第三方 OAuth 登录流程。
-func (s *OAuthService) HandleThirdPartyLogin(ctx context.Context, provider string, redirect string) (string, error) {
-	return s.HandleThirdPartyLoginWithDevice(ctx, provider, redirect, "")
+func (s *OAuthService) HandleThirdPartyLogin(ctx context.Context, provider string, redirect string, options serviceauth.LoginOptions) (string, error) {
+	return s.HandleThirdPartyLoginWithDevice(ctx, provider, redirect, "", options)
 }
 
-func (s *OAuthService) HandleThirdPartyLoginWithDevice(ctx context.Context, provider string, redirect string, deviceID string) (string, error) {
+func (s *OAuthService) HandleThirdPartyLoginWithDevice(ctx context.Context, provider string, redirect string, deviceID string, options serviceauth.LoginOptions) (string, error) {
 	p, ok := s.getProvider(provider)
 	if !ok {
 		return "", common.ErrInvalidProvider
@@ -141,11 +143,12 @@ func (s *OAuthService) HandleThirdPartyLoginWithDevice(ctx context.Context, prov
 	}
 
 	stateData, err := json.Marshal(thirdPartyState{
-		CreatedAt: time.Now(),
-		Provider:  provider,
-		Redirect:  redirectURL,
-		Action:    ThirdPartyActionLogin,
-		DeviceID:  deviceID,
+		CreatedAt:  time.Now(),
+		Provider:   provider,
+		Redirect:   redirectURL,
+		Action:     ThirdPartyActionLogin,
+		RememberMe: options.RememberMe,
+		DeviceID:   deviceID,
 	})
 	if err != nil {
 		return "", common.ErrProviderAuthFailed
@@ -265,11 +268,12 @@ func (s *OAuthService) HandleThirdPartyCallbackWithState(ctx context.Context, pr
 	}
 
 	return &ThirdPartyCallbackResult{
-		User:        dto.ToUserResponse(user),
-		Redirect:    stateData.Redirect,
-		Action:      ThirdPartyActionLogin,
-		DeviceID:    stateData.DeviceID,
-		ProviderUID: profile.ProviderUID,
+		User:         dto.ToUserResponse(user),
+		Redirect:     stateData.Redirect,
+		Action:       ThirdPartyActionLogin,
+		DeviceID:     stateData.DeviceID,
+		ProviderUID:  profile.ProviderUID,
+		LoginOptions: serviceauth.LoginOptions{RememberMe: stateData.RememberMe},
 	}, nil
 }
 

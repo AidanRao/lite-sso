@@ -207,7 +207,7 @@ func TestAuthPasswordLogin_ReturnsAccessAndRefreshTokens(t *testing.T) {
 		if cookie.Name == serviceauth.RefreshTokenCookieName && cookie.Value != "" && cookie.HttpOnly {
 			foundRefresh = true
 		}
-		if cookie.Name == serviceauth.SessionCookieName && cookie.Value != "" && cookie.Path == "/" && cookie.HttpOnly && cookie.MaxAge == int(serviceauth.SessionTTL.Seconds()) {
+		if cookie.Name == serviceauth.SessionCookieName && cookie.Value != "" && cookie.Path == "/" && cookie.HttpOnly && cookie.MaxAge == 0 {
 			foundSession = true
 		}
 	}

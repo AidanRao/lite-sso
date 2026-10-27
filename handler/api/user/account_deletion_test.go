@@ -64,7 +64,7 @@ func Test_AccountDeletionHTTP_VerificationRestrictionAndPayloadSeparation(t *tes
 		return response
 	}
 	require.Equal(t, 401, call("POST", "/api/user/account-deletion", "", "").Code)
-	_, original, err := authService.CompleteLoginWithContext(t.Context(), "owner", "", serviceauth.LoginMetadata{}, "GITHUB")
+	_, original, err := authService.CompleteLoginWithContext(t.Context(), "owner", "", serviceauth.LoginMetadata{}, "GITHUB", serviceauth.LoginOptions{})
 	require.NoError(t, err)
 	require.NoError(t, database.Model(&model.UserSession{}).Where("id = ?", original.SessionID).Update("created_at", time.Now().Add(-time.Hour)).Error)
 	denied := call("POST", "/api/user/account-deletion", original.AccessToken, "")
@@ -82,7 +82,7 @@ func Test_AccountDeletionHTTP_VerificationRestrictionAndPayloadSeparation(t *tes
 		require.Negative(t, cookie.MaxAge)
 	}
 	require.Equal(t, 401, call("GET", "/api/user/profile", original.AccessToken, "").Code)
-	result, limited, err := authService.CompleteLoginWithContext(t.Context(), "owner", "/oauth/authorize", serviceauth.LoginMetadata{}, "GITHUB")
+	result, limited, err := authService.CompleteLoginWithContext(t.Context(), "owner", "/oauth/authorize", serviceauth.LoginMetadata{}, "GITHUB", serviceauth.LoginOptions{})
 	require.NoError(t, err)
 	payload, err := json.Marshal(result)
 	require.NoError(t, err)
@@ -104,7 +104,7 @@ func Test_AccountDeletionHTTP_VerificationRestrictionAndPayloadSeparation(t *tes
 	cancelled := call("DELETE", "/api/user/account-deletion", limited.AccessToken, "")
 	require.Equal(t, 200, cancelled.Code, cancelled.Body.String())
 	require.Equal(t, 401, call("GET", "/api/user/account-deletion", limited.AccessToken, "").Code)
-	_, fresh, err := authService.CompleteLoginWithContext(t.Context(), "owner", "", serviceauth.LoginMetadata{}, "GITHUB")
+	_, fresh, err := authService.CompleteLoginWithContext(t.Context(), "owner", "", serviceauth.LoginMetadata{}, "GITHUB", serviceauth.LoginOptions{})
 	require.NoError(t, err)
 	profile := call("GET", "/api/user/profile", fresh.AccessToken, "")
 	require.Equal(t, 200, profile.Code)

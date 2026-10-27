@@ -48,7 +48,7 @@ func TestLoginDevices_ListRevokeAndInvalidateTargetTokens(t *testing.T) {
 		DeviceID:  "dev-current",
 		IP:        "203.0.113.1",
 		UserAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-	}, serviceauth.AuthMethodPassword)
+	}, serviceauth.AuthMethodPassword, serviceauth.LoginOptions{})
 	if err != nil {
 		t.Fatalf("create current session: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestLoginDevices_ListRevokeAndInvalidateTargetTokens(t *testing.T) {
 		DeviceID:  "dev-target",
 		IP:        "203.0.113.2",
 		UserAgent: "target browser",
-	}, serviceauth.AuthMethodEmailOTP)
+	}, serviceauth.AuthMethodEmailOTP, serviceauth.LoginOptions{})
 	if err != nil {
 		t.Fatalf("create target session: %v", err)
 	}

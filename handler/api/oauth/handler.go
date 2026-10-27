@@ -101,8 +101,16 @@ func (h *OAuthHandler) ThirdPartyLogin(c *gin.Context) {
 		return
 	}
 
+	var req struct {
+		RememberMe bool `form:"remember_me"`
+	}
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ecode.Response[any]{Code: ecode.BadRequest, Message: "参数错误"})
+		return
+	}
+	options := serviceauth.LoginOptions{RememberMe: req.RememberMe}
 	deviceID, isNewDevice := serviceauth.EnsureDeviceID(c.Request)
-	redirectURL, err := h.oauthService.HandleThirdPartyLoginWithDevice(c.Request.Context(), provider, c.Query("redirect"), deviceID)
+	redirectURL, err := h.oauthService.HandleThirdPartyLoginWithDevice(c.Request.Context(), provider, c.Query("redirect"), deviceID, options)
 	if err != nil {
 		audit.Error(c, err)
 		switch {
@@ -293,7 +301,7 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 	metadata := handler.LoginMetadataFromRequest(c.Request, deviceID, h.trustProxyHeaders)
 	metadata.ThirdPartyProvider = provider
 	metadata.ThirdPartyUID = result.ProviderUID
-	loginResult, pair, err := h.authService.CompleteLoginWithContext(c.Request.Context(), result.User.ID, result.Redirect, metadata, serviceauth.AuthMethod(authMethod))
+	loginResult, pair, err := h.authService.CompleteLoginWithContext(c.Request.Context(), result.User.ID, result.Redirect, metadata, serviceauth.AuthMethod(authMethod), result.LoginOptions)
 	if err != nil {
 		audit.Error(c, err)
 		log.Printf("ThirdPartyCallback: complete login failed, provider=%s, user_id=%s, err=%v", provider, result.User.ID, err)
@@ -308,7 +316,7 @@ func (h *OAuthHandler) ThirdPartyCallback(c *gin.Context) {
 	audit.AuthMethod(c, provider)
 	audit.Completed(c, "session_created")
 	audit.Success(c)
-	apiauth.WriteLoginCookies(c, pair, h.cookieSecure, h.authService.RefreshTokenTTL())
+	apiauth.WriteLoginCookies(c, pair, h.cookieSecure)
 	c.Redirect(http.StatusTemporaryRedirect, loginResult.RedirectURL)
 }
 

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -28,8 +29,15 @@ type googleTestProvider struct {
 }
 
 func Test_OAuthHandler_GoogleCallback_CreatesBrowserSessionAndRejectsReplay(t *testing.T) {
-	for _, email := range []string{"alice@gmail.com", ""} {
-		t.Run("email="+email, func(t *testing.T) {
+	for _, tc := range []struct {
+		email    string
+		remember bool
+	}{
+		{email: "alice@gmail.com", remember: false}, {email: "alice@gmail.com", remember: true},
+		{email: "", remember: false}, {email: "", remember: true},
+	} {
+		email, remember := tc.email, tc.remember
+		t.Run("email="+email+"/remember="+strconv.FormatBool(remember), func(t *testing.T) {
 			gin.SetMode(gin.TestMode)
 			database, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 			require.NoError(t, err)
@@ -52,13 +60,13 @@ func Test_OAuthHandler_GoogleCallback_CreatesBrowserSessionAndRejectsReplay(t *t
 
 			redirect := "/oauth/authorize?client_id=demo"
 			start := httptest.NewRecorder()
-			router.ServeHTTP(start, httptest.NewRequest(http.MethodGet, "/api/auth/third/google?redirect="+url.QueryEscape(redirect), nil))
+			router.ServeHTTP(start, httptest.NewRequest(http.MethodGet, "/api/auth/third/google?redirect="+url.QueryEscape(redirect)+"&remember_me="+strconv.FormatBool(remember), nil))
 			require.Equal(t, http.StatusTemporaryRedirect, start.Code)
 			location, err := url.Parse(start.Header().Get("Location"))
 			require.NoError(t, err)
 			state := location.Query().Get("state")
 			require.NotEmpty(t, state)
-			callbackURL := "/api/auth/third/google/callback?code=auth-code&state=" + url.QueryEscape(state)
+			callbackURL := "/api/auth/third/google/callback?code=auth-code&state=" + url.QueryEscape(state) + "&remember_me=" + strconv.FormatBool(!remember)
 			callback := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodGet, callbackURL, nil)
 			for _, cookie := range start.Result().Cookies() {
@@ -92,6 +100,8 @@ func Test_OAuthHandler_GoogleCallback_CreatesBrowserSessionAndRejectsReplay(t *t
 			var session model.UserSession
 			require.NoError(t, database.First(&session, "id = ?", sessionCookie.Value).Error)
 			require.Equal(t, "GOOGLE", session.AuthMethod)
+			require.Equal(t, remember, session.RememberMe)
+			require.Equal(t, remember, sessionCookie.MaxAge > 0)
 			var binding model.UserThirdParty
 			require.NoError(t, database.First(&binding, "user_id = ? AND provider = ?", session.UserID, thirdparty.Google).Error)
 			require.NotNil(t, binding.BoundAt)
@@ -114,7 +124,7 @@ func Test_OAuthHandler_GoogleCallback_CreatesBrowserSessionAndRejectsReplay(t *t
 			if email == "" {
 				// The established binding must prompt again on the next login, without creating another user.
 				nextStart := httptest.NewRecorder()
-				router.ServeHTTP(nextStart, httptest.NewRequest(http.MethodGet, "/api/auth/third/google?redirect="+url.QueryEscape(redirect), nil))
+				router.ServeHTTP(nextStart, httptest.NewRequest(http.MethodGet, "/api/auth/third/google?redirect="+url.QueryEscape(redirect)+"&remember_me="+strconv.FormatBool(remember), nil))
 				nextLocation, err := url.Parse(nextStart.Header().Get("Location"))
 				require.NoError(t, err)
 				nextRequest := httptest.NewRequest(http.MethodGet, "/api/auth/third/google/callback?code=next-code&state="+url.QueryEscape(nextLocation.Query().Get("state")), nil)

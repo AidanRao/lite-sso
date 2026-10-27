@@ -38,7 +38,7 @@ func Test_QRCode_LocationSnapshotsUseBrowserRequests(t *testing.T) {
 			})
 			ctx := context.Background()
 			browser := LoginMetadata{DeviceID: "browser", IP: "1.1.1.1"}
-			challenge, err := s.GenerateQRCode(ctx, "", browser)
+			challenge, err := s.GenerateQRCode(ctx, "", browser, LoginOptions{})
 			require.NoError(t, err)
 			// Replacing the resolver verifies that scanning uses the saved snapshot.
 			s.locationResolver = locationLookup(func(ip string) string {
@@ -76,7 +76,7 @@ func Test_CompleteLoginWithContext_LocationIsOptionalForEveryMethod(t *testing.T
 		t.Run(string(method), func(t *testing.T) {
 			s := qrTestService(t, kv.NewMemoryStore())
 			s.locationResolver = locationLookup(func(string) string { return "" })
-			_, pair, err := s.CompleteLoginWithContext(context.Background(), "u1", "", LoginMetadata{DeviceID: "browser", IP: "192.168.1.2"}, method)
+			_, pair, err := s.CompleteLoginWithContext(context.Background(), "u1", "", LoginMetadata{DeviceID: "browser", IP: "192.168.1.2"}, method, LoginOptions{})
 			require.NoError(t, err)
 			var session model.UserSession
 			require.NoError(t, s.db.First(&session, "id = ?", pair.SessionID).Error)

@@ -30,6 +30,7 @@ tokens:
   session:
     access_token_ttl: "15m"
     refresh_token_ttl: "720h"
+    temporary_session_ttl: "12h"
   reauth:
     grant_ttl: "5m"
 

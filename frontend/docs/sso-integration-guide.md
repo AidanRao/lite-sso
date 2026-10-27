@@ -101,7 +101,8 @@ SSO 管理员需为接入系统登记客户端信息：
 | `tokens.oauth.authorization_code_ttl` | `5m` | OAuth 授权码有效期 |
 | `tokens.oauth.refresh_token_ttl` | `720h` | OAuth Refresh Token 最长期限，轮换不延长 |
 | `tokens.session.access_token_ttl` | `15m` | Lite SSO 自身登录会话使用的 Access Token |
-| `tokens.session.refresh_token_ttl` | `720h` | Lite SSO 自身登录会话 Refresh Token 的有效期 |
+| `tokens.session.refresh_token_ttl` | `720h` | 勾选“记住登录状态”的浏览器会话绝对有效期，轮换不延长 |
+| `tokens.session.temporary_session_ttl` | `12h` | 未勾选时的会话有效期，上限为 `tokens.session.refresh_token_ttl` |
 | `tokens.reauth.grant_ttl` | `5m` | 高风险操作重新认证授权凭证的有效期 |
 
 OAuth 接入客户端使用独立的 Access Token 和 Refresh Token。内部登录会话的 Refresh Token 通过 SSO 的登录 Cookie 刷新，不应发送给接入业务 API。
@@ -134,6 +135,19 @@ https://sso.aidanrao.top/oauth/authorize
 如果用户未登录，SSO 会先展示登录页面；登录完成后继续回调接入系统。
 
 SSO 登录成功后会写入仅供浏览器授权流程使用的 `sso_session` Cookie。该 Cookie 为 `HttpOnly`、`SameSite=Lax`，路径为 `/`；普通 `/api` 接口仍要求 `Authorization: Bearer <access-token>`，不会接受该 Cookie 代替 Access Token。
+
+### 浏览器登录状态
+
+密码登录、邮箱验证码登录和注册请求通过 JSON 字段 `remember_me` 选择会话持久化；不传时为 `false`。二维码生成和第三方登录入口接受同名布尔查询参数。二维码完成时读取服务器保存的请求选项，第三方回调读取服务器 OAuth state 中的选项，完成请求与回调参数不能覆盖原选择。
+
+前端密码与邮箱验证码登录默认勾选“记住登录状态”；扫码与第三方登录不展示选项，始终传入 `true`。注册自动登录也传入 `true`，通过相同会话创建策略处理。
+
+勾选时，`sso_session` 和 `sso_refresh_token` 都使用持久 Cookie，过期时间来自 `user_session.expires_at`。未勾选时，两者均不设置 `Max-Age` / `Expires`，作为会话 Cookie 使用，并由服务端限制最长登录时间。浏览器的会话恢复功能可能保留会话 Cookie，关闭浏览器不等于服务端立即撤销会话。
+
+`user_session.remember_me` 保存本次会话的选择。刷新接口从数据库读取该选择，轮换 Refresh Token，按原来的绝对期限重写 Cookie；请求不能在刷新时升级为长期会话。登录选项使用 `LoginOptions` 传递，设备与网络环境仍使用 `LoginMetadata`，统一由 Auth Service 决定会话期限。
+
+部署该功能时须执行 `00019_add_session_remember_me.sql`。迁移会撤销所有未撤销的浏览器会话，已有用户需重新登录；下游应用 OAuth Token 的有效期仍由独立的 `tokens.oauth` 配置控制。
+
 
 ### 4.2 公共客户端（PKCE）
 

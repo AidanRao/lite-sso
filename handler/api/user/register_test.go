@@ -29,12 +29,12 @@ func TestUserRegister_CreatesUserAndReturnsTokens(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 	store := kv.NewMemoryStore()
-	cfg := &conf.Config{Dev: conf.DevConfig{FixedEmailOTP: "123456", SkipSendMessage: true}}
+	cfg := &conf.Config{Dev: conf.DevConfig{FixedEmailOTP: "123456", SkipSendMessage: true}, Tokens: conf.TokenConfig{Session: conf.SessionTokenConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour, TemporarySessionTTL: 12 * time.Hour}}}
 	challenge := seedChallenge(t, cfg, database, store, "u1@example.com", serviceauth.ChallengePurposeRegister, "dev_register")
 	h := user.NewUserHandler(user.UserDeps{Config: cfg, DB: database, KV: store})
 	r := gin.New()
 	r.POST("/api/user/register", h.Register)
-	body := `{"email":"u1@example.com","password":"password123456","username":"u1","challenge_id":"` + challenge + `","code":"123456"}`
+	body := `{"remember_me":true,"email":"u1@example.com","password":"password123456","username":"u1","challenge_id":"` + challenge + `","code":"123456"}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/user/register", strings.NewReader(body))
 	req.AddCookie(&http.Cookie{Name: serviceauth.DeviceCookieName, Value: "dev_register"})
@@ -50,6 +50,10 @@ func TestUserRegister_CreatesUserAndReturnsTokens(t *testing.T) {
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || response.Data.AccessToken == "" {
 		t.Fatalf("expected access token, body=%s err=%v", w.Body.String(), err)
+	}
+	var session model.UserSession
+	if err := database.First(&session).Error; err != nil || !session.RememberMe {
+		t.Fatalf("expected remembered registration session: %v", err)
 	}
 	foundRefresh := false
 	foundSession := false

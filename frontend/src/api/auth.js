@@ -142,8 +142,8 @@ export const authAPI = {
     return api.get('/auth/captcha')
   },
 
-  getQRCode: (redirect) => {
-    return api.get('/auth/qr/generate', { params: { redirect } })
+  getQRCode: (redirect, rememberMe = true) => {
+    return api.get('/auth/qr/generate', { params: { redirect, remember_me: rememberMe } })
   },
 
   checkQRCode: (code, browserToken) => {

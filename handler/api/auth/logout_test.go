@@ -43,7 +43,7 @@ func TestAuthLogout_PersistentSessionCookieRevokesSessionAndClearsLoginCookies(t
 		DeviceID:  "dev-logout",
 		IP:        "192.0.2.1",
 		UserAgent: "logout-test",
-	}, serviceauth.AuthMethodPassword)
+	}, serviceauth.AuthMethodPassword, serviceauth.LoginOptions{})
 	if err != nil {
 		t.Fatalf("create login: %v", err)
 	}

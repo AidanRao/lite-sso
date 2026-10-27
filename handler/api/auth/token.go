@@ -27,7 +27,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, ecode.Response[any]{Code: ecode.InternalServer, Message: "刷新失败", Data: nil})
 		return
 	}
-	WriteLoginCookies(c, pair, h.cookieSecure, h.auth.RefreshTokenTTL())
+	WriteLoginCookies(c, pair, h.cookieSecure)
 	c.JSON(http.StatusOK, ecode.OKResponse(gin.H{
 		"access_token": pair.AccessToken,
 		"token_type":   "Bearer",
