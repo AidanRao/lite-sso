@@ -1,796 +1,213 @@
 <template>
-  <div class="login-page min-h-screen md:h-screen flex overflow-hidden" :style="mobileViewportStyle">
-    <AuthSplashPane class="hidden md:flex flex-[1.5]" title="身份认证系统" :target-name="targetPlatformName" />
+  <AuthLayout :title="`登录 ${targetName}`" :target-name="targetName" :logo="targetLogo" show-logo show-docs-link>
+    <template #corner>
+      <button type="button" class="login-mode-switch" :disabled="busy" :aria-pressed="qrMode"
+        :aria-label="qrMode ? '返回账号登录' : '切换到扫码登录'" :title="qrMode ? '账号登录' : '扫码登录'" @click="qrMode = !qrMode">
+        <Monitor v-if="qrMode" /><QrCode v-else />
+      </button>
+    </template>
 
-    <div class="login-auth-pane flex-1 min-h-screen md:h-screen bg-gradient-to-br from-[#ecfeff] to-[#f0fdfa] flex items-center justify-center overflow-y-auto p-4 sm:p-6 lg:p-8">
-      <div class="login-stack w-full max-w-md py-6 md:py-0">
-        <div class="login-card bg-white rounded-2xl shadow-xl shadow-[#0891b2]/5 p-6 sm:p-8 xl:p-10" :class="{ 'login-card--expanded': errorMessage || (activeTab === 'password' && passwordCaptchaRequired) }">
-          <div class="login-header text-center mb-6 xl:mb-8">
-            <ApplicationLogo class="login-brand-logo" :label="targetPlatformName" :src="targetClientLogo" size="large" />
-            <h1 class="login-title">登录 {{ targetPlatformName }}</h1>
-          </div>
-
-          <div v-if="errorMessage" class="login-error mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm flex items-center gap-2">
-            <AlertTriangle class="w-4 h-4 flex-shrink-0" />
-            {{ errorMessage }}
-          </div>
-
-          <div class="login-tabs flex mb-6 xl:mb-8 border-b border-gray-100">
-            <button
-              v-for="tab in tabs"
-              :key="tab.key"
-              @click="activeTab = tab.key"
-              class="flex-1 py-3 text-sm font-medium transition-all relative"
-              :class="activeTab === tab.key ? 'text-[#0891b2]' : 'text-gray-500 hover:text-gray-700'"
-            >
-              {{ tab.label }}
-              <span v-if="activeTab === tab.key" class="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-[#0891b2] rounded-full"></span>
-            </button>
-          </div>
-
-          <div class="login-form-panel min-h-[252px] overflow-y-auto">
-            <div v-show="activeTab === 'password'" class="space-y-5">
-              <el-form :model="passwordForm" :rules="passwordRules" ref="pwdFormRef" @submit.prevent="handlePasswordLogin">
-                <el-form-item prop="email" class="mb-5">
-                  <label class="block text-sm font-medium text-gray-700 mb-2">邮箱</label>
-                  <el-input
-                    v-model="passwordForm.email"
-                    type="email"
-                    placeholder="请输入邮箱"
-                    :prefix-icon="Mail"
-                    class="h-12"
-                  />
-                </el-form-item>
-                <div class="login-password-field mb-3">
-                  <div class="flex w-full items-center justify-between mb-2">
-                    <label class="block text-sm font-medium text-gray-700">密码</label>
-                    <router-link to="/reset-password" class="text-sm font-medium text-[#0891b2] hover:text-[#0e7490] transition-colors">
-                      忘记密码？
-                    </router-link>
-                  </div>
-                  <el-form-item prop="password" class="mb-0">
-                    <el-input
-                      v-model="passwordForm.password"
-                      :type="showPassword ? 'text' : 'password'"
-                      placeholder="请输入密码"
-                      :prefix-icon="Lock"
-                      class="h-12 w-full password-input"
-                    >
-                      <template #suffix>
-                        <button
-                          type="button"
-                          class="w-8 h-8 inline-flex items-center justify-center rounded-lg text-gray-400 hover:text-[#0891b2] hover:bg-cyan-50 transition-colors"
-                          :aria-label="showPassword ? '隐藏密码' : '显示密码'"
-                          @click.stop="showPassword = !showPassword"
-                        >
-                          <EyeOff v-if="showPassword" class="w-4 h-4" />
-                          <Eye v-else class="w-4 h-4" />
-                        </button>
-                      </template>
-                    </el-input>
-                  </el-form-item>
-                </div>
-                <div v-if="passwordCaptchaRequired" class="login-captcha mb-4">
-                  <label class="block text-sm font-medium text-gray-700 mb-2">图形验证码</label>
-                  <div class="flex items-center gap-3">
-                    <el-input v-model="passwordCaptchaInput" maxlength="4" placeholder="请输入验证码" class="h-12 flex-1" />
-                    <img
-                      :src="passwordCaptchaBase64"
-                      alt="图形验证码"
-                      class="h-12 w-28 cursor-pointer rounded-lg object-contain bg-gray-50"
-                      @click="loadPasswordCaptcha"
-                    />
-                  </div>
-                </div>
-                <div class="login-submit pt-4">
-                  <button
-                    type="submit"
-                    class="w-full h-12 text-white rounded-xl font-semibold text-base transition-colors flex items-center justify-center disabled:cursor-not-allowed"
-                    :class="[passwordButtonClass, passwordLoginInvalid ? 'cursor-not-allowed' : '']"
-                    :disabled="passwordLoginDisabled"
-                  >
-                    <svg v-if="loading" class="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    {{ passwordLoginButtonText }}
+    <div v-if="errorMessage" class="auth-notice" role="alert">{{ errorMessage }}</div>
+    <div class="login-method">
+      <QRLoginPanel v-if="qrMode" :redirect="redirectUrl" @complete="finishLogin" />
+      <template v-else>
+        <div class="login-tabs" role="tablist" aria-label="登录方式">
+          <button v-for="tab in tabs" :id="`tab-${tab.key}`" :key="tab.key" type="button" role="tab"
+            :aria-selected="activeTab === tab.key" aria-controls="login-form" :tabindex="activeTab === tab.key ? 0 : -1"
+            :disabled="busy" :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key" @keydown="switchTab($event)">
+            {{ tab.label }}
+          </button>
+        </div>
+        <el-form id="login-form" ref="formRef" :model="form" :rules="rules" role="tabpanel"
+          :aria-labelledby="`tab-${activeTab}`" @submit.prevent="handleLogin">
+          <el-form-item prop="email">
+            <el-input id="login-email" v-model="form.email" type="email" autocomplete="username" aria-label="邮箱"
+              placeholder="请输入邮箱" :disabled="busy" />
+          </el-form-item>
+          <template v-if="activeTab === 'password'">
+            <el-form-item prop="password">
+              <el-input id="login-password" v-model="form.password" :type="showPassword ? 'text' : 'password'"
+                autocomplete="current-password" aria-label="密码" placeholder="请输入密码" :disabled="busy">
+                <template #suffix>
+                  <button type="button" class="auth-icon-button" :disabled="busy" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="showPassword = !showPassword">
+                    <EyeOff v-if="showPassword" /><Eye v-else />
                   </button>
-                </div>
-              </el-form>
-            </div>
-
-            <div v-show="activeTab === 'email'" class="space-y-5">
-              <el-form :model="emailForm" :rules="emailRules" ref="emailFormRef" @submit.prevent="handleEmailLogin">
-              <el-form-item prop="email" class="mb-5">
-                <label class="block text-sm font-medium text-gray-700 mb-2">邮箱</label>
-                <el-input
-                  v-model="emailForm.email"
-                  type="email"
-                  placeholder="请输入邮箱"
-                  :prefix-icon="Mail"
-                  class="h-12"
-                />
-              </el-form-item>
-              <el-form-item prop="code" class="mb-6">
-                <label class="block text-sm font-medium text-gray-700 mb-2">邮箱验证码</label>
-                <div class="flex gap-3">
-                  <el-input
-                    v-model="emailForm.code"
-                    type="text"
-                    placeholder="请输入邮箱验证码"
-                    maxlength="6"
-                    :prefix-icon="MessageSquare"
-                    class="h-12 flex-1"
-                  />
-                  <el-button
-                    type="default"
-                    @click="openSendCodeModal"
-                    :disabled="countdown > 0"
-                    class="h-12 px-6"
-                  >
-                    {{ countdown > 0 ? `${countdown}秒后重发` : '发送验证码' }}
-                  </el-button>
-                </div>
-              </el-form-item>
-              <div class="login-submit pt-1">
-                <button type="submit" class="w-full h-12 bg-[#0891b2] text-white rounded-xl font-semibold text-base hover:bg-[#0e7490] transition-colors flex items-center justify-center" :disabled="loading">
-                  <svg v-if="loading" class="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  {{ loading ? '登录中...' : '登录' }}
+                </template>
+              </el-input>
+            </el-form-item>
+            <router-link :to="resetRoute" class="auth-forgot">忘记密码？</router-link>
+            <div v-if="captchaRequired" class="login-captcha">
+              <label class="auth-label" for="login-captcha">图形验证码</label>
+              <div class="auth-captcha-row">
+                <el-input id="login-captcha" v-model="captchaInput" maxlength="4" inputmode="numeric" placeholder="请输入验证码" :disabled="busy" />
+                <button type="button" class="auth-captcha-refresh" :disabled="busy" aria-label="刷新图形验证码" @click="loadCaptcha">
+                  <img v-if="captchaImage" :src="captchaImage" alt="图形验证码" /><span v-else>点击重试</span>
                 </button>
               </div>
-            </el-form>
-          </div>
-
-          <div v-show="activeTab === 'qr'" class="login-qr-panel flex h-full flex-col items-center justify-center">
-            <div class="w-44 h-44 mx-auto bg-gray-50 rounded-xl flex items-center justify-center mb-3 shadow-inner">
-              <img v-if="qrCodeUrl" :src="qrCodeUrl" alt="扫码登录二维码" class="w-44 h-44 rounded-xl" />
-              <button
-                v-else-if="qrExpired"
-                type="button"
-                class="h-full w-full rounded-xl text-sm font-medium text-[#0891b2] hover:bg-cyan-50 transition-colors"
-                aria-label="二维码已过期，点击刷新二维码"
-                @click="refreshQRCode"
-              >
-                二维码已过期<br />点击刷新
-              </button>
-              <div v-else class="flex flex-col items-center text-gray-400">
-                <svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                </svg>
-                <span class="text-sm">{{ qrLoading ? '加载中…' : '二维码暂不可用' }}</span>
-              </div>
             </div>
-            <div class="min-h-5 flex flex-wrap items-center justify-center text-center">
-              <span v-if="!qrExpired" class="text-gray-600 text-sm">{{ qrStatus }}</span>
-              <span v-if="qrTimer > 0" class="text-gray-600 text-sm">，有效期：{{ Math.floor(qrTimer / 60) }}:{{ String(qrTimer % 60).padStart(2, '0') }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="login-divider mt-2 mb-4 xl:mt-3 xl:mb-6 flex items-center gap-4">
-            <div class="flex-1 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent"></div>
-            <span class="text-gray-400 text-sm font-medium">其他登录方式</span>
-            <div class="flex-1 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent"></div>
-          </div>
-
-          <div class="login-provider-list flex items-center justify-around">
-            <button
-              v-for="provider in oauthProviders"
-              :key="provider.id"
-              @click="oauthLogin(provider.id)"
-              :aria-label="`${provider.name}登录`"
-              :title="`${provider.name}登录`"
-              class="login-provider-button flex items-center justify-center border-2 border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm transition-all duration-200"
-            >
-              <ThirdPartyProviderIcon :provider="provider.id" :size="24" class="login-provider-icon flex-shrink-0" />
-            </button>
-          </div>
-
-          <p class="login-register-link text-center text-gray-500 text-sm mt-5 xl:mt-8">
-            还没有账号？<router-link :to="registerRoute" class="text-[#0891b2] hover:text-[#0e7490] font-medium transition-colors">立即注册</router-link>
-          </p>
-        </div>
-      </div>
+          </template>
+          <template v-else>
+            <el-form-item prop="code">
+              <el-input id="login-code" v-model="code" maxlength="6" inputmode="numeric" autocomplete="one-time-code"
+                aria-label="邮箱验证码" placeholder="6 位验证码" :disabled="busy">
+                <template #suffix>
+                  <button type="button" class="auth-code-button" :disabled="busy || countdown > 0" @click="openCodeModal">
+                    {{ countdown > 0 ? `${countdown}秒后重发` : '获取验证码' }}
+                  </button>
+                </template>
+              </el-input>
+            </el-form-item>
+            <div class="login-email-spacer" aria-hidden="true"></div>
+          </template>
+          <button type="submit" class="auth-primary" :disabled="busy || (activeTab === 'password' && lockSeconds > 0)">
+            <LoaderCircle v-if="busy" class="w-4 h-4 animate-spin" />
+            {{ busy ? '登录中…' : activeTab === 'password' && lockSeconds > 0 ? `${lockSeconds} 秒后重试` : '登录' }}
+          </button>
+        </el-form>
+      </template>
     </div>
-  </div>
-
-  <SendCodeModal
-    :visible="showSendCodeModal"
-    :email="emailForm.email"
-    purpose="LOGIN"
-    @close="showSendCodeModal = false"
-    @success="handleSendCodeSuccess"
-  />
+    <template #footer>
+      <p class="auth-switch-link">还没有账号？<router-link :to="registerRoute">立即注册</router-link></p>
+      <AuthProviders :disabled="busy" @select="oauthLogin" />
+    </template>
+  </AuthLayout>
+  <SendCodeModal :visible="codeModalVisible" :email="form.email" purpose="LOGIN" @close="codeModalVisible = false" @success="acceptCode" />
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
-import QRCode from 'qrcode'
-import { createQRLoginController } from '../utils/qrLogin.js'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Mail, Lock, Eye, EyeOff, MessageSquare, AlertTriangle } from 'lucide-vue-next'
-import { ElMessage } from 'element-plus'
+import { Eye, EyeOff, LoaderCircle, Monitor, QrCode } from 'lucide-vue-next'
 import { authAPI, setAccessToken } from '../api/auth'
-import ApplicationLogo from '../components/ApplicationLogo.vue'
-import AuthSplashPane from '../components/AuthSplashPane.vue'
+import AuthLayout from '../components/AuthLayout.vue'
+import AuthProviders from '../components/AuthProviders.vue'
+import QRLoginPanel from '../components/QRLoginPanel.vue'
 import SendCodeModal from '../components/SendCodeModal.vue'
-import ThirdPartyProviderIcon from '../components/ThirdPartyProviderIcon.vue'
-import { getLoginRedirect, loadTargetClient as loadTargetClientInfo } from '../utils/oauthTarget'
+import { getLoginRedirect, loadTargetClient } from '../utils/oauthTarget'
+import { normalizeAuthEmail, useAuthSubmission, useDeadline, useEmailChallenge, validAuthEmail } from '../utils/authState'
 
 const route = useRoute()
-const mobileViewportStyle = ref({})
-
-const updateMobileViewport = () => {
-  const viewport = window.visualViewport
-  mobileViewportStyle.value = viewport
-    ? { '--login-viewport-height': `${viewport.height}px`, '--login-viewport-top': `${viewport.offsetTop}px` }
-    : {}
-}
-
-const redirectUrl = ref(getLoginRedirect(route))
+const redirectUrl = getLoginRedirect(route)
 const targetClient = ref(null)
-const targetClientName = computed(() => targetClient.value?.name || '')
-const targetClientLogo = computed(() => targetClient.value?.logo_url || (targetClient.value ? '' : `${import.meta.env.BASE_URL}assets/sso.svg`))
-
-const tabs = [
-  { key: 'password', label: '密码登录' },
-  { key: 'email', label: '邮箱登录' },
-  { key: 'qr', label: '扫码登录' },
-]
-
-const oauthProviders = [
-  {
-    id: 'github',
-    name: 'GitHub'
-  },
-  {
-    id: 'feishu',
-    name: '飞书'
-  },
-  {
-    id: 'qq',
-    name: 'QQ'
-  },
-  {
-    id: 'google',
-    name: 'Google'
-  }
-]
-
+const targetName = computed(() => targetClient.value?.name || '账号中心')
+const targetLogo = computed(() => targetClient.value?.logo_url || (targetClient.value ? '' : '/assets/sso.svg'))
+const routeFor = path => ({ path, query: redirectUrl === '/profile' ? {} : { redirect: redirectUrl } })
+const registerRoute = routeFor('/register')
+const resetRoute = routeFor('/reset-password')
+const tabs = [{ key: 'password', label: '密码登录' }, { key: 'email', label: '验证码登录' }]
 const activeTab = ref('password')
+const qrMode = ref(false)
 const showPassword = ref(false)
-const loading = ref(false)
 const errorMessage = ref('')
-const passwordLockSeconds = ref(0)
-const countdown = ref(0)
-const emailChallengeId = ref('')
-const showSendCodeModal = ref(false)
-const qrCodeUrl = ref('')
-const qrStatus = ref('')
-const qrLoading = ref(false)
-const qrTimer = ref(0)
-const qrExpired = ref(false)
-const passwordLockInterval = ref(null)
-const passwordCaptchaRequired = ref(false)
-const passwordCaptchaInput = ref('')
-const passwordCaptchaID = ref('')
-const passwordCaptchaBase64 = ref('')
-
-const pwdFormRef = ref(null)
-const emailFormRef = ref(null)
-
-const passwordForm = ref({
-  email: '',
-  password: ''
-})
-
-const emailForm = ref({
-  email: '',
-  code: ''
-})
-
-const passwordEmailValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(passwordForm.value.email.trim()))
-const passwordValueValid = computed(() => Boolean(passwordForm.value.password))
-const passwordFormValid = computed(() => passwordEmailValid.value && passwordValueValid.value)
-const passwordLoginInvalid = computed(() => !passwordFormValid.value && passwordLockSeconds.value <= 0 && !loading.value)
-const passwordLoginDisabled = computed(() => loading.value || passwordLockSeconds.value > 0)
-const targetPlatformName = computed(() => targetClientName.value || '账号中心')
-const registerRoute = computed(() => {
-  if (!redirectUrl.value || redirectUrl.value === '/profile') {
-    return '/register'
-  }
-
-  return {
-    path: '/register',
-    query: {
-      redirect: redirectUrl.value
-    }
-  }
-})
-const passwordButtonClass = computed(() => (
-  passwordLockSeconds.value > 0
-    ? 'bg-gray-300 hover:bg-gray-300'
-    : 'bg-[#0891b2] hover:bg-[#0e7490]'
-))
-const passwordLoginButtonText = computed(() => {
-  if (loading.value) {
-    return '登录中...'
-  }
-  if (passwordLockSeconds.value > 0) {
-    return `${passwordLockSeconds.value} 秒后重试`
-  }
-  return '登录'
-})
-
-watch(() => passwordForm.value.email, (email) => {
-  if (emailForm.value.email !== email) {
-    emailForm.value.email = email
-  }
-  stopPasswordLockCountdown()
-  errorMessage.value = ''
-})
-
-watch(() => emailForm.value.email, (email) => {
-  if (passwordForm.value.email !== email) {
-    passwordForm.value.email = email
-  }
-  errorMessage.value = ''
-})
-
-const passwordRules = {
-  email: [
-    { required: true, message: '请输入邮箱地址', trigger: 'blur' },
-    { type: 'email', message: '请输入正确的邮箱地址', trigger: ['blur', 'change'] }
-  ],
-  password: [
-    { required: true, message: '请输入密码', trigger: 'blur' }
-  ]
+const formRef = ref(null)
+const form = reactive({ email: '', password: '' })
+const { busy, run } = useAuthSubmission()
+const { seconds: lockSeconds, start: lock, stop: clearLock } = useDeadline()
+const { code, challengeId, valid: challengeValid, countdown, visible: codeModalVisible, accept: acceptCode } = useEmailChallenge(() => form.email)
+const captchaRequired = ref(false)
+const captchaInput = ref('')
+const captchaID = ref('')
+const captchaImage = ref('')
+let captchaGeneration = 0
+const rules = computed(() => ({
+  email: [{ validator: (_rule, value, callback) => callback(validAuthEmail(value) ? undefined : new Error('请输入正确的邮箱地址')), trigger: 'blur' }],
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  code: [{ validator: (_rule, _value, callback) => callback(/^\d{6}$/.test(code.value) ? undefined : new Error('请输入六位验证码')), trigger: 'blur' }]
+}))
+const switchTab = event => {
+  if (busy.value || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  activeTab.value = event.key === 'Home' ? 'password' : event.key === 'End' ? 'email' : activeTab.value === 'password' ? 'email' : 'password'
+  document.getElementById(`tab-${activeTab.value}`)?.focus()
 }
-
-const emailRules = {
-  email: [
-    { required: true, message: '请输入邮箱地址', trigger: 'blur' },
-    { type: 'email', message: '请输入正确的邮箱地址', trigger: ['blur', 'change'] }
-  ],
-  code: [
-    { required: true, message: '请输入验证码', trigger: 'blur' },
-    { len: 6, message: '验证码为6位', trigger: 'blur' }
-  ]
-}
-
-const responseData = (response) => response?.data || response || {}
-
-const loadTargetClient = async () => {
-  targetClient.value = await loadTargetClientInfo(redirectUrl.value)
-}
-
-const loadPasswordCaptcha = async () => {
+const loadCaptcha = async () => {
+  const version = ++captchaGeneration
+  captchaInput.value = captchaID.value = captchaImage.value = ''
   try {
     const response = await authAPI.getCaptcha()
-    const data = responseData(response)
-    passwordCaptchaID.value = data.captcha_id || ''
-    passwordCaptchaBase64.value = data.captcha_png_base64 || ''
-    passwordCaptchaInput.value = ''
+    if (version !== captchaGeneration) return
+    const data = response.data || response
+    captchaID.value = data.captcha_id || ''
+    captchaImage.value = data.captcha_png_base64 || ''
   } catch (error) {
-    errorMessage.value = error.message || '获取验证码失败'
+    if (version === captchaGeneration) errorMessage.value = error.message || '获取图形验证码失败'
   }
 }
-
-const finishLogin = (response) => {
-  const data = responseData(response)
+const finishLogin = response => {
+  busy.value = true
+  const data = response.data || response
   setAccessToken(data.access_token)
-  window.location.href = data.redirect_url || redirectUrl.value || '/profile'
+  window.location.assign(data.redirect_url || redirectUrl)
 }
-
-const stopPasswordLockCountdown = () => {
-  if (passwordLockInterval.value) {
-    clearInterval(passwordLockInterval.value)
-    passwordLockInterval.value = null
-  }
-  passwordLockSeconds.value = 0
-}
-
-const startPasswordLockCountdown = (seconds) => {
-  stopPasswordLockCountdown()
-  passwordLockSeconds.value = Math.max(1, Number(seconds) || 1)
-  passwordLockInterval.value = setInterval(() => {
-    passwordLockSeconds.value -= 1
-    if (passwordLockSeconds.value <= 0) {
-      stopPasswordLockCountdown()
-      return
-    }
-  }, 1000)
-}
-
-const handlePasswordLogin = async () => {
-  try {
-    if (passwordLoginDisabled.value || !pwdFormRef.value) return
-    try {
-      await pwdFormRef.value.validate()
-    } catch (error) {
-      return
-    }
-    loading.value = true
-    errorMessage.value = ''
-    const response = await authAPI.loginWithPassword({
-      ...passwordForm.value,
-      redirect: redirectUrl.value,
-      ...(passwordCaptchaRequired.value
-        ? { captcha_id: passwordCaptchaID.value, captcha: passwordCaptchaInput.value }
-        : {})
-    })
-    ElMessage.success('登录成功，正在跳转...')
-    setTimeout(() => {
-      finishLogin(response)
-    }, 1000)
-    passwordCaptchaRequired.value = false
-  } catch (error) {
-    if (error.status === 429) {
-      if (error.data?.code === 'CAPTCHA_REQUIRED') {
-        passwordCaptchaRequired.value = true
-        errorMessage.value = '请完成图形验证码后再登录'
-        await loadPasswordCaptcha()
-        return
-      }
-      const retryAfterSeconds = Math.max(1, Number(error.data?.retry_after_seconds) || 1)
-      ElMessage.error(`密码错误次数过多，请 ${retryAfterSeconds} 秒后再试`)
-      startPasswordLockCountdown(retryAfterSeconds)
-      passwordForm.value.password = ''
-      return
-    }
-    ElMessage.error(error.message || '邮箱或密码错误')
-  } finally {
-    loading.value = false
-  }
-}
-
-const openSendCodeModal = () => {
-  if (!emailForm.value.email) {
-    ElMessage.warning('请先输入邮箱')
-    return
-  }
-  showSendCodeModal.value = true
-}
-
-const handleSendCodeSuccess = (data) => {
-  emailChallengeId.value = data.challenge_id || ''
-  ElMessage.success('验证码已发送')
-  countdown.value = 60
-  const timer = setInterval(() => {
-    countdown.value--
-    if (countdown.value <= 0) {
-      clearInterval(timer)
-    }
-  }, 1000)
-}
-
-const handleEmailLogin = async () => {
-  try {
-    if (!emailFormRef.value) return
-    await emailFormRef.value.validate()
-    loading.value = true
-    errorMessage.value = ''
-    const response = await authAPI.loginWithEmail({
-      challenge_id: emailChallengeId.value,
-      code: emailForm.value.code,
-      redirect: redirectUrl.value
-    })
-    ElMessage.success('登录成功，正在跳转...')
-    setTimeout(() => {
-      finishLogin(response)
-    }, 1000)
-  } catch (error) {
-    errorMessage.value = error.message || '登录失败'
-  } finally {
-    loading.value = false
-  }
-}
-
-const oauthLogin = (provider) => {
-  const redirectParam = `?redirect=${encodeURIComponent(redirectUrl.value)}`
-  window.location.href = `/api/auth/third/${provider}${redirectParam}`
-}
-
-const qrController = createQRLoginController({
-  api: authAPI,
-  render: payload => QRCode.toDataURL(payload, { width: 352, margin: 4, errorCorrectionLevel: 'M' }),
-  onChange: state => {
-    qrCodeUrl.value = state.image
-    qrStatus.value = state.message
-    qrTimer.value = state.seconds
-    qrLoading.value = state.loading
-    qrExpired.value = state.expired
-  },
-  onComplete: finishLogin
-})
-const refreshQRCode = () => qrController.start(redirectUrl.value)
-const stopQRCode = () => qrController.stop()
-
-onMounted(() => {
-  updateMobileViewport()
-  window.visualViewport?.addEventListener('resize', updateMobileViewport)
-  window.visualViewport?.addEventListener('scroll', updateMobileViewport)
-  window.addEventListener('pagehide', stopQRCode)
-  loadTargetClient()
-  if (activeTab.value === 'qr') {
-    refreshQRCode()
-  }
-})
-
-onUnmounted(() => {
-  window.visualViewport?.removeEventListener('resize', updateMobileViewport)
-  window.visualViewport?.removeEventListener('scroll', updateMobileViewport)
-  window.removeEventListener('pagehide', stopQRCode)
-  stopQRCode()
-  if (passwordLockInterval.value) clearInterval(passwordLockInterval.value)
-})
-
-watch(activeTab, (tab) => {
-  stopPasswordLockCountdown()
+const openCodeModal = () => {
+  if (busy.value || countdown.value > 0) return
+  if (!validAuthEmail(form.email)) { errorMessage.value = '请输入正确的邮箱地址'; return }
   errorMessage.value = ''
-  if (tab === 'qr') refreshQRCode()
-  else stopQRCode()
+  codeModalVisible.value = true
+}
+const handleLogin = () => run(async isCurrent => {
+  if (qrMode.value || (activeTab.value === 'password' && lockSeconds.value > 0)) return
+  errorMessage.value = ''
+  const mode = activeTab.value
+  try { await formRef.value.validate() } catch { return }
+  if (!isCurrent()) return
+  if (mode === 'email' && !challengeValid.value) { errorMessage.value = '请先获取有效的邮箱验证码'; return }
+  if (mode === 'password' && captchaRequired.value && (!captchaID.value || !/^\d{4}$/.test(captchaInput.value))) {
+    errorMessage.value = '请完成图形验证码后再登录'; return
+  }
+  try {
+    const response = mode === 'password'
+      ? await authAPI.loginWithPassword({ email: normalizeAuthEmail(form.email), password: form.password, redirect: redirectUrl,
+        ...(captchaRequired.value ? { captcha_id: captchaID.value, captcha: captchaInput.value } : {}) })
+      : await authAPI.loginWithEmail({ challenge_id: challengeId.value, code: code.value, redirect: redirectUrl })
+    if (!isCurrent()) return
+    finishLogin(response)
+    return true
+  } catch (error) {
+    if (!isCurrent()) return
+    if (mode === 'password' && error.data?.code === 'CAPTCHA_REQUIRED') {
+      captchaRequired.value = true
+      errorMessage.value = '请完成图形验证码后再登录'
+      await loadCaptcha()
+    } else if (mode === 'password' && error.status === 429) {
+      lock(Math.max(1, Number(error.data?.retry_after_seconds) || 1))
+      form.password = ''
+      errorMessage.value = error.message || '请求过于频繁，请稍后重试'
+    } else {
+      errorMessage.value = error.message || '登录失败'
+      if (mode === 'password' && captchaRequired.value) await loadCaptcha()
+    }
+  }
 })
+const oauthLogin = provider => {
+  if (busy.value) return
+  busy.value = true
+  window.location.assign(`/api/auth/third/${provider}?redirect=${encodeURIComponent(redirectUrl)}`)
+}
+watch(() => normalizeAuthEmail(form.email), () => {
+  clearLock()
+  captchaGeneration++
+  captchaRequired.value = false
+  captchaInput.value = captchaID.value = captchaImage.value = ''
+  errorMessage.value = ''
+})
+watch([activeTab, qrMode], () => { errorMessage.value = ''; formRef.value?.clearValidate() })
+onMounted(async () => { targetClient.value = await loadTargetClient(redirectUrl) })
+onUnmounted(() => { captchaGeneration++ })
 </script>
 
 <style scoped>
-.login-form-panel {
-  height: 252px;
-  min-height: 252px;
-}
-
-@media (max-height: 760px) and (min-width: 768px) {
-  .login-auth-pane {
-    align-items: flex-start;
-    padding-bottom: 16px;
-    padding-top: 16px;
-  }
-
-  .login-stack {
-    padding-bottom: 0;
-    padding-top: 0;
-  }
-
-  .login-card {
-    padding: 24px;
-  }
-
-  .login-header,
-  .login-tabs {
-    margin-bottom: 16px;
-  }
-
-  .login-form-panel {
-    height: 238px;
-    min-height: 238px;
-  }
-
-  .login-divider {
-    margin-bottom: 10px;
-    margin-top: 10px;
-  }
-
-  .login-provider-button {
-    padding-bottom: 7px;
-    padding-top: 7px;
-  }
-
-  .login-register-link {
-    margin-top: 14px;
-  }
-}
-
-.login-provider-button {
-  width: 44px;
-  height: 44px;
-  flex: 0 0 44px;
-  border-radius: 50%;
-  padding: 0;
-}
-
-.login-brand-logo {
-  border: 0;
-  background: transparent;
-  --profile-success: #0891b2;
-}
-
-.login-title {
-  margin-top: 12px;
-  color: #1f2937;
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-@media (max-width: 767px) {
-  .login-page {
-    position: fixed;
-    inset: 0;
-    top: var(--login-viewport-top, 0px);
-    height: 100vh;
-    height: var(--login-viewport-height, 100dvh);
-    min-height: 0;
-  }
-
-  .login-auth-pane {
-    min-width: 0;
-    min-height: 0;
-    height: 100%;
-    flex-direction: column;
-    justify-content: flex-start;
-    overflow: hidden;
-    overscroll-behavior: none;
-    background: #fff;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) calc(env(safe-area-inset-bottom) + 16px) env(safe-area-inset-left);
-  }
-
-  .login-stack {
-    flex-shrink: 0;
-    max-width: none;
-    margin-block: auto;
-    padding-block: 0;
-  }
-
-  .login-card {
-    padding: 16px 24px 24px;
-    border-radius: 0;
-    box-shadow: none;
-  }
-
-  .login-header,
-  .login-tabs {
-    margin-bottom: 16px;
-  }
-
-  .login-form-panel {
-    height: auto;
-    min-height: 248px;
-    overflow: visible;
-  }
-
-  .login-form-panel :deep(.el-input__inner) {
-    font-size: 16px;
-  }
-
-  .login-form-panel :deep(.el-input) {
-    min-width: 0;
-  }
-
-  .login-divider {
-    margin-bottom: 16px;
-    margin-top: 28px;
-  }
-
-  .login-register-link {
-    margin-top: 16px;
-  }
-}
-
-@media (max-width: 767px) and (max-height: 640px) {
-  .login-card {
-    padding: 8px 24px 16px;
-  }
-
-  .login-header,
-  .login-tabs {
-    margin-bottom: 12px;
-  }
-
-  .login-brand-logo {
-    width: 36px;
-    height: 36px;
-  }
-
-  .login-title {
-    margin-top: 8px;
-    font-size: 22px;
-  }
-
-  .login-divider {
-    margin-bottom: 12px;
-    margin-top: 20px;
-  }
-
-  .login-register-link {
-    margin-top: 12px;
-  }
-}
-
-@media (max-width: 767px) and (max-height: 760px) {
-  .login-card--expanded {
-    padding-block: 4px 8px;
-  }
-
-  .login-card--expanded .login-header,
-  .login-card--expanded .login-tabs {
-    margin-bottom: 6px;
-  }
-
-  .login-card--expanded .login-brand-logo {
-    width: 28px;
-    height: 28px;
-  }
-
-  .login-card--expanded .login-title {
-    margin-top: 4px;
-    font-size: 22px;
-  }
-
-  .login-card--expanded .login-error {
-    margin-bottom: 8px;
-    padding: 4px 8px;
-  }
-
-  .login-card--expanded .login-tabs button {
-    padding-block: 8px;
-  }
-
-  .login-card--expanded .login-form-panel {
-    min-height: 0;
-  }
-
-  .login-card--expanded .login-form-panel :deep(.el-form-item.mb-5),
-  .login-card--expanded .login-form-panel :deep(.el-form-item.mb-6) {
-    margin-bottom: 12px;
-  }
-
-  .login-card--expanded .login-form-panel .mb-2 {
-    margin-bottom: 4px;
-  }
-
-  .login-card--expanded .login-password-field,
-  .login-card--expanded .login-captcha {
-    margin-bottom: 8px;
-  }
-
-  .login-card--expanded .login-submit {
-    padding-top: 4px;
-  }
-
-  .login-card--expanded .login-form-panel :deep(.h-12) {
-    height: 44px;
-  }
-
-  .login-card--expanded .login-divider {
-    margin-bottom: 8px;
-    margin-top: 20px;
-  }
-
-  .login-card--expanded .login-register-link {
-    margin-top: 8px;
-  }
-}
-
-.login-provider-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-}
-
-.login-provider-icon :deep(svg) {
-  width: 24px;
-  height: 24px;
-}
-
-@media (max-height: 680px) and (min-width: 768px) {
-  .login-card {
-    padding: 20px;
-  }
-
-  .login-header,
-  .login-tabs {
-    margin-bottom: 12px;
-  }
-
-  .login-form-panel {
-    height: 226px;
-    min-height: 226px;
-  }
-}
+.login-method { --login-method-height: 286px; min-height: var(--login-method-height); }
+.login-tabs { display: flex; gap: 28px; height: 45px; margin-bottom: 18px; border-bottom: 1px solid #e9e9e9; }
+.login-tabs button { position: relative; color: #999; font-size: 15px; padding-bottom: 12px; }
+.login-tabs button.active { color: #171717; font-weight: 600; }
+.login-tabs button.active::after { content: ''; position: absolute; height: 2px; background: #171717; left: 0; right: 0; bottom: -1px; }
+.login-mode-switch { position: absolute; top: 0; right: 0; width: 62px; height: 62px; border-top-right-radius: 16px; }
+.login-mode-switch::before { content: ''; position: absolute; inset: 0; border-radius: inherit; background: #f5f5f5; clip-path: polygon(0 0, 100% 0, 100% 100%); }
+.login-mode-switch svg { position: absolute; top: 9px; right: 9px; width: 23px; height: 23px; }
+.login-mode-switch:hover::before { background: #e9e9e9; }
+.login-mode-switch:focus-visible { outline-offset: -3px; }
+.login-email-spacer { height: 29px; }
+.login-captcha { margin-bottom: 20px; }
+@media (max-width: 767px) { .login-mode-switch { top: 0; right: -12px; border-radius: 0; } }
 </style>
