@@ -1,5 +1,5 @@
 <template>
-  <AuthLayout title="注册账号" :target-name="targetName">
+  <AuthLayout class="register-page" title="注册账号" :target-name="targetName" fixed-mobile>
     <div v-if="errorMessage" class="auth-notice" role="alert">{{ errorMessage }}</div>
     <el-form ref="formRef" :model="form" :rules="rules" @submit.prevent="handleRegister">
       <el-form-item prop="email">
