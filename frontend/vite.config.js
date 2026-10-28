@@ -6,6 +6,8 @@ export default defineConfig({
   plugins: [vue()],
   base: '/',
   build: {
+    // 保留旧版 Chromium 支持的媒体查询，避免移动端适配规则被忽略。
+    cssTarget: 'chrome100',
     outDir: 'dist',
     assetsDir: 'assets',
     emptyOutDir: true,
