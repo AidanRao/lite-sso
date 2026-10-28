@@ -1,5 +1,5 @@
 <template>
-  <AuthLayout :title="`登录 ${targetName}`" :target-name="targetName" :logo="targetLogo" show-logo show-docs-link>
+  <AuthLayout class="login-page" :title="`登录 ${targetName}`" :target-name="targetName" :logo="targetLogo" show-logo show-docs-link>
     <template #corner>
       <button type="button" class="login-mode-switch" :disabled="busy || qrCompleting" :aria-pressed="qrMode"
         :aria-label="qrMode ? '返回账号登录' : '切换到扫码登录'" :title="qrMode ? '账号登录' : '扫码登录'" @click="qrMode = !qrMode">
@@ -215,5 +215,8 @@ onUnmounted(() => { captchaGeneration++ })
 .login-options { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 20px; margin-bottom: 14px; font-size: 12px; }
 .login-captcha { margin-bottom: 20px; }
 @media (max-height: 700px) { .login-method { --qr-registration-space: 40px; } }
-@media (max-width: 767px) { .login-mode-switch { top: 0; right: -12px; border-radius: 0; } }
+@media (max-width: 767px) {
+  .login-method { --login-method-height: 288px; --qr-registration-space: 0px; min-height: 0; }
+  .login-mode-switch { top: 0; right: 0; border-radius: 0; }
+}
 </style>
