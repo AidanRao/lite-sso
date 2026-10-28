@@ -1,5 +1,5 @@
 <template>
-  <AuthLayout :title="`登录 ${targetName}`" :target-name="targetName" :logo="targetLogo" show-logo show-docs-link>
+  <AuthLayout class="login-page" :style="viewportStyle" :title="`登录 ${targetName}`" :target-name="targetName" :logo="targetLogo" show-logo show-docs-link>
     <template #corner>
       <button type="button" class="login-mode-switch" :disabled="busy || qrCompleting" :aria-pressed="qrMode"
         :aria-label="qrMode ? '返回账号登录' : '切换到扫码登录'" :title="qrMode ? '账号登录' : '扫码登录'" @click="qrMode = !qrMode">
@@ -92,6 +92,15 @@ import { normalizeAuthEmail, useAuthSubmission, useDeadline, useEmailChallenge, 
 const route = useRoute()
 const redirectUrl = getLoginRedirect(route)
 const targetClient = ref(null)
+const viewportStyle = ref({})
+const syncViewport = () => {
+  const viewport = window.visualViewport
+  if (!viewport || viewport.scale !== 1) return
+  viewportStyle.value = {
+    '--login-viewport-height': `${viewport.height}px`,
+    '--login-viewport-top': `${viewport.offsetTop}px`
+  }
+}
 const targetName = computed(() => targetClient.value?.name || '账号中心')
 const targetLogo = computed(() => targetClient.value?.logo_url || (targetClient.value ? '' : '/assets/sso.svg'))
 const routeFor = path => ({ path, query: redirectUrl === '/profile' ? {} : { redirect: redirectUrl } })
@@ -197,8 +206,17 @@ watch(() => normalizeAuthEmail(form.email), () => {
   errorMessage.value = ''
 })
 watch([activeTab, qrMode], () => { errorMessage.value = ''; formRef.value?.clearValidate() })
-onMounted(async () => { targetClient.value = await loadTargetClient(redirectUrl) })
-onUnmounted(() => { captchaGeneration++ })
+onMounted(() => {
+  syncViewport()
+  window.visualViewport?.addEventListener('resize', syncViewport)
+  window.visualViewport?.addEventListener('scroll', syncViewport)
+  void loadTargetClient(redirectUrl).then(client => { targetClient.value = client })
+})
+onUnmounted(() => {
+  captchaGeneration++
+  window.visualViewport?.removeEventListener('resize', syncViewport)
+  window.visualViewport?.removeEventListener('scroll', syncViewport)
+})
 </script>
 
 <style scoped>
@@ -215,5 +233,8 @@ onUnmounted(() => { captchaGeneration++ })
 .login-options { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 20px; margin-bottom: 14px; font-size: 12px; }
 .login-captcha { margin-bottom: 20px; }
 @media (max-height: 700px) { .login-method { --qr-registration-space: 40px; } }
-@media (max-width: 767px) { .login-mode-switch { top: 0; right: -12px; border-radius: 0; } }
+@media (max-width: 767px) {
+  .login-method { --login-method-height: 288px; --qr-registration-space: 0px; min-height: 0; }
+  .login-mode-switch { top: 0; right: 0; border-radius: 0; }
+}
 </style>

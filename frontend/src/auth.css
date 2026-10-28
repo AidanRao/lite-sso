@@ -75,3 +75,19 @@
   .auth-card--plain .auth-footer { margin-top: 16px; }
 }
 @media (min-width: 768px) and (max-height: 700px) { .auth-pane { padding-block: 20px; } }
+@media (max-width: 767px) {
+  html:has(.login-page) { overflow: hidden; overscroll-behavior: none; }
+  body:has(.login-page) { position: fixed; inset: 0; min-height: 0; overflow: hidden; overscroll-behavior: none; }
+  .login-page { position: fixed; top: var(--login-viewport-top, 0px); left: 0; right: 0; height: var(--login-viewport-height, 100dvh); min-height: 0; overflow: hidden; background: #fff; }
+  .login-page .auth-pane { min-height: 0; overflow-y: auto; overscroll-behavior: none; background: #fff; }
+  .login-page .auth-card { padding: 0; border-radius: 0; box-shadow: none; }
+  .login-page .auth-header { margin-bottom: 24px; }
+  .login-page .auth-footer { margin-top: 20px; }
+  .login-page .auth-providers-divider { margin: 20px 0 14px; }
+}
+@media (max-width: 767px) and (max-height: 600px) {
+  .login-page .auth-header { margin-bottom: 18px; }
+  .login-page .el-form-item { margin-bottom: 18px; }
+  .login-page .auth-footer { margin-top: 16px; }
+  .login-page .auth-providers-divider { margin: 16px 0 12px; }
+}
