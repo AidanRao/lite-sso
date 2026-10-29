@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// ShutdownTimeout bounds HTTP draining and, separately, audit draining.
+// ShutdownTimeout bounds HTTP draining and, separately, background draining.
 const ShutdownTimeout = 10 * time.Second
 
 // Serve waits for active HTTP handlers before returning, including on cancellation.

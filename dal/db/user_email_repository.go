@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -23,6 +24,14 @@ type UserEmailRepository struct {
 // NewUserEmailRepository creates a user email repository.
 func NewUserEmailRepository(database *gorm.DB) *UserEmailRepository {
 	return &UserEmailRepository{db: database}
+}
+
+// FindVerifiedPrimaryAt excludes addresses added or verified after the login.
+// The address must still be the account's current verified primary email.
+func (r *UserEmailRepository) FindVerifiedPrimaryAt(ctx context.Context, userID string, at time.Time) (*model.UserEmail, error) {
+	var record model.UserEmail
+	err := r.db.WithContext(ctx).Where("user_id = ? AND is_primary = ? AND verified_at <= ? AND created_at <= ?", userID, true, at, at).First(&record).Error
+	return &record, err
 }
 
 // ListByUserID returns emails in primary-first creation order with source labels.

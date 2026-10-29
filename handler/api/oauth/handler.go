@@ -11,6 +11,7 @@ import (
 
 	"sso-server/common"
 	"sso-server/common/ecode"
+	"sso-server/common/event"
 	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
@@ -25,6 +26,7 @@ import (
 )
 
 type OAuthDeps struct {
+	EventPublisher   event.Publisher
 	LocationResolver ipgeo.Resolver
 	Config           *conf.Config
 	DB               *gorm.DB
@@ -47,7 +49,7 @@ func NewOAuthHandler(deps OAuthDeps) *OAuthHandler {
 	trustProxyHeaders := deps.Config != nil && deps.Config.Server.TrustProxyHeaders
 	return &OAuthHandler{
 		oauthService:      oauth.NewOAuthService(deps.Config, deps.DB, deps.KV, userRepo, deps.ProviderRegistry),
-		authService:       serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2, deps.LocationResolver),
+		authService:       serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2, deps.LocationResolver, deps.EventPublisher),
 		oauth2:            deps.OAuth2,
 		db:                deps.DB,
 		trustProxyHeaders: trustProxyHeaders,

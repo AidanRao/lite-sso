@@ -15,6 +15,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"sso-server/common/event"
 	"sso-server/conf"
 	"sso-server/dal/kv"
 	"sso-server/handler/api/auth"
@@ -42,7 +43,8 @@ func Test_LoginHandlers_PersistChoiceAndRefreshCookies(t *testing.T) {
 				require.NoError(t, database.Create(&model.User{ID: "u1", Email: &email, PasswordHash: &hash, Status: model.UserStatusActive}).Error)
 				cfg := &conf.Config{Auth: conf.AuthConfig{JWTSecret: "test-secret"}, Server: conf.ServerConfig{CookieSecure: true}, Dev: conf.DevConfig{FixedEmailOTP: "123456", SkipSendMessage: true}, Tokens: conf.TokenConfig{Session: conf.SessionTokenConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour, TemporarySessionTTL: 12 * time.Hour}}}
 				store := kv.NewMemoryStore()
-				handler := auth.NewAuthHandler(auth.AuthDeps{Config: cfg, DB: database, KV: store})
+				var loginEvents []event.LoginSucceeded
+				handler := auth.NewAuthHandler(auth.AuthDeps{EventPublisher: loginPublisher(func(e event.Event) bool { loginEvents = append(loginEvents, e.(event.LoginSucceeded)); return true }), Config: cfg, DB: database, KV: store})
 				router := gin.New()
 				router.POST("/api/auth/login/password", handler.LoginWithPassword)
 				router.POST("/api/auth/login/email", handler.LoginWithEmailOTP)
@@ -62,6 +64,9 @@ func Test_LoginHandlers_PersistChoiceAndRefreshCookies(t *testing.T) {
 				response := httptest.NewRecorder()
 				router.ServeHTTP(response, request)
 				require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+				require.Len(t, loginEvents, 1)
+				require.True(t, loginEvents[0].NewDevice)
+				require.Equal(t, "dev_browser", loginEvents[0].DeviceID)
 				var session model.UserSession
 				require.NoError(t, database.First(&session).Error)
 				require.Equal(t, remember, session.RememberMe)
@@ -89,6 +94,7 @@ func Test_LoginHandlers_PersistChoiceAndRefreshCookies(t *testing.T) {
 				response = httptest.NewRecorder()
 				router.ServeHTTP(response, request)
 				require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+				require.Len(t, loginEvents, 1)
 				require.Len(t, response.Result().Cookies(), 2)
 				for _, cookie := range response.Result().Cookies() {
 					require.Equal(t, remember, cookie.MaxAge > 0)
@@ -102,3 +108,7 @@ func Test_LoginHandlers_PersistChoiceAndRefreshCookies(t *testing.T) {
 		}
 	}
 }
+
+type loginPublisher func(event.Event) bool
+
+func (p loginPublisher) TryPublish(e event.Event) bool { return p(e) }

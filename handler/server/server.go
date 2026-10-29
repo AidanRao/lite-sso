@@ -11,20 +11,24 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"sso-server/common/event"
 	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/handler/audit"
 	manageraudit "sso-server/manager/audit"
+	"sso-server/manager/eventbus"
 	"sso-server/manager/messagecenter"
 	manageross "sso-server/manager/oss"
 	"sso-server/manager/thirdparty"
 	"sso-server/service/auth"
+	"sso-server/service/notification"
 	"sso-server/service/user"
 	"sso-server/util/ipgeo"
 	"sso-server/util/requestmeta"
 )
 
 type Server struct {
+	loginEvents         *eventbus.Bus
 	userDeletionService *user.DeletionService
 	locationResolver    *ipgeo.Locator
 	auditRecorder       *manageraudit.Recorder
@@ -97,7 +101,13 @@ func New(cfg *conf.Config) (*Server, error) {
 		_ = recorder.Shutdown(context.Background())
 		return nil, fmt.Errorf("initialize IP geolocation: %w", err)
 	}
+	var subscriptions []eventbus.Subscription
+	if messageCenterClient != nil {
+		notifier := notification.NewLoginNotifier(db.DB, messageCenterClient, cfg.Email.VerificationBaseURL, providerRegistry)
+		subscriptions = append(subscriptions, eventbus.Subscription{Type: event.LoginSucceededType, Handle: notifier.HandleLogin})
+	}
 	srv := &Server{
+		loginEvents:         eventbus.New(subscriptions...),
 		locationResolver:    locationResolver,
 		auditRecorder:       recorder,
 		cfg:                 cfg,
@@ -114,13 +124,13 @@ func New(cfg *conf.Config) (*Server, error) {
 	return srv, nil
 }
 
-// Start serves requests until cancellation, then drains the audit queue.
+// Start serves requests until cancellation, then drains background work.
 func (s *Server) Start(ctx context.Context) error {
 	defer func() {
 		drainCtx, cancel := context.WithTimeout(context.Background(), ShutdownTimeout)
 		defer cancel()
 		if err := s.Shutdown(drainCtx); err != nil {
-			log.Print("audit shutdown deadline exceeded")
+			log.Print("server shutdown deadline exceeded")
 		}
 	}()
 	listener, err := net.Listen("tcp", ":"+s.cfg.Server.Port)
@@ -132,6 +142,10 @@ func (s *Server) Start(ctx context.Context) error {
 
 // Shutdown releases shared resources after HTTP handlers have finished.
 func (s *Server) Shutdown(ctx context.Context) error {
+	var eventErr error
+	if s.loginEvents != nil {
+		eventErr = s.loginEvents.Shutdown(ctx)
+	}
 	var accountErr error
 	if s.userDeletionService != nil {
 		accountErr = s.userDeletionService.Shutdown(ctx)
@@ -140,9 +154,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.locationResolver.Close()
 	}
 	if s.auditRecorder == nil {
-		return accountErr
+		return errors.Join(eventErr, accountErr)
 	}
-	return errors.Join(accountErr, s.auditRecorder.Shutdown(ctx))
+	return errors.Join(eventErr, accountErr, s.auditRecorder.Shutdown(ctx))
 }
 
 // ServeHTTP delegates requests to the configured Gin engine.

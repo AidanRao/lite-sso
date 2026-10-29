@@ -98,3 +98,11 @@ func (r *UserSessionRepository) RevokeAll(ctx context.Context, userID string, re
 		Where("user_id = ? AND revoked_at IS NULL", userID).
 		Updates(map[string]any{"revoked_at": now, "revoke_reason": reason}).Error
 }
+
+// HasDeviceHistory includes expired and revoked sessions for this account only.
+// Callers creating a session must hold the user row lock until commit.
+func (r *UserSessionRepository) HasDeviceHistory(ctx context.Context, userID, deviceID string) (bool, error) {
+	var existing model.UserSession
+	result := r.db.WithContext(ctx).Select("id").Where("user_id = ? AND device_id = ?", userID, deviceID).Limit(1).Find(&existing)
+	return result.RowsAffected > 0, result.Error
+}
