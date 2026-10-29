@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"sso-server/common"
+	"sso-server/common/event"
 	"sso-server/conf"
 	"sso-server/dal/db"
 	"sso-server/dal/kv"
@@ -27,6 +28,7 @@ type MessageSender interface {
 
 // AuthService coordinates authentication flows and their shared security controls.
 type AuthService struct {
+	eventPublisher   event.Publisher
 	cfg              *conf.Config
 	db               *gorm.DB
 	kv               kv.Store
@@ -49,7 +51,8 @@ type PasswordResetResult struct {
 	SessionsRevoked bool
 }
 
-func NewAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, messageSender MessageSender, oauth2Impl OAuthTokenIssuer, locationResolver ipgeo.Resolver) *AuthService {
+// NewAuthService wires authentication and an optional shared event publisher.
+func NewAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, messageSender MessageSender, oauth2Impl OAuthTokenIssuer, locationResolver ipgeo.Resolver, publishers ...event.Publisher) *AuthService {
 	if kvStore == nil {
 		kvStore = kv.NewMemoryStore()
 	}
@@ -61,6 +64,9 @@ func NewAuthService(cfg *conf.Config, database *gorm.DB, kvStore kv.Store, messa
 		messageSender:    messageSender,
 		oauth2:           oauth2Impl,
 		locationResolver: locationResolver,
+	}
+	if len(publishers) > 0 {
+		service.eventPublisher = publishers[0]
 	}
 	service.guard = newLoginGuard(service.security, service)
 	return service

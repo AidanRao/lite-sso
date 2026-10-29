@@ -46,6 +46,7 @@ func (s *Server) registerRoutes() error {
 	kvStore := kv.Store(kv.NewNamespacedStore(baseKVStore, conf.GetEnvironmentName()))
 
 	authHandler := auth.NewAuthHandler(auth.AuthDeps{
+		EventPublisher:   s.loginEvents,
 		LocationResolver: s.locationResolver,
 		Config:           s.cfg,
 		DB:               db.DB,
@@ -68,6 +69,7 @@ func (s *Server) registerRoutes() error {
 	s.userDeletionService = serviceuser.NewDeletionService(db.DB, o.RefreshStore(), s.imageStore)
 	userHandler := user.NewUserHandler(user.UserDeps{
 		Deletion:         s.userDeletionService,
+		EventPublisher:   s.loginEvents,
 		LocationResolver: s.locationResolver,
 		Config:           s.cfg,
 		DB:               db.DB,
@@ -79,6 +81,7 @@ func (s *Server) registerRoutes() error {
 	})
 
 	oauthHandler := oauth.NewOAuthHandler(oauth.OAuthDeps{
+		EventPublisher:   s.loginEvents,
 		LocationResolver: s.locationResolver,
 		Config:           s.cfg,
 		DB:               db.DB,

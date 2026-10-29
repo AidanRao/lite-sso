@@ -11,6 +11,7 @@ import (
 
 	"sso-server/common"
 	"sso-server/common/ecode"
+	"sso-server/common/event"
 	"sso-server/conf"
 	"sso-server/dal/kv"
 	"sso-server/handler"
@@ -26,6 +27,7 @@ import (
 )
 
 type UserDeps struct {
+	EventPublisher   event.Publisher
 	Deletion         *serviceuser.DeletionService
 	LocationResolver ipgeo.Resolver
 	Config           *conf.Config
@@ -58,7 +60,7 @@ func NewUserHandler(deps UserDeps) *UserHandler {
 		permissions:       feature.NewService(deps.DB),
 		config:            deps.Config,
 		user:              serviceuser.NewUserService(deps.Config, deps.DB, deps.KV, deps.OAuth2, deps.ImageStore, deps.ProviderRegistry),
-		auth:              serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2, deps.LocationResolver),
+		auth:              serviceauth.NewAuthService(deps.Config, deps.DB, deps.KV, nil, deps.OAuth2, deps.LocationResolver, deps.EventPublisher),
 		emails:            serviceuser.NewEmailService(serviceuser.EmailDeps{Config: deps.Config, DB: deps.DB, MessageSender: deps.MessageSender}),
 		trustProxyHeaders: trustProxyHeaders,
 		cookieSecure:      deps.Config != nil && deps.Config.Server.CookieSecure,

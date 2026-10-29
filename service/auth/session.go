@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"sso-server/common"
+	"sso-server/common/event"
 	"sso-server/dal/db"
 	"sso-server/dto"
 	"sso-server/model"
@@ -154,6 +155,7 @@ func (s *AuthService) CompleteLoginWithContext(ctx context.Context, userID strin
 	}
 	var result *LoginResult
 	var pair *TokenPair
+	var loginEvent event.LoginSucceeded
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if actor, ok := ctx.Value(qrAuthorizationKey{}).(QRActor); ok {
 			if _, err := db.NewOAuthClientRepository(tx).LockByClientID(ctx, actor.ClientID); err != nil {
@@ -213,6 +215,14 @@ func (s *AuthService) CompleteLoginWithContext(ctx context.Context, userID strin
 		}
 		session := &model.UserSession{ID: sessionID, UserID: user.ID, DeviceID: metadata.DeviceID, AuthMethod: string(method), RememberMe: options.RememberMe, Purpose: purpose, DeletionID: deletionID,
 			RefreshTokenHash: refreshHash(refreshToken), IP: requestmeta.NormalizeIP(metadata.IP), Location: s.loginLocation(metadata.IP), UserAgent: useragent.Normalize(metadata.UserAgent), CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(s.sessionLifetime(options))}
+		newDevice := false
+		if s.eventPublisher != nil && strings.TrimSpace(metadata.DeviceID) != "" {
+			known, err := db.NewUserSessionRepository(tx).HasDeviceHistory(ctx, user.ID, metadata.DeviceID)
+			if err != nil {
+				return err
+			}
+			newDevice = !known
+		}
 		if err := db.NewUserSessionRepository(tx).Create(ctx, session); err != nil {
 			return err
 		}
@@ -225,10 +235,14 @@ func (s *AuthService) CompleteLoginWithContext(ctx context.Context, userID strin
 				return err
 			}
 		}
+		loginEvent = event.LoginSucceeded{ID: uuid.NewString(), UserID: user.ID, SessionID: session.ID, DeviceID: session.DeviceID, OccurredAt: session.CreatedAt, AuthMethod: session.AuthMethod, IP: session.IP, Location: session.Location, UserAgent: session.UserAgent, NewDevice: newDevice}
 		result = &LoginResult{User: dto.ToUserResponse(user), RedirectURL: redirectURL, AccessToken: accessToken, TokenType: "Bearer", ExpiresIn: expiresIn}
 		pair = &TokenPair{Status: user.Status, SessionID: sessionID, RememberMe: session.RememberMe, SessionExpiresAt: session.ExpiresAt, AccessToken: accessToken, RefreshToken: refreshToken, ExpiresIn: expiresIn}
 		return nil
 	})
+	if err == nil && s.eventPublisher != nil {
+		s.eventPublisher.TryPublish(loginEvent)
+	}
 	return result, pair, err
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"sso-server/common"
 	"sso-server/common/ecode"
+	"sso-server/common/event"
 	"sso-server/conf"
 	"sso-server/dal/kv"
 	"sso-server/handler/audit"
@@ -23,6 +24,7 @@ import (
 )
 
 type AuthDeps struct {
+	EventPublisher   event.Publisher
 	LocationResolver ipgeo.Resolver
 	Config           *conf.Config
 	DB               *gorm.DB
@@ -52,7 +54,7 @@ func NewAuthHandler(deps AuthDeps) *AuthHandler {
 	trustProxyHeaders := cfg != nil && cfg.Server.TrustProxyHeaders
 	return &AuthHandler{
 		captcha:           captcha.NewService(captchaStore),
-		auth:              auth.NewAuthService(cfg, deps.DB, kvStore, deps.MessageSender, deps.OAuth2, deps.LocationResolver),
+		auth:              auth.NewAuthService(cfg, deps.DB, kvStore, deps.MessageSender, deps.OAuth2, deps.LocationResolver, deps.EventPublisher),
 		db:                deps.DB,
 		kv:                kvStore,
 		trustProxyHeaders: trustProxyHeaders,

@@ -13,6 +13,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"sso-server/common/event"
 	"sso-server/conf"
 	"sso-server/dal/kv"
 	"sso-server/handler/api/user"
@@ -31,7 +32,8 @@ func TestUserRegister_CreatesUserAndReturnsTokens(t *testing.T) {
 	store := kv.NewMemoryStore()
 	cfg := &conf.Config{Dev: conf.DevConfig{FixedEmailOTP: "123456", SkipSendMessage: true}, Tokens: conf.TokenConfig{Session: conf.SessionTokenConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour, TemporarySessionTTL: 12 * time.Hour}}}
 	challenge := seedChallenge(t, cfg, database, store, "u1@example.com", serviceauth.ChallengePurposeRegister, "dev_register")
-	h := user.NewUserHandler(user.UserDeps{Config: cfg, DB: database, KV: store})
+	var loginEvents []event.LoginSucceeded
+	h := user.NewUserHandler(user.UserDeps{EventPublisher: loginPublisher(func(e event.Event) bool { loginEvents = append(loginEvents, e.(event.LoginSucceeded)); return true }), Config: cfg, DB: database, KV: store})
 	r := gin.New()
 	r.POST("/api/user/register", h.Register)
 	body := `{"remember_me":true,"email":"u1@example.com","password":"password123456","username":"u1","challenge_id":"` + challenge + `","code":"123456"}`
@@ -42,6 +44,9 @@ func TestUserRegister_CreatesUserAndReturnsTokens(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+	if len(loginEvents) != 1 || !loginEvents[0].NewDevice || loginEvents[0].DeviceID != "dev_register" {
+		t.Fatalf("expected registration login event: %#v", loginEvents)
 	}
 	var response struct {
 		Data struct {
@@ -161,3 +166,7 @@ func seedChallenge(t *testing.T, cfg *conf.Config, database *gorm.DB, store kv.S
 	}
 	return result.ChallengeID
 }
+
+type loginPublisher func(event.Event) bool
+
+func (p loginPublisher) TryPublish(e event.Event) bool { return p(e) }

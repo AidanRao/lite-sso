@@ -14,6 +14,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"sso-server/common/event"
 	"sso-server/conf"
 	"sso-server/dal/kv"
 	"sso-server/handler/api/oauth"
@@ -52,7 +53,8 @@ func Test_OAuthHandler_GoogleCallback_CreatesBrowserSessionAndRejectsReplay(t *t
 				Tokens: conf.TokenConfig{Session: conf.SessionTokenConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 24 * time.Hour}},
 			}
 			store := kv.NewMemoryStore()
-			handler := oauth.NewOAuthHandler(oauth.OAuthDeps{Config: config, DB: database, KV: store, ProviderRegistry: registry})
+			var loginEvents []event.LoginSucceeded
+			handler := oauth.NewOAuthHandler(oauth.OAuthDeps{EventPublisher: loginPublisher(func(e event.Event) bool { loginEvents = append(loginEvents, e.(event.LoginSucceeded)); return true }), Config: config, DB: database, KV: store, ProviderRegistry: registry})
 			router := gin.New()
 			router.GET("/api/auth/third/:provider", handler.ThirdPartyLogin)
 			router.GET("/api/auth/third/:provider/callback", handler.ThirdPartyCallback)
@@ -97,6 +99,9 @@ func Test_OAuthHandler_GoogleCallback_CreatesBrowserSessionAndRejectsReplay(t *t
 			}
 			require.NotNil(t, sessionCookie)
 			require.True(t, foundRefresh)
+			require.Len(t, loginEvents, 1)
+			require.True(t, loginEvents[0].NewDevice)
+			require.Equal(t, "GOOGLE", loginEvents[0].AuthMethod)
 			var session model.UserSession
 			require.NoError(t, database.First(&session, "id = ?", sessionCookie.Value).Error)
 			require.Equal(t, "GOOGLE", session.AuthMethod)
@@ -155,3 +160,7 @@ func (p *googleTestProvider) FetchProfile(_ context.Context, _ string) (*thirdpa
 	p.calls++
 	return &thirdparty.Profile{Provider: thirdparty.Google, ProviderUID: "google-sub", Email: p.email}, nil
 }
+
+type loginPublisher func(event.Event) bool
+
+func (p loginPublisher) TryPublish(e event.Event) bool { return p(e) }
