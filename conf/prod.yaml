@@ -1,6 +1,6 @@
 database:
-  max_open_conns: 2 # DATABASE_MAX_OPEN_CONNS
-  max_idle_conns: 1 # DATABASE_MAX_IDLE_CONNS
+  max_open_conns: 3 # DATABASE_MAX_OPEN_CONNS
+  max_idle_conns: 2 # DATABASE_MAX_IDLE_CONNS
 
 server:
   cookie_secure: true
