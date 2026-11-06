@@ -1,5 +1,5 @@
 <template>
-  <AuthLayout class="login-page" :title="`登录 ${targetName}`" :target-name="targetName" :logo="targetLogo" show-logo show-docs-link fixed-mobile>
+  <AuthLayout class="login-page" :title="`登录 ${targetName}`" :target-name="targetName" :logo="targetLogo" :image-src="loginImage" show-logo show-docs-link fixed-mobile>
     <template #corner>
       <button type="button" class="login-mode-switch" :disabled="busy || qrCompleting" :aria-pressed="qrMode"
         :aria-label="qrMode ? '返回账号登录' : '切换到扫码登录'" :title="qrMode ? '账号登录' : '扫码登录'" @click="qrMode = !qrMode">
@@ -113,6 +113,12 @@ const captchaRequired = ref(false)
 const captchaInput = ref('')
 const captchaID = ref('')
 const captchaImage = ref('')
+const loginImage = computed(() => {
+  if (qrMode.value) return '/assets/images/default.png'
+  if (activeTab.value === 'email') return code.value ? '/assets/images/password-visible.png' : '/assets/images/default.png'
+  if (!form.password) return '/assets/images/default.png'
+  return showPassword.value ? '/assets/images/password-visible.png' : '/assets/images/password-hidden.png'
+})
 let captchaGeneration = 0
 const rules = computed(() => ({
   email: [{ validator: (_rule, value, callback) => callback(validAuthEmail(value) ? undefined : new Error('请输入正确的邮箱地址')), trigger: 'blur' }],

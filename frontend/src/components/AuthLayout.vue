@@ -1,6 +1,6 @@
 <template>
   <div class="auth-page" :class="{ 'auth-page--fixed': fixedMobile }" :style="viewportStyle">
-    <AuthSplashPane class="auth-splash" title="身份认证系统" :target-name="targetName" :show-docs-link="showDocsLink" />
+    <AuthSplashPane class="auth-splash" title="身份认证系统" :target-name="targetName" :image-src="imageSrc" :show-docs-link="showDocsLink" />
     <main class="auth-pane">
       <section class="auth-card auth-theme" :class="{ 'auth-card--plain': !showLogo }" :aria-label="title">
         <slot name="corner" />
@@ -25,6 +25,7 @@ const props = defineProps({
   title: { type: String, required: true },
   targetName: { type: String, default: '账号中心' },
   logo: { type: String, default: '' },
+  imageSrc: { type: String, default: '/assets/images/default.png' },
   showLogo: { type: Boolean, default: false },
   showDocsLink: { type: Boolean, default: false },
   fixedMobile: { type: Boolean, default: false }
