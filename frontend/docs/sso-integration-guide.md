@@ -57,6 +57,10 @@ SSO 管理员需为接入系统登记客户端信息：
 
 管理员在 `/admin/clients/:id` 编辑 General 配置，在 `/admin/clients/:id/users` 分页管理关联用户，在 `/admin/clients/:id/advanced` 删除客户端。Users 默认每页 20 条，按最后登录时间倒序、用户 ID 升序排列；页码保存在 URL 中。清空全部作用于整个客户端。
 
+Users 右上角的“发送消息”进入 `/admin/clients/:id/users/messages`。填写 sender-key、template-key 和公共 JSON 对象参数，跨页多选当前客户端用户，邮件发送至其当前已验证的主邮箱。所有收件人共用参数；无已验证主邮箱者不可选。页面最多并发提交 3 人，显示逐人结果，可重试未成功项；重试保留本轮参数和幂等键，已提交项不会重复提交。“已提交”仅表示 message-center 接受请求。离开页面后停止调度剩余用户，不保存草稿、消息内容或任务。
+
+发送接口为管理员专用的 `POST /api/admin/oauth-clients/:id/users/:userID/messages`，请求体为 `{"sender_key":"sso","template_key":"notice","variables":{}}`，请求头必须提供非零 UUID `Idempotency-Key`。两个 key 去除首尾空白后须为 1–100 字符，参数必须是至多 64 KiB 的 JSON 对象。服务端复用已有 message-center URL/API key，重新校验用户关联并读取主邮箱；前端不能指定收件地址。接受返回 HTTP 202；无关联返回 404，无已验证主邮箱返回 409，功能不可用返回 503，上游拒绝或连接异常返回 502，超时返回 504。`data.code=MESSAGE_SUBMISSION_UNKNOWN` 表示结果未知，可使用原键和原参数重试。开发环境启用 `dev.skip_send_message` 时返回不可用，不模拟成功。发送操作复用现有审计记录，不写入参数正文、邮箱或密钥。
+
 以下 API 都需要 SSO 管理员会话，`:id` 是数据库中的数字 ID：
 
 | 方法与路径 | 说明 |

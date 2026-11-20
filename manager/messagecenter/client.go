@@ -20,7 +20,7 @@ const (
 	messagesPath        = "/v1/messages"
 	defaultHTTPTimeout  = 10 * time.Second
 	maximumErrorBodyLen = 4096
-	emailChannel         = "EMAIL"
+	emailChannel        = "EMAIL"
 )
 
 // Config contains the connection settings required by Message Center.
@@ -45,6 +45,27 @@ type sendRequest struct {
 	Variables   map[string]string `json:"variables"`
 	Channel     string            `json:"channel"`
 }
+
+// EmailMessage allows an administrator to choose a sender and JSON template variables.
+type EmailMessage struct {
+	SenderKey      string         `json:"senderKey"`
+	TemplateKey    string         `json:"templateKey"`
+	Target         string         `json:"target"`
+	Variables      map[string]any `json:"variables"`
+	IdempotencyKey string         `json:"-"`
+}
+
+// SubmissionError distinguishes rejected submissions from uncertain transport outcomes.
+type SubmissionError struct {
+	Unknown bool
+	Err     error
+}
+
+// Error returns the underlying integration error for existing internal callers.
+func (e *SubmissionError) Error() string { return e.Err.Error() }
+
+// Unwrap preserves context and timeout detection without exposing errors to API callers.
+func (e *SubmissionError) Unwrap() error { return e.Err }
 
 // NewClient validates the configuration and creates a Message Center client.
 func NewClient(cfg Config) (*Client, error) {
@@ -88,13 +109,25 @@ func NewClient(cfg Config) (*Client, error) {
 
 // Send submits one templated message for asynchronous delivery.
 func (c *Client) Send(ctx context.Context, target string, templateKey string, variables map[string]string) error {
-	payload, err := json.Marshal(sendRequest{
+	return c.send(ctx, sendRequest{
 		SenderKey:   c.senderKey,
 		TemplateKey: templateKey,
 		Target:      target,
 		Variables:   variables,
 		Channel:     emailChannel,
-	})
+	}, uuid.NewString())
+}
+
+// SendEmail submits an email using the existing connection credentials and a stable key.
+func (c *Client) SendEmail(ctx context.Context, message EmailMessage) error {
+	return c.send(ctx, struct {
+		EmailMessage
+		Channel string `json:"channel"`
+	}{EmailMessage: message, Channel: emailChannel}, message.IdempotencyKey)
+}
+
+func (c *Client) send(ctx context.Context, message any, idempotencyKey string) error {
+	payload, err := json.Marshal(message)
 	if err != nil {
 		return fmt.Errorf("marshal message center request: %w", err)
 	}
@@ -105,11 +138,11 @@ func (c *Client) Send(ctx context.Context, target string, templateKey string, va
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Idempotency-Key", uuid.NewString())
+	req.Header.Set("Idempotency-Key", idempotencyKey)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("send message center request: %w", err)
+		return &SubmissionError{Unknown: true, Err: fmt.Errorf("send message center request: %w", err)}
 	}
 	defer resp.Body.Close()
 
@@ -119,7 +152,7 @@ func (c *Client) Send(ctx context.Context, target string, templateKey string, va
 
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maximumErrorBodyLen))
 	if readErr != nil {
-		return fmt.Errorf("message center returned status %d and response could not be read: %w", resp.StatusCode, readErr)
+		return &SubmissionError{Unknown: resp.StatusCode >= 500, Err: fmt.Errorf("message center returned status %d and response could not be read: %w", resp.StatusCode, readErr)}
 	}
-	return fmt.Errorf("message center returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	return &SubmissionError{Unknown: resp.StatusCode >= 500, Err: fmt.Errorf("message center returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))}
 }

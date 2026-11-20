@@ -254,6 +254,7 @@ export const reauthAPI = {
 const isReauthEndpoint = (url = '') => String(url).includes('/user/reauth/')
 
 export const adminAPI = {
+  sendOAuthClientUserMessage: (id, userID, data, key) => api.post(`/admin/oauth-clients/${id}/users/${encodeURIComponent(userID)}/messages`, data, { timeout: 15000, headers: { 'Idempotency-Key': key } }),
   getOAuthClient: id => api.get(`/admin/oauth-clients/${id}`),
   listOAuthClientUsers: (id, params) => api.get(`/admin/oauth-clients/${id}/users`, { params }),
   removeOAuthClientUser: (id, userID) => api.delete(`/admin/oauth-clients/${id}/users/${encodeURIComponent(userID)}`),

@@ -20,6 +20,7 @@ export const periodOptions = [
 ]
 
 export const auditActions = {
+  'admin.client.message.send': '发送客户端用户消息',
   'user.account.deletion.request': '申请注销账号', 'user.account.deletion.cancel': '撤销账号注销', 'user.account.deletion.complete': '完成账号注销',
   'auth.login.password': '密码登录', 'auth.login.email': '邮箱验证码登录', 'auth.login.qr': '扫码登录',
   'auth.email.send': '发送登录验证码', 'auth.qr.scan': '扫描登录二维码', 'auth.qr.confirm': '确认扫码登录', 'auth.qr.reject': '拒绝扫码登录', 'auth.qr.cancel': '取消登录二维码', 'auth.logout': '退出登录',

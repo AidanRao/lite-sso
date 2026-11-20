@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -94,4 +95,11 @@ type OAuthClientUsersPage struct {
 // OAuthClientUsersRemovalResponse reports the number of removed associations.
 type OAuthClientUsersRemovalResponse struct {
 	RemovedCount int64 `json:"removed_count"`
+}
+
+// ClientMessageRequest contains the shared template settings for an administrator's message.
+type ClientMessageRequest struct {
+	SenderKey   string          `json:"sender_key"`
+	TemplateKey string          `json:"template_key"`
+	Variables   json.RawMessage `json:"variables"`
 }
