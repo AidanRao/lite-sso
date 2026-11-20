@@ -115,6 +115,7 @@ const routes = [
       { path: 'clients/:id(\\d+)', meta: { clientDetail: true }, component: () => import('../views/admin/AdminClientDetails.vue'), children: [
         { path: '', name: 'AdminClientGeneral', meta: { title: '客户端详情' }, component: () => import('../views/admin/AdminClientGeneral.vue') },
         { path: 'users', name: 'AdminClientUsers', meta: { title: '客户端用户' }, component: () => import('../views/admin/AdminClientUsers.vue') },
+        { path: 'users/messages', name: 'AdminClientMessages', meta: { title: '发送消息' }, component: () => import('../views/admin/AdminClientMessages.vue') },
         { path: 'advanced', name: 'AdminClientAdvanced', meta: { title: '客户端高级设置' }, component: () => import('../views/admin/AdminClientAdvanced.vue') }
       ] },
       { path: 'features', name: 'AdminFeatures', meta: { title: '功能发布' }, component: () => import('../components/FeatureReleases.vue') }

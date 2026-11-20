@@ -90,12 +90,16 @@ func (s *Server) registerRoutes() error {
 		ProviderRegistry: s.providerRegistry,
 	})
 
-	adminHandler := admin.NewAdminHandler(admin.AdminDeps{
+	adminDeps := admin.AdminDeps{
 		Config:           s.cfg,
 		DB:               db.DB,
 		ImageStore:       s.imageStore,
 		ProviderRegistry: s.providerRegistry,
-	})
+	}
+	if s.messageCenterClient != nil {
+		adminDeps.MessageSender = s.messageCenterClient
+	}
+	adminHandler := admin.NewAdminHandler(adminDeps)
 
 	authRequired := RequireSessionAuth(authHandler.Service())
 	authRequiredOrRedirect := RequireSessionAuthOrRedirect(authHandler.Service())
@@ -188,6 +192,7 @@ func (s *Server) registerRoutes() error {
 			adminGroup.GET("/oauth-clients", adminHandler.ListOAuthClients)
 			adminGroup.GET("/oauth-clients/:id", adminHandler.GetOAuthClient)
 			adminGroup.GET("/oauth-clients/:id/users", adminHandler.ListOAuthClientUsers)
+			adminGroup.POST("/oauth-clients/:id/users/:userID/messages", adminHandler.SendOAuthClientUserMessage)
 			adminGroup.DELETE("/oauth-clients/:id/users/:userID", adminHandler.RemoveOAuthClientUsers)
 			adminGroup.DELETE("/oauth-clients/:id/users", adminHandler.RemoveOAuthClientUsers)
 			adminGroup.DELETE("/oauth-clients/:id", adminHandler.DeleteOAuthClient)

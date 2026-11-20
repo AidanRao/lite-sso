@@ -2,7 +2,7 @@
   <section aria-labelledby="client-users-title">
     <header class="page-heading">
       <div><h2 id="client-users-title">Users</h2></div>
-      <button class="admin-button danger-text" type="button" :disabled="loading || busy || !total" @click="askRemove(null)">清空全部用户</button>
+      <div class="message-selection-actions"><RouterLink class="admin-button" :to="`/admin/clients/${client.id}/users/messages`">发送消息</RouterLink><button class="admin-button danger-text" type="button" :disabled="loading || busy || !total" @click="askRemove(null)">清空全部用户</button></div>
     </header>
     <p class="field-description users-removal-note">移除只撤销此客户端的关联与授权，保留用户的 SSO 账号。用户以后可以重新登录。</p>
     <p v-if="loading" class="page-state" role="status">正在加载用户…</p>

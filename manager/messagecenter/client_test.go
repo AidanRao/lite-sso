@@ -3,6 +3,7 @@ package messagecenter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -13,6 +14,56 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func Test_Client_SendEmail_CustomSenderJSONAndIdempotency(t *testing.T) {
+	client, err := NewClient(Config{URL: "https://message.example.com", APIKey: "existing-otp-key", SenderKey: "default"})
+	require.NoError(t, err)
+	var keys []string
+	client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		assert.Equal(t, "Bearer existing-otp-key", request.Header.Get("Authorization"))
+		keys = append(keys, request.Header.Get("Idempotency-Key"))
+		body, err := io.ReadAll(request.Body)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"senderKey":"chosen","templateKey":"notice","target":"recipient@example.com","variables":{"count":2,"flag":true,"nested":[null,{"text":"通知"}]},"channel":"EMAIL"}`, string(body))
+		return &http.Response{StatusCode: http.StatusAccepted, Body: io.NopCloser(strings.NewReader(`{}`)), Header: make(http.Header)}, nil
+	})
+	message := EmailMessage{SenderKey: "chosen", TemplateKey: "notice", Target: "recipient@example.com", Variables: map[string]any{"count": 2, "flag": true, "nested": []any{nil, map[string]any{"text": "通知"}}}, IdempotencyKey: "sso-admin:1:member:fixed"}
+	require.NoError(t, client.SendEmail(context.Background(), message))
+	require.NoError(t, client.SendEmail(context.Background(), message))
+	assert.Equal(t, []string{message.IdempotencyKey, message.IdempotencyKey}, keys)
+}
+
+func Test_Client_SendEmail_OutcomeClassification(t *testing.T) {
+	for _, scenario := range []struct {
+		name    string
+		status  int
+		err     error
+		unknown bool
+	}{
+		{name: "rejected", status: 400},
+		{name: "server failure", status: 502, unknown: true},
+		{name: "transport", err: errors.New("connection lost"), unknown: true},
+		{name: "deadline", err: context.DeadlineExceeded, unknown: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			client, err := NewClient(Config{URL: "https://message.example.com", APIKey: "key", SenderKey: "default"})
+			require.NoError(t, err)
+			client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				if scenario.err != nil {
+					return nil, scenario.err
+				}
+				return &http.Response{StatusCode: scenario.status, Body: io.NopCloser(strings.NewReader(`{"message":"private upstream details"}`)), Header: make(http.Header)}, nil
+			})
+			err = client.SendEmail(context.Background(), EmailMessage{SenderKey: "chosen", TemplateKey: "notice", Target: "recipient@example.com", Variables: map[string]any{}, IdempotencyKey: "fixed"})
+			var submission *SubmissionError
+			require.ErrorAs(t, err, &submission)
+			assert.Equal(t, scenario.unknown, submission.Unknown)
+			if scenario.err != nil {
+				assert.ErrorIs(t, err, scenario.err)
+			}
+		})
+	}
+}
 
 func TestClient_Send_Accepted(t *testing.T) {
 	var received sendRequest

@@ -115,6 +115,27 @@ func Test_Middleware_RecordsQQProvider(t *testing.T) {
 	require.Equal(t, "qq", details.AuthMethod)
 }
 
+func Test_Middleware_ClientMessageRecordsOnlyOperationMetadata(t *testing.T) {
+	r, sink := router(&conf.Config{})
+	r.POST("/api/admin/oauth-clients/:id/users/:userID/messages", func(c *gin.Context) {
+		audit.Success(c)
+		c.Status(http.StatusAccepted)
+	})
+	response := request(r, http.MethodPost, "/api/admin/oauth-clients/7/users/private-recipient/messages", `{"sender_key":"private-sender","template_key":"private-template","variables":{"email":"private@example.com","body":"private-message-content"}}`, "private-api-key")
+	require.Equal(t, http.StatusAccepted, response.Code)
+	require.Len(t, sink.records, 1)
+	record := sink.records[0]
+	require.Equal(t, "admin.client.message.send", record.Action)
+	require.Equal(t, "oauth_client", record.TargetType)
+	require.Equal(t, "7", record.TargetID)
+	require.Equal(t, "success", record.Outcome)
+	encoded, err := json.Marshal(record)
+	require.NoError(t, err)
+	for _, secret := range []string{"private-recipient", "private-sender", "private-template", "private@example.com", "private-message-content", "private-api-key"} {
+		require.NotContains(t, string(encoded), secret)
+	}
+}
+
 func Test_Middleware_ExcludesReadPollingAndTokenEndpoints(t *testing.T) {
 	r, sink := router(&conf.Config{})
 	for _, path := range []string{"/healthz", "/api/user/profile", "/api/auth/qr/poll", "/api/auth/captcha"} {

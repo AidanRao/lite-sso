@@ -26,17 +26,23 @@ type AdminDeps struct {
 	DB               *gorm.DB
 	ImageStore       manageross.ImageStore
 	ProviderRegistry *thirdparty.Registry
+	MessageSender    systemadmin.EmailMessageSender
 }
 
 // AdminHandler handles system administration API requests.
 type AdminHandler struct {
 	admin    *systemadmin.AdminService
 	features *feature.Service
+	messages *systemadmin.ClientMessageService
 }
 
 // NewAdminHandler creates a system administration handler.
 func NewAdminHandler(deps AdminDeps) *AdminHandler {
+	if deps.Config != nil && deps.Config.Dev.SkipSendMessage {
+		deps.MessageSender = nil
+	}
 	return &AdminHandler{
+		messages: systemadmin.NewClientMessageService(deps.DB, deps.MessageSender),
 		features: feature.NewService(deps.DB),
 		admin:    systemadmin.NewAdminService(deps.Config, deps.DB, deps.ImageStore, deps.ProviderRegistry),
 	}

@@ -209,3 +209,28 @@
  .admin-page .danger-zone { gap: 16px; }
  .admin-page .client-details .page-heading h2 { font-size: 20px; }
 }
+.admin-page .message-note { margin-bottom: 24px; }
+.admin-page .message-form { display: grid; gap: 24px; }
+.admin-page .message-form fieldset { display: grid; gap: 20px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.admin-page .message-section-heading, .admin-page .message-selection-actions, .admin-page .message-send-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.admin-page .message-section-heading { justify-content: space-between; margin-bottom: 12px; }
+.admin-page .message-section-heading h3 { margin: 0; font-size: 16px; }
+.admin-page .message-selection-actions, .admin-page .message-section-heading > span { font-size: 13px; }
+.admin-page .message-users-table { border: 1px solid #d0d7de; border-radius: 6px; overflow: hidden; }
+.admin-page .message-user-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: center; padding: 12px; border-bottom: 1px solid #d8dee4; font-size: 13px; overflow-wrap: anywhere; }
+.admin-page .message-user-row:last-child { border-bottom: 0; }
+.admin-page .message-user-row input[type=checkbox] { width: 16px; height: 16px; margin: 0; accent-color: #0969da; }
+.admin-page .message-user-head { background: #f6f8fa; }
+.admin-page .message-user-unavailable { color: #6e7781; }
+.admin-page .message-results { margin-top: 28px; padding-top: 24px; border-top: 1px solid #d8dee4; }
+.admin-page .message-result-list { margin: 14px 0 0; padding: 0; list-style: none; }
+.admin-page .message-result-list li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid #d8dee4; font-size: 13px; overflow-wrap: anywhere; }
+.admin-page .message-result-list li > div { display: grid; align-content: start; gap: 4px; }
+.admin-page .message-result-list span { color: #59636e; font-size: 12px; }
+.admin-page .message-status-accepted { color: #1a7f37; }
+.admin-page .message-status-failed { color: #cf222e; }
+.admin-page .message-status-unknown { color: #9a6700; }
+@media (max-width: 600px) {
+  .admin-page .message-user-row { grid-template-columns: 18px minmax(0, 1fr); }
+  .admin-page .message-user-row > span:last-child { grid-column: 2; }
+}
